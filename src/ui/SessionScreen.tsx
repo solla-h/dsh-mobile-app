@@ -52,6 +52,9 @@ import {
   type ServerFrame,
   type SessionItem,
   type SessionSnapshotFrame,
+  type SelectAgentPresetFrame,
+  type SessionAgentPresetFrame,
+  type SessionAgentPresetUpdatedFrame,
   type SessionStatsFrame,
 } from '../protocol/types';
 import {
@@ -60,6 +63,7 @@ import {
   readProjectionValues,
   type TurnOutlineItem,
 } from '../protocol/outline';
+import { mapPresetList, presetName, type PresetList } from '../protocol/presets';
 import { goalRef, mapGoal, mapTodos, type GoalInfo, type TodoItem } from '../protocol/tasks';
 import { FileDownloader } from '../transport/file-download';
 import { loadDraft, saveDraft } from '../storage/drafts';
@@ -140,6 +144,7 @@ const TIME_ZONE = (() => {
 
 export function SessionScreen({ client, session, queued, capabilities, onBack, onForked }: Props) {
   const canDownloadFiles = capabilities.includes('file-downloads');
+  const canPickPreset = capabilities.includes('session-agent-preset');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
@@ -186,6 +191,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   const [todos, setTodos] = useState<TodoItem[] | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
+  /** agent 预设（模式）：列表全局一份，会话级状态单独查。 */
+  const [presetList, setPresetList] = useState<PresetList>({ presets: [], modeSelectionEnabled: true });
+  const [presetId, setPresetId] = useState<string | null>(session.agentPreset ?? null);
+  /** 会话跑过任何一轮就锁死；服务端没回话之前先按 blank 猜。 */
+  const [presetLocked, setPresetLocked] = useState(!session.blank);
+  const [presetSheet, setPresetSheet] = useState(false);
   const todosSeqRef = useRef(-1);
   const goalSeqRef = useRef(-1);
   const downloaderRef = useRef<FileDownloader | null>(null);
@@ -478,6 +489,34 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         setGoal(mapGoal(goalFrame.goal));
         return;
       }
+      if (kind === 'agent-presets') {
+        setPresetList(mapPresetList(frame));
+        return;
+      }
+      if (kind === 'session-agent-preset') {
+        const preset = frame as unknown as SessionAgentPresetFrame;
+        if (preset.sessionId && preset.sessionId !== session.sessionId) return;
+        if (typeof preset.agentPreset === 'string') setPresetId(preset.agentPreset);
+        if (typeof preset.locked === 'boolean') setPresetLocked(preset.locked);
+        return;
+      }
+      if (kind === 'select-agent-preset') {
+        const selected = frame as unknown as SelectAgentPresetFrame;
+        if (selected.sessionId && selected.sessionId !== session.sessionId) return;
+        if (selected.agentPreset) setPresetId(selected.agentPreset);
+        setPresetSheet(false);
+        // 响应里没有 locked，切完再查一次才知道这个会话还能不能继续改。
+        client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+        return;
+      }
+      if (kind === 'session-agent-preset-updated') {
+        const updated = frame as unknown as SessionAgentPresetUpdatedFrame;
+        if (updated.sessionId && updated.sessionId !== session.sessionId) return;
+        // 只带变化的那一个字段，按字段合并。
+        if (typeof updated.agentPreset === 'string') setPresetId(updated.agentPreset);
+        if (typeof updated.locked === 'boolean') setPresetLocked(updated.locked);
+        return;
+      }
       if (kind === 'fork') {
         const forked = frame as unknown as { sessionId?: string };
         if (forked.sessionId) onForked(forked.sessionId);
@@ -498,6 +537,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         }
         return;
       }
+      if (kind === 'goal-edit' || kind === 'goal-pause' || kind === 'goal-resume' || kind === 'goal-clear') {
+        // 这几个响应故意不带 sessionId/requestId，只回新的 ref。
+        // 想继续操作必须拿到最新 revision，所以统一重查一次。
+        client.send({ type: 'goal', sessionId: session.sessionId });
+        return;
+      }
       if (kind === 'session-stream-reset') {
         setStreaming(null);
         return;
@@ -511,10 +556,20 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         };
         // 目录没拉到就允许下次再试，别让一次失败把 / 菜单永久关掉。
         if (failure.requestType === 'commands') commandRequestedRef.current = false;
+        if (failure.requestType === 'select-agent-preset') {
+          // 乐观改过的本地状态要退回去：以服务端为准重查一次。
+          client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+          setError(
+            failure.code === 'agent-preset/locked'
+              ? '这个会话已经开始过了，模式不能再改'
+              : `${failure.code ?? 'error'}：${failure.message ?? ''}`,
+          );
+          return;
+        }
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [session.sessionId],
+    [client, session.sessionId],
   );
 
   useEffect(() => {
@@ -564,13 +619,18 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
     client.send({ type: 'session-stats', sessionId: session.sessionId });
     client.send({ type: 'tasks', sessionId: session.sessionId });
     client.send({ type: 'goal', sessionId: session.sessionId });
+    if (canPickPreset) {
+      // 预设目录全局一份，会话级状态每次进来都要重查（推送没有回放）。
+      client.send({ type: 'agent-presets' });
+      client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+    }
     return () => {
       off();
       downloader.dispose();
       if (downloaderRef.current === downloader) downloaderRef.current = null;
       client.send({ type: 'unsubscribe' });
     };
-  }, [client, handleFrame, session.sessionId]);
+  }, [canPickPreset, client, handleFrame, session.sessionId]);
 
   // 断线重连后服务端不再记得我们的订阅，必须重新订阅并补一次历史，
   // 否则回到前台会一直看着断线前的旧内容。
@@ -590,9 +650,10 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
       client.send({ type: 'session-stats', sessionId: session.sessionId });
       client.send({ type: 'tasks', sessionId: session.sessionId });
       client.send({ type: 'goal', sessionId: session.sessionId });
+      if (canPickPreset) client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
     });
     return off;
-  }, [client, session.sessionId]);
+  }, [canPickPreset, client, session.sessionId]);
 
   /** 往回翻一页。服务端用排他游标，拿到 nextBeforeSeq 就再要 seq < nextBeforeSeq 的那一段。 */
   const loadOlder = useCallback(() => {
@@ -801,6 +862,29 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
       client.send({ type: action, sessionId: session.sessionId, ref: goalRef(current) });
     },
     [client, goal, session.sessionId],
+  );
+
+  /** 切换模式：先乐观改本地，服务端拒绝时由 error 分支退回。 */
+  const pickPreset = useCallback(
+    (id: string) => {
+      setPresetSheet(false);
+      if (id === presetId) return;
+      setPresetId(id);
+      setPresetLocked(true);
+      client.send({ type: 'select-agent-preset', sessionId: session.sessionId, agentPreset: id });
+    },
+    [client, presetId, session.sessionId],
+  );
+
+  const presetActions = useMemo<SheetAction[]>(
+    () =>
+      presetList.presets.map((preset) => ({
+        id: preset.id,
+        label: (preset.id === presetId ? '✓ ' : '') + (preset.name || preset.id),
+        hint: [preset.description, preset.broken ? '当前不可用' : null].filter(Boolean).join(' · ') || undefined,
+        disabled: preset.broken || presetLocked || !presetList.modeSelectionEnabled,
+      })),
+    [presetId, presetList, presetLocked],
   );
 
   const removePicked = useCallback((id: string) => {
@@ -1287,6 +1371,19 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         />
 
         <ActionSheet
+          visible={presetSheet}
+          title="模式"
+          subtitle={
+            presetLocked
+              ? '会话已经开始过，模式已固定；想换模式请新建会话'
+              : '只对还没开始过的会话生效'
+          }
+          actions={presetActions}
+          onPick={pickPreset}
+          onClose={() => setPresetSheet(false)}
+        />
+
+        <ActionSheet
           visible={actionMessage !== null}
           title={actionMessage && 'text' in actionMessage ? previewOf(actionMessage.text) : undefined}
           actions={messageActions}
@@ -1385,6 +1482,17 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
           ) : null}
           {statusLabel || statsLine ? (
             <View style={styles.statusBar}>
+              {canPickPreset && presetList.presets.length > 0 ? (
+                <Pressable
+                  style={[styles.statusChipBox, presetLocked ? styles.statusChipBoxLocked : null]}
+                  onPress={() => setPresetSheet(true)}
+                >
+                  <Text style={[styles.statusChipText, presetLocked ? styles.statusChipTextLocked : null]}>
+                    {presetName(presetList.presets, presetId)}
+                    {presetLocked ? ' · 锁定' : ''}
+                  </Text>
+                </Pressable>
+              ) : null}
               {statusLabel ? <Text style={styles.statusChip}>{statusLabel}</Text> : null}
               {statsLine ? (
                 <Text style={styles.statusMeta} numberOfLines={1}>
@@ -1855,6 +1963,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#1A2233',
   },
+  statusChipBox: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: '#1A2233',
+  },
+  statusChipBoxLocked: { backgroundColor: '#1B1D22' },
+  statusChipText: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '600' },
+  statusChipTextLocked: { color: '#6E7585' },
   statusMeta: { flex: 1, color: '#4C5261', fontSize: 10.5 },
   composer: {
     flexDirection: 'row',

@@ -1,3 +1,5 @@
+import * as Network from 'expo-network';
+
 import type { ClientFrame, ServerFrame } from '../protocol/types';
 
 export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'closed' | 'error';
@@ -37,6 +39,11 @@ export class GatewayClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = true;
+  /** 最近一次收到任何帧的时间；心跳用来判断连接是不是已经假死。 */
+  private lastFrameAt = 0;
+  /** 网络状态监听；断网/恢复时立刻调整重连节奏。 */
+  private unwatchNetwork: { remove: () => void } | null = null;
+  private online = true;
 
   onFrame(listener: FrameListener): () => void {
     this.frameListeners.add(listener);
@@ -53,6 +60,7 @@ export class GatewayClient {
     this.options = options;
     this.stopped = false;
     this.attempt = 0;
+    this.watchNetwork();
     this.open();
   }
 
@@ -65,6 +73,8 @@ export class GatewayClient {
   disconnect(): void {
     this.stopped = true;
     this.clearTimers();
+    this.unwatchNetwork?.remove();
+    this.unwatchNetwork = null;
     if (this.socket) {
       const socket = this.socket;
       this.socket = null;
@@ -107,6 +117,7 @@ export class GatewayClient {
 
     socket.onopen = () => {
       this.attempt = 0;
+      this.lastFrameAt = Date.now();
       this.startHeartbeat();
     };
 
@@ -118,6 +129,7 @@ export class GatewayClient {
       } catch {
         return;
       }
+      this.lastFrameAt = Date.now();
       // 配对成功：立刻换成长期 token，一次性配对码绝不能留到重连里用。
       if (frame.kind === 'paired') {
         const token = (frame as { token?: unknown }).token;
@@ -140,6 +152,8 @@ export class GatewayClient {
     };
 
     socket.onclose = (event: { code?: number; reason?: string }) => {
+      // 已经被 disconnect() 或心跳看门狗换掉的旧 socket，不许再动状态机。
+      if (this.socket !== socket) return;
       this.stopHeartbeat();
       this.socket = null;
       if (this.stopped) {
@@ -181,8 +195,52 @@ export class GatewayClient {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
+      // 手机切网/进电梯时 TCP 常常半开：socket 还是 OPEN，但再也收不到东西。
+      // 网关每 ping 都会回 pong，超过两轮没有任何帧就判定假死，主动断开重连。
+      if (this.lastFrameAt && Date.now() - this.lastFrameAt > HEARTBEAT_MS * 2) {
+        const socket = this.socket;
+        this.socket = null;
+        this.stopHeartbeat();
+        this.emitState('error', '连接无响应，正在重连');
+        try {
+          socket?.close();
+        } catch {
+          // 关不掉也要走重连
+        }
+        this.scheduleReconnect();
+        return;
+      }
       this.send({ type: 'ping' });
     }, HEARTBEAT_MS);
+  }
+
+  /**
+   * 系统层面的网络状态：断网时不用按退避阶梯空转，
+   * 恢复时立刻重连，用户不用等 30 秒。
+   */
+  private watchNetwork(): void {
+    if (this.unwatchNetwork) return;
+    try {
+      this.unwatchNetwork = Network.addNetworkStateListener((state) => {
+        const online = state.isConnected !== false && state.isInternetReachable !== false;
+        const wasOnline = this.online;
+        this.online = online;
+        if (this.stopped) return;
+        if (!online) {
+          if (wasOnline) this.emitState('error', '设备已离线，等待网络恢复');
+          return;
+        }
+        // 网络刚恢复：清掉退避计时，马上重连。
+        if (!this.socket && this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+          this.attempt = 0;
+          this.open();
+        }
+      });
+    } catch {
+      this.unwatchNetwork = null;
+    }
   }
 
   private stopHeartbeat(): void {
