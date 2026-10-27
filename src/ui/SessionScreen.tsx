@@ -1392,7 +1392,9 @@ export function SessionScreen({
       if (key) seen.add(key);
     }
     setPendingSends((current) => {
-      const next = current.filter((item) => !seen.has(item.text));
+      // 失败的那条只让用户手动移除：按文本去重会被别的同文本消息顺手清掉，
+      // 图片更糟——所有图片回显都用同一个占位串。
+      const next = current.filter((item) => item.failed || !seen.has(item.text));
       return next.length === current.length ? current : next;
     });
   }, [messages, pendingSends.length, queued]);
