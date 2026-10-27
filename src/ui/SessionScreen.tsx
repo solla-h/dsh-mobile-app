@@ -60,6 +60,8 @@ import {
   type TurnOutlineItem,
 } from '../protocol/outline';
 import { FileDownloader } from '../transport/file-download';
+import { loadDraft, saveDraft } from '../storage/drafts';
+import { outbox, type OutboxItem } from '../transport/outbox';
 import type { GatewayClient } from '../transport/gateway-client';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
@@ -163,6 +165,10 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
   const [stats, setStats] = useState<SessionStatsFrame | null>(null);
   /** 交付文件的下载状态，键是卡片上的原始路径。 */
   const [fileStates, setFileStates] = useState<Record<string, FileUiState>>({});
+  /** 离线发件箱里属于这个会话的消息。 */
+  const [offlineItems, setOfflineItems] = useState<OutboxItem[]>(() => outbox.list(session.sessionId));
+  /** 草稿是否已经从磁盘读回来了，读完之前不许写盘。 */
+  const draftReadyRef = useRef(false);
   const downloaderRef = useRef<FileDownloader | null>(null);
   /** 点了大纲里的某一轮：要先把历史翻到那个 seq，再滚过去。 */
   const jumpTargetRef = useRef<number | null>(null);
@@ -862,9 +868,25 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
       setShowJump(false);
       listRef.current?.scrollToEnd({ animated: true });
     } else {
-      setError('连接已断开，消息未发送');
+      // 断线了别把用户打的字扔掉：落进发件箱，重连后自动补发。
+      outbox.add({
+        sessionId: session.sessionId,
+        text: text || IMAGE_ONLY_TEXT,
+        images: images.length
+          ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
+          : undefined,
+        mode: running ? sendMode : 'queue',
+      });
+      setDraft('');
+      setPicked([]);
+      setError(null);
     }
   }, [client, draft, picked, running, sendMode, session.sessionId]);
+
+  /** 离线待发的消息：直接删掉，不再重试。 */
+  const discardOffline = useCallback((id: string) => {
+    outbox.remove(id);
+  }, []);
 
   const removeQueued = useCallback(
     (queueId: string) => {
@@ -930,9 +952,47 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
         pending: true,
         localUris: item.localUris,
       })),
+      ...offlineItems.map((item) => ({
+        id: `offline-${item.id}`,
+        kind: 'queued' as const,
+        text: item.text,
+        time: 0,
+        queueId: item.id,
+        pending: true,
+        offline: true,
+      })),
     ],
-    [baseRows, pendingSends, queued],
+    [baseRows, offlineItems, pendingSends, queued],
   );
+
+  // 进会话先把上次没发完的草稿捞回来。切换会话时先清空，
+  // 否则上一会话的文字会被当成这一会话的草稿写回去。
+  useEffect(() => {
+    draftReadyRef.current = false;
+    setDraft('');
+    let cancelled = false;
+    void loadDraft(session.sessionId).then((text) => {
+      if (cancelled) return;
+      setDraft(text);
+      draftReadyRef.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.sessionId]);
+
+  // 草稿改动落盘（内部已做防抖）。没加载完之前不写，避免把空值覆盖掉磁盘上的草稿。
+  useEffect(() => {
+    if (!draftReadyRef.current) return;
+    saveDraft(session.sessionId, draft);
+  }, [draft, session.sessionId]);
+
+  // 发件箱是模块级单例，订阅一次就能跟着增删重绘。
+  useEffect(() => {
+    const sync = () => setOfflineItems(outbox.list(session.sessionId));
+    sync();
+    return outbox.subscribe(sync);
+  }, [session.sessionId]);
 
   const canSend = Boolean(draft.trim() || picked.length);
 
@@ -1067,6 +1127,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
                 fileStates={fileStates}
                 onOpenFile={openFile}
                 canDownloadFiles={canDownloadFiles}
+                onDiscardOffline={discardOffline}
               />
             )}
           />
@@ -1300,6 +1361,7 @@ function MessageRow({
   fileStates,
   onOpenFile,
   canDownloadFiles,
+  onDiscardOffline,
 }: {
   message: ChatMessage;
   attachmentCache: Record<string, string>;
@@ -1309,6 +1371,7 @@ function MessageRow({
   fileStates: Record<string, FileUiState>;
   onOpenFile: (path: string) => void;
   canDownloadFiles: boolean;
+  onDiscardOffline: (id: string) => void;
 }) {
   const [toolOpen, setToolOpen] = useState(false);
   if (message.kind === 'files') {
@@ -1335,9 +1398,19 @@ function MessageRow({
           {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
           <View style={styles.queuedFooter}>
             <Text style={styles.queuedTag}>
-              {message.pending ? '发送中…' : steering ? '插话中 · 下一步生效' : '排队中'}
+              {message.offline
+                ? '待发送 · 联网后自动重发'
+                : message.pending
+                  ? '发送中…'
+                  : steering
+                    ? '插话中 · 下一步生效'
+                    : '排队中'}
             </Text>
-            {message.pending ? null : (
+            {message.offline ? (
+              <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
+                <Text style={styles.queuedAction}>删除</Text>
+              </Pressable>
+            ) : message.pending ? null : (
               <View style={styles.queuedActions}>
                 {steering ? null : (
                   <Pressable hitSlop={8} onPress={() => onSteerQueued(message.queueId)}>

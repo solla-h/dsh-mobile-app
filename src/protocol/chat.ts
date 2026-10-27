@@ -47,6 +47,8 @@ export type ChatMessage =
       placement?: string;
       /** 本地乐观回显：还没被服务端确认 */
       pending?: boolean;
+      /** 断线时写进发件箱、等重连后自动重发 */
+      offline?: boolean;
       /** 本地回显用的图片 uri（还没上传，拿不到 attachmentId） */
       localUris?: string[];
     }
