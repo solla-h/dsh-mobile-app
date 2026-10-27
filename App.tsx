@@ -670,6 +670,25 @@ function AppBody() {
           />
         ) : connected ? (
           <View style={styles.flex}>
+            {(() => {
+              const blocked = sessions.filter((item) => pendingItems(pending, item.sessionId).length > 0);
+              if (blocked.length === 0) return null;
+              return (
+                <Pressable
+                  style={styles.gatePill}
+                  onPress={() => setActive(blocked[0])}
+                  accessibilityHint="跳到第一个等待审批或回答的会话"
+                >
+                  <View style={styles.pendingDot} />
+                  <Text style={styles.gatePillText}>
+                    {blocked.length === 1
+                      ? `${blocked[0].projections?.values.title ?? '一个会话'} 在等你`
+                      : `${blocked.length} 个会话在等你`}
+                  </Text>
+                  <Text style={styles.gatePillGo}>打开</Text>
+                </Pressable>
+              );
+            })()}
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>设备</Text>
               <Text style={styles.metaValue}>{hello?.device?.name ?? '未知'}</Text>
@@ -1012,6 +1031,19 @@ const styles = StyleSheet.create({
   },
   metaLabel: { color: '#5B6070', fontSize: 12 },
   metaValue: { color: '#C9CDD6', fontSize: 12, marginRight: 12 },
+  gatePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#2A2318',
+  },
+  gatePillText: { flex: 1, color: '#E8B75C', fontSize: 13, fontWeight: '600' },
+  gatePillGo: { color: '#E8B75C', fontSize: 12, fontWeight: '700' },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
