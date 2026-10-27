@@ -1,3 +1,5 @@
+import { useTheme, useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 import { useMemo, useState } from 'react';
 import {
   Linking,
@@ -37,6 +39,8 @@ const md = new MarkdownIt({
 
 const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
+type MarkdownStyles = ReturnType<typeof makeStyles>;
+
 export function MarkdownView({
   text,
   onFileLink,
@@ -48,9 +52,10 @@ export function MarkdownView({
   /** 代码块「引用」：手机上没有好用的拖选，整块塞进输入框更实际。 */
   onQuoteCode?: (lang: string, code: string) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const tokens = useMemo(() => md.parse(text, {}) as unknown as MdToken[], [text]);
   if (!text.trim()) return null;
-  return <View>{renderBlocks(tokens, 0, tokens.length, 'md', onFileLink, onQuoteCode)}</View>;
+  return <View>{renderBlocks(tokens, 0, tokens.length, 'md', styles, onFileLink, onQuoteCode)}</View>;
 }
 
 function findClose(tokens: MdToken[], from: number, open: string, close: string): number {
@@ -70,6 +75,7 @@ function renderBlocks(
   from: number,
   to: number,
   keyBase: string,
+  styles: MarkdownStyles,
   onFileLink?: (path: string) => void,
   onQuoteCode?: (lang: string, code: string) => void,
 ): React.ReactNode[] {
@@ -83,7 +89,7 @@ function renderBlocks(
         const key = keyBase + '-p' + i;
         out.push(
           <Text key={key} style={[styles.paragraph, i + 3 >= to ? styles.paragraphLast : null]}>
-            {renderInline(inline?.children ?? [], key, onFileLink)}
+            {renderInline(inline?.children ?? [], key, styles, onFileLink)}
           </Text>,
         );
         i += 3;
@@ -95,7 +101,7 @@ function renderBlocks(
         const key = keyBase + '-h' + i;
         out.push(
           <Text key={key} style={[styles.heading, HEADING_SIZE[level] ?? HEADING_SIZE[3]]}>
-            {renderInline(inline?.children ?? [], key, onFileLink)}
+            {renderInline(inline?.children ?? [], key, styles, onFileLink)}
           </Text>,
         );
         i += 3;
@@ -120,7 +126,7 @@ function renderBlocks(
         const key = keyBase + '-q' + i;
         out.push(
           <View key={key} style={styles.quote}>
-            {renderBlocks(tokens, i + 1, end, key, onFileLink, onQuoteCode)}
+            {renderBlocks(tokens, i + 1, end, key, styles, onFileLink, onQuoteCode)}
           </View>,
         );
         i = end + 1;
@@ -146,7 +152,7 @@ function renderBlocks(
             <View key={key} style={styles.listRow}>
               <Text style={styles.listMarker}>{ordered ? start + index + '.' : '•'}</Text>
               <View style={styles.listBody}>
-                {renderBlocks(tokens, cursor + 1, itemEnd, key, onFileLink, onQuoteCode)}
+                {renderBlocks(tokens, cursor + 1, itemEnd, key, styles, onFileLink, onQuoteCode)}
               </View>
             </View>,
           );
@@ -179,7 +185,7 @@ function renderBlocks(
         const key = keyBase + '-i' + i;
         out.push(
           <Text key={key} style={styles.paragraph}>
-            {renderInline(token.children ?? [], key, onFileLink)}
+            {renderInline(token.children ?? [], key, styles, onFileLink)}
           </Text>,
         );
         i += 1;
@@ -229,6 +235,7 @@ function Table({
   keyBase: string;
   onFileLink?: (path: string) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const { width: windowWidth } = useWindowDimensions();
   // 列表左右各 14、气泡左右各 14，再留一点余量。
   const available = Math.max(200, windowWidth - 60);
@@ -292,7 +299,7 @@ function Table({
                 ]}
               >
                 <Text style={item.header ? styles.th : styles.td}>
-                  {renderInline(tokensOfCell, key, onFileLink)}
+                  {renderInline(tokensOfCell, key, styles, onFileLink)}
                 </Text>
               </View>
             );
@@ -318,6 +325,7 @@ function Table({
 function renderInline(
   tokens: MdToken[],
   keyBase: string,
+  styles: MarkdownStyles,
   onFileLink?: (path: string) => void,
 ): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
@@ -519,14 +527,14 @@ function highlight(code: string, lang: string): Span[] {
   return spans;
 }
 
-const SPAN_COLOR: Record<SpanKind, { color: string }> = {
-  plain: { color: '#D6DAE3' },
-  comment: { color: '#5C6373' },
-  string: { color: '#A5D6A7' },
-  number: { color: '#F0B37E' },
-  keyword: { color: '#8FB6FF' },
-  literal: { color: '#C792EA' },
-};
+const spanColor = (t: Palette): Record<SpanKind, { color: string }> => ({
+  plain: { color: t.text.primary },
+  comment: { color: t.text.muted },
+  string: { color: t.semantic.diffAddText },
+  number: { color: t.semantic.gateAmberText },
+  keyword: { color: t.text.primary },
+  literal: { color: t.text.secondary },
+});
 
 function CodeBlock({
   code,
@@ -537,6 +545,8 @@ function CodeBlock({
   lang: string;
   onQuote?: (lang: string, code: string) => void;
 }) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [copied, setCopied] = useState(false);
   const spans = useMemo(() => highlight(code, lang), [code, lang]);
   return (
@@ -564,7 +574,7 @@ function CodeBlock({
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.codeScroll}>
         <Text style={styles.codeText}>
           {spans.map((span, index) => (
-            <Text key={index} style={SPAN_COLOR[span.kind]}>
+            <Text key={index} style={spanColor(t)[span.kind]}>
               {span.text}
             </Text>
           ))}
@@ -585,49 +595,50 @@ const HEADING_SIZE: Record<number, object> = {
   6: { fontSize: 14.5, lineHeight: 21 },
 };
 
-const styles = StyleSheet.create({
-  paragraph: { color: '#EDEFF3', fontSize: 15, lineHeight: 22, marginBottom: 6 },
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
+  paragraph: { color: t.text.primary, fontSize: 15, lineHeight: 22, marginBottom: 6 },
   paragraphLast: { marginBottom: 0 },
-  heading: { color: '#F5F6F8', fontWeight: '700', marginTop: 4, marginBottom: 4 },
+  heading: { color: t.text.primary, fontWeight: '700', marginTop: 4, marginBottom: 4 },
   strong: { fontWeight: '700' },
   em: { fontStyle: 'italic' },
   strike: { textDecorationLine: 'line-through' },
-  link: { color: '#8FB6FF', textDecorationLine: 'underline' },
+  link: { color: t.text.primary, textDecorationLine: 'underline' },
   codeInline: {
     fontFamily: MONO,
     fontSize: 13,
-    color: '#F0B37E',
-    backgroundColor: '#1E2128',
+    color: t.semantic.gateAmberText,
+    backgroundColor: t.border.subtle,
   },
   list: { marginVertical: 2 },
   listRow: { flexDirection: 'row', marginBottom: 2 },
-  listMarker: { color: '#7A8091', fontSize: 15, lineHeight: 22, width: 18 },
+  listMarker: { color: t.text.muted, fontSize: 15, lineHeight: 22, width: 18 },
   listBody: { flex: 1 },
   quote: {
     borderLeftWidth: 2,
-    borderLeftColor: '#2B303B',
+    borderLeftColor: t.border.default,
     paddingLeft: 10,
     marginVertical: 4,
   },
-  hr: { height: StyleSheet.hairlineWidth, backgroundColor: '#2B303B', marginVertical: 10 },
+  hr: { height: StyleSheet.hairlineWidth, backgroundColor: t.border.default, marginVertical: 10 },
   table: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#262A33',
+    borderColor: t.border.default,
     borderRadius: 8,
     overflow: 'hidden',
     marginVertical: 4,
   },
-  tableRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#262A33' },
-  tableHead: { backgroundColor: '#1B1E25' },
+  tableRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border.default },
+  tableHead: { backgroundColor: t.bg.surface },
   tableCell: { paddingHorizontal: 8, paddingVertical: 6 },
   tableScroll: { flexGrow: 0 },
   tableScrollContent: { paddingRight: 2 },
-  th: { color: '#C9CDD6', fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  td: { color: '#D6DAE3', fontSize: 13, lineHeight: 18 },
+  th: { color: t.text.secondary, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  td: { color: t.text.primary, fontSize: 13, lineHeight: 18 },
   codeBlock: {
-    backgroundColor: '#0E1014',
+    backgroundColor: t.bg.canvas,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#1E2128',
+    borderColor: t.border.subtle,
     borderRadius: 10,
     marginVertical: 6,
     overflow: 'hidden',
@@ -639,11 +650,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1E2128',
+    borderBottomColor: t.border.subtle,
   },
-  codeLang: { color: '#5B6070', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase' },
+  codeLang: { color: t.text.muted, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase' },
   codeActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  copy: { color: '#7A8091', fontSize: 11 },
+  copy: { color: t.text.muted, fontSize: 11 },
   codeScroll: { paddingHorizontal: 10, paddingVertical: 8 },
   codeText: { fontFamily: MONO, fontSize: 12.5, lineHeight: 18 },
 });

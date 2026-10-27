@@ -1,6 +1,8 @@
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { CommandGroup, CommandItem, CommandOption } from '../protocol/commands';
+import { useTheme, useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 const KIND_BADGE: Record<string, string> = {
   immediate: '执行',
@@ -16,6 +18,7 @@ export function CommandPalette({
   groups: CommandGroup[];
   onPick: (item: CommandItem) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   if (groups.length === 0) return null;
   return (
     <View style={styles.panel}>
@@ -59,6 +62,8 @@ export function CommandOptionsSheet({
   onClose: () => void;
   onPick: (option: CommandOption) => void;
 }) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={state !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -66,7 +71,7 @@ export function CommandOptionsSheet({
           <Text style={styles.sheetTitle}>/{state?.command ?? ''}</Text>
           {state?.loading ? (
             <View style={styles.sheetLoading}>
-              <ActivityIndicator color="#8A90A0" />
+              <ActivityIndicator color={t.text.muted} />
             </View>
           ) : state && state.options.length > 0 ? (
             <ScrollView style={styles.sheetScroll}>
@@ -99,19 +104,20 @@ export function CommandOptionsSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   panel: {
     marginHorizontal: 10,
     marginBottom: 6,
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#262A33',
+    borderColor: t.border.default,
     overflow: 'hidden',
   },
   panelScroll: { maxHeight: 232 },
   groupTitle: {
-    color: '#5B6070',
+    color: t.text.muted,
     fontSize: 10,
     letterSpacing: 1,
     paddingHorizontal: 12,
@@ -125,11 +131,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  rowPressed: { backgroundColor: '#1B1E25' },
+  rowPressed: { backgroundColor: t.bg.surface },
   rowMain: { flex: 1 },
-  name: { color: '#EDEFF3', fontSize: 13.5, fontWeight: '600' },
-  desc: { color: '#6E7585', fontSize: 11, marginTop: 2 },
-  badge: { color: '#5B6070', fontSize: 10 },
+  name: { color: t.text.primary, fontSize: 13.5, fontWeight: '600' },
+  desc: { color: t.text.muted, fontSize: 11, marginTop: 2 },
+  badge: { color: t.text.muted, fontSize: 10 },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -137,13 +143,13 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   sheet: {
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderRadius: 16,
     paddingVertical: 8,
     maxHeight: '62%',
   },
   sheetTitle: {
-    color: '#7A8091',
+    color: t.text.muted,
     fontSize: 12,
     fontWeight: '700',
     paddingHorizontal: 16,
@@ -151,7 +157,7 @@ const styles = StyleSheet.create({
   },
   sheetScroll: { paddingBottom: 6 },
   sheetLoading: { paddingVertical: 28, alignItems: 'center' },
-  sheetEmpty: { color: '#5B6070', fontSize: 13, padding: 20 },
+  sheetEmpty: { color: t.text.muted, fontSize: 13, padding: 20 },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -160,8 +166,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   optionMain: { flex: 1 },
-  optionLabel: { color: '#D6DAE3', fontSize: 14.5 },
-  optionLabelOn: { color: '#3DDC97', fontWeight: '700' },
-  optionDetail: { color: '#6E7585', fontSize: 11.5, marginTop: 3, lineHeight: 16 },
-  optionCheck: { color: '#3DDC97', fontSize: 14, fontWeight: '700' },
+  optionLabel: { color: t.text.primary, fontSize: 14.5 },
+  optionLabelOn: { color: t.semantic.diffAddText, fontWeight: '700' },
+  optionDetail: { color: t.text.muted, fontSize: 11.5, marginTop: 3, lineHeight: 16 },
+  optionCheck: { color: t.semantic.diffAddText, fontSize: 14, fontWeight: '700' },
 });

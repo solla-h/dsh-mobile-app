@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import type { ImageAttachmentRef } from '../protocol/types';
+import { useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 interface Props {
   refs: ImageAttachmentRef[];
@@ -20,6 +22,7 @@ const MAX_CELL = 148;
 
 /** 历史里的图片只有引用，字节要靠 attachment 请求单独取，取到之前先占位。 */
 export function MessageImages({ refs, cache, onNeed }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [viewing, setViewing] = useState<string | null>(null);
   const { width: windowWidth } = useWindowDimensions();
 
@@ -71,6 +74,7 @@ export function MessageImages({ refs, cache, onNeed }: Props) {
 
 /** 全屏看图：点任意位置关闭，够用且不会误触缩放。 */
 export function ImageViewer({ uri, onClose }: { uri: string | null; onClose: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={Boolean(uri)} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -81,17 +85,18 @@ export function ImageViewer({ uri, onClose }: { uri: string | null; onClose: () 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   frame: {
     borderRadius: 10,
     overflow: 'hidden',
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   image: { width: '100%', height: '100%' },
-  placeholder: { color: '#5B6070', fontSize: 12 },
+  placeholder: { color: t.text.muted, fontSize: 12 },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.94)',
@@ -99,5 +104,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   viewer: { width: '100%', height: '80%' },
-  hint: { position: 'absolute', bottom: 40, color: '#5B6070', fontSize: 12 },
+  hint: { position: 'absolute', bottom: 40, color: t.text.muted, fontSize: 12 },
 });

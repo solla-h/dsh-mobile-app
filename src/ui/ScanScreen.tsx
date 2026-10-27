@@ -1,6 +1,8 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTheme, useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 interface Props {
   onScanned: (payload: string) => void;
@@ -8,6 +10,8 @@ interface Props {
 }
 
 export function ScanScreen({ onScanned, onCancel }: Props) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const [error, setError] = useState<string | null>(null);
   const handledRef = useRef(false);
@@ -35,7 +39,7 @@ export function ScanScreen({ onScanned, onCancel }: Props) {
   if (!permission) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color="#C9CDD6" />
+        <ActivityIndicator color={t.text.secondary} />
       </View>
     );
   }
@@ -90,28 +94,29 @@ export function ScanScreen({ onScanned, onCancel }: Props) {
 
 const FRAME = 240;
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   center: {
     flex: 1,
-    backgroundColor: '#0B0C0F',
+    backgroundColor: t.bg.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
-  title: { color: '#EDEFF3', fontSize: 18, fontWeight: '600', marginBottom: 10 },
-  hint: { color: '#7A8091', fontSize: 13, lineHeight: 20, textAlign: 'center', marginBottom: 22 },
+  title: { color: t.text.primary, fontSize: 18, fontWeight: '600', marginBottom: 10 },
+  hint: { color: t.text.muted, fontSize: 13, lineHeight: 20, textAlign: 'center', marginBottom: 22 },
   primary: {
-    backgroundColor: '#F5F6F8',
+    backgroundColor: t.action.primaryBg,
     borderRadius: 12,
     paddingHorizontal: 24,
     paddingVertical: 12,
     minWidth: 160,
     alignItems: 'center',
   },
-  primaryText: { color: '#0B0C0F', fontSize: 15, fontWeight: '700' },
+  primaryText: { color: t.bg.canvas, fontSize: 15, fontWeight: '700' },
   secondary: { marginTop: 12, paddingVertical: 10 },
-  secondaryText: { color: '#7A8091', fontSize: 14 },
+  secondaryText: { color: t.text.muted, fontSize: 14 },
   overlay: { flex: 1, justifyContent: 'space-between' },
   topBar: { paddingTop: 54, paddingHorizontal: 18, alignItems: 'flex-end' },
   close: {
@@ -120,17 +125,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
-  closeText: { color: '#EDEFF3', fontSize: 14 },
+  closeText: { color: t.text.primary, fontSize: 14 },
   frameWrap: { alignItems: 'center' },
   frame: { width: FRAME, height: FRAME },
-  corner: { position: 'absolute', width: 28, height: 28, borderColor: '#3DDC97' },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: t.semantic.diffAddText },
   cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 8 },
   cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 8 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 8 },
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 8 },
-  frameHint: { color: '#C9CDD6', fontSize: 13, marginTop: 18, textAlign: 'center', lineHeight: 19 },
+  frameHint: { color: t.text.secondary, fontSize: 13, marginTop: 18, textAlign: 'center', lineHeight: 19 },
   footer: {
-    color: '#8A90A0',
+    color: t.text.muted,
     fontSize: 12,
     textAlign: 'center',
     paddingBottom: 42,

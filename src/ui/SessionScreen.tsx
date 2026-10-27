@@ -87,6 +87,8 @@ import type { GatewayClient } from '../transport/gateway-client';
 import { ActionSheet, type SheetAction } from './ActionSheet';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
+import type { Palette } from '../theme/tokens';
+import { useTheme, useThemedStyles } from './theme';
 import { tapFeedback } from './haptics';
 import { InteractionSheet } from './InteractionSheet';
 import { MarkdownView } from './Markdown';
@@ -220,6 +222,8 @@ export function SessionScreen({
   onForked,
   onOpenSession,
 }: Props) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const canDownloadFiles = capabilities.includes('file-downloads');
   const canPickPreset = capabilities.includes('session-agent-preset');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1685,7 +1689,7 @@ export function SessionScreen({
         ) : null}
         {running ? (
           <View style={styles.headerActions}>
-            <ActivityIndicator size="small" color="#3DDC97" />
+            <ActivityIndicator size="small" color={t.semantic.diffAddText} />
             <Pressable
               style={[styles.stopButton, cancelling ? styles.stopDisabled : null]}
               onPress={cancelTurn}
@@ -1708,7 +1712,7 @@ export function SessionScreen({
       >
         {loading ? (
           <View style={styles.center}>
-            <ActivityIndicator color="#8A90A0" />
+            <ActivityIndicator color={t.text.muted} />
           </View>
         ) : (
           <FlatList<StreamRow>
@@ -1751,7 +1755,7 @@ export function SessionScreen({
             ListHeaderComponent={
               <View style={styles.olderWrap}>
                 {loadingOlder ? (
-                  <ActivityIndicator size="small" color="#8A90A0" />
+                  <ActivityIndicator size="small" color={t.text.muted} />
                 ) : hasOlder ? (
                   <Pressable onPress={loadOlder} hitSlop={10}>
                     <Text style={styles.olderAction}>加载更早的消息</Text>
@@ -2064,7 +2068,7 @@ export function SessionScreen({
               disabled={picking}
             >
               {picking ? (
-                <ActivityIndicator size="small" color="#8A90A0" />
+                <ActivityIndicator size="small" color={t.text.muted} />
               ) : (
                 <Text style={styles.attachText}>＋</Text>
               )}
@@ -2075,7 +2079,7 @@ export function SessionScreen({
               value={draft}
               onChangeText={setDraft}
               placeholder="发消息…"
-              placeholderTextColor="#5B6070"
+              placeholderTextColor={t.text.muted}
               multiline
             />
             <Pressable
@@ -2157,6 +2161,7 @@ function MessageRow({
   onLongPress: (message: ChatMessage) => void;
   onQuoteCode: (lang: string, code: string) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   /** 本地回显图片的全屏预览；历史图片走 MessageImages 自己的查看器。 */
   const [preview, setPreview] = useState<string | null>(null);
   if (message.kind === 'files') {
@@ -2277,9 +2282,11 @@ function MessageRow({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0B0C0F' },
-  waterline: { height: 2, backgroundColor: '#12141A' },
+/** 会话页样式：颜色全部走色板，浅色/深色各建一份并缓存。 */
+function makeStyles(t: Palette) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.bg.canvas },
+  waterline: { height: 2, backgroundColor: t.border.subtle },
   waterlineFill: { height: 2 },
   flex: { flex: 1 },
   header: {
@@ -2290,20 +2297,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   back: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  backText: { color: '#EDEFF3', fontSize: 28, lineHeight: 30 },
+  backText: { color: t.text.primary, fontSize: 28, lineHeight: 30 },
   titleWrap: { flex: 1 },
-  title: { flex: 1, color: '#EDEFF3', fontSize: 16, fontWeight: '600' },
+  title: { flex: 1, color: t.text.primary, fontSize: 16, fontWeight: '600' },
   placeholder: { width: 20 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   stopButton: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: '#2A1A1C',
+    backgroundColor: t.semantic.dangerBg,
   },
   stopDisabled: { opacity: 0.5 },
-  stopText: { color: '#FF7A7A', fontSize: 12, fontWeight: '600' },
-  error: { color: '#FF7A7A', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
+  stopText: { color: t.semantic.dangerText, fontSize: 12, fontWeight: '600' },
+  error: { color: t.semantic.dangerText, fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
   toast: {
     position: 'absolute',
     left: 0,
@@ -2312,8 +2319,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   toastText: {
-    backgroundColor: 'rgba(30,33,40,0.95)',
-    color: '#EDEFF3',
+    backgroundColor: t.bg.dockGlass,
+    color: t.text.primary,
     fontSize: 12,
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -2322,12 +2329,12 @@ const styles = StyleSheet.create({
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { paddingHorizontal: 14, paddingBottom: 12 },
-  empty: { color: '#5B6070', textAlign: 'center', marginTop: 40 },
+  empty: { color: t.text.muted, textAlign: 'center', marginTop: 40 },
   olderWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, minHeight: 44 },
-  olderAction: { color: '#7E8698', fontSize: 13, fontWeight: '600' },
-  olderEnd: { color: '#4A4F5C', fontSize: 12 },
+  olderAction: { color: t.text.secondary, fontSize: 13, fontWeight: '600' },
+  olderEnd: { color: t.text.muted, fontSize: 12 },
   dayDivider: {
-    color: '#4C5261',
+    color: t.text.muted,
     fontSize: 11,
     textAlign: 'center',
     marginTop: 6,
@@ -2339,8 +2346,8 @@ const styles = StyleSheet.create({
   rowRight: { justifyContent: 'flex-end' },
   rowLeft: { justifyContent: 'flex-start' },
   bubble: { maxWidth: '86%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleUser: { backgroundColor: '#2B6BFF' },
-  bubbleQueued: { backgroundColor: '#1E3A66' },
+  bubbleUser: { backgroundColor: t.bg.surface },
+  bubbleQueued: { backgroundColor: t.bg.subtle },
   queuedFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2348,59 +2355,59 @@ const styles = StyleSheet.create({
     gap: 16,
     marginTop: 4,
   },
-  queuedTag: { color: '#7E9CC9', fontSize: 10 },
-  queuedTagFailed: { color: '#FF7A7A' },
+  queuedTag: { color: t.text.muted, fontSize: 10 },
+  queuedTagFailed: { color: t.semantic.dangerText },
   queuedActions: { flexDirection: 'row', gap: 12 },
-  queuedAction: { color: '#8FB6FF', fontSize: 10, fontWeight: '600' },
+  queuedAction: { color: t.text.primary, fontSize: 10, fontWeight: '600' },
   // 助手消息可能带表格/代码块，撑满整行才能算出可滚动的宽度。
-  bubbleAssistant: { backgroundColor: '#15171C', flexGrow: 1, maxWidth: '100%' },
-  bubbleText: { color: '#EDEFF3', fontSize: 15, lineHeight: 21 },
-  reasoning: { color: '#6E7585', fontSize: 12, lineHeight: 17, marginBottom: 6, fontStyle: 'italic' },
-  reasoningTag: { color: '#4C5261', fontStyle: 'normal' },
-  reasoningToggle: { color: '#4C5261', fontSize: 11, marginTop: 2, marginBottom: 6 },
-  failure: { color: '#FF7A7A', fontSize: 12, marginTop: 6 },
+  bubbleAssistant: { backgroundColor: t.bg.surface, flexGrow: 1, maxWidth: '100%' },
+  bubbleText: { color: t.text.primary, fontSize: 15, lineHeight: 21 },
+  reasoning: { color: t.text.muted, fontSize: 12, lineHeight: 17, marginBottom: 6, fontStyle: 'italic' },
+  reasoningTag: { color: t.text.muted, fontStyle: 'normal' },
+  reasoningToggle: { color: t.text.muted, fontSize: 11, marginTop: 2, marginBottom: 6 },
+  failure: { color: t.semantic.dangerText, fontSize: 12, marginTop: 6 },
   toolCard: {
-    backgroundColor: '#101216',
+    backgroundColor: t.bg.subtle,
     borderWidth: 1,
-    borderColor: '#1E2128',
+    borderColor: t.border.subtle,
     borderRadius: 12,
     padding: 12,
     marginBottom: 10,
   },
-  toolCardError: { borderColor: '#4A2326' },
+  toolCardError: { borderColor: t.semantic.dangerText },
   toolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   toolName: {
-    color: '#8FB6FF',
+    color: t.text.primary,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  toolSummary: { flex: 1, color: '#C9CDD6', fontSize: 13 },
-  toolError: { color: '#FF7A7A', fontSize: 11 },
+  toolSummary: { flex: 1, color: t.text.secondary, fontSize: 13 },
+  toolError: { color: t.semantic.dangerText, fontSize: 11 },
   toolCommand: {
-    color: '#6E7585',
+    color: t.text.muted,
     fontSize: 11,
     lineHeight: 16,
     marginTop: 6,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   toolBody: {
-    color: '#9AA1B0',
+    color: t.text.secondary,
     fontSize: 11,
     lineHeight: 16,
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#1E2128',
+    borderTopColor: t.border.subtle,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  toolPending: { color: '#5B6070', fontSize: 11, marginTop: 6 },
-  toolMore: { color: '#4C5261', fontSize: 10, marginTop: 6 },
+  toolPending: { color: t.text.muted, fontSize: 11, marginTop: 6 },
+  toolMore: { color: t.text.muted, fontSize: 10, marginTop: 6 },
   filesRow: { paddingHorizontal: 2, marginBottom: 10 },
   noticeRow: { alignItems: 'center', marginVertical: 8 },
   noticeText: {
-    color: '#5B6070',
+    color: t.text.muted,
     fontSize: 11,
     textAlign: 'center',
     paddingHorizontal: 24,
@@ -2415,13 +2422,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#241D12',
+    backgroundColor: t.semantic.gateAmberBg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#3A2A12',
+    borderColor: t.border.default,
   },
-  pendingBarDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F5B84C' },
-  pendingBarText: { flex: 1, color: '#F5B84C', fontSize: 13 },
-  pendingBarAction: { color: '#F5B84C', fontSize: 13, fontWeight: '700' },
+  pendingBarDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.semantic.gateAmberText },
+  pendingBarText: { flex: 1, color: t.semantic.gateAmberText, fontSize: 13 },
+  pendingBarAction: { color: t.semantic.gateAmberText, fontSize: 13, fontWeight: '700' },
   jumpWrap: {
     position: 'absolute',
     top: -44,
@@ -2434,11 +2441,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#2B303B',
+    borderColor: t.border.default,
   },
-  jumpText: { color: '#C9CDD6', fontSize: 12 },
+  jumpText: { color: t.text.secondary, fontSize: 12 },
   modeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2446,12 +2453,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 6,
   },
-  modeLabel: { color: '#5B6070', fontSize: 11, marginRight: 2 },
-  modeChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: '#15171C' },
-  modeChipOn: { backgroundColor: '#22304A' },
-  modeText: { color: '#7A8091', fontSize: 11 },
-  modeTextOn: { color: '#8FB6FF', fontWeight: '600' },
-  modeHint: { color: '#4C5261', fontSize: 11, marginLeft: 4 },
+  modeLabel: { color: t.text.muted, fontSize: 11, marginRight: 2 },
+  modeChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: t.bg.surface },
+  modeChipOn: { backgroundColor: t.action.primaryBg },
+  modeText: { color: t.text.muted, fontSize: 11 },
+  modeTextOn: { color: t.action.primaryText, fontWeight: '600' },
+  modeHint: { color: t.text.muted, fontSize: 11, marginLeft: 4 },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2460,24 +2467,24 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   statusChip: {
-    color: '#8FB6FF',
+    color: t.text.primary,
     fontSize: 10.5,
     fontWeight: '600',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 999,
-    backgroundColor: '#1A2233',
+    backgroundColor: t.bg.surface,
   },
   statusChipBox: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 999,
-    backgroundColor: '#1A2233',
+    backgroundColor: t.bg.surface,
   },
-  statusChipBoxLocked: { backgroundColor: '#1B1D22' },
-  statusChipText: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '600' },
-  statusChipTextLocked: { color: '#6E7585' },
-  statusMeta: { flex: 1, color: '#4C5261', fontSize: 10.5 },
+  statusChipBoxLocked: { backgroundColor: t.bg.surface },
+  statusChipText: { color: t.text.secondary, fontSize: 10.5, fontWeight: '600' },
+  statusChipTextLocked: { color: t.text.muted },
+  statusMeta: { flex: 1, color: t.text.muted, fontSize: 10.5 },
   editBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2487,10 +2494,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#1E1B2A',
+    backgroundColor: t.semantic.gateAmberBg,
   },
-  editBarText: { color: '#C4A8FF', fontSize: 11.5 },
-  editBarAction: { color: '#8FB6FF', fontSize: 11.5, fontWeight: '600' },
+  editBarText: { color: t.semantic.gateAmberText, fontSize: 11.5 },
+  editBarAction: { color: t.text.primary, fontSize: 11.5, fontWeight: '600' },
   fileChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2506,13 +2513,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#151B26',
+    backgroundColor: t.bg.surface,
   },
-  fileChipError: { backgroundColor: '#2A1A1C' },
-  fileChipName: { maxWidth: 160, color: '#D6DAE3', fontSize: 11.5 },
-  fileChipState: { color: '#6E7585', fontSize: 10.5 },
-  fileChipStateError: { color: '#FF7A7A' },
-  fileChipClose: { color: '#6E7585', fontSize: 15, lineHeight: 17 },
+  fileChipError: { backgroundColor: t.semantic.dangerBg },
+  fileChipName: { maxWidth: 160, color: t.text.primary, fontSize: 11.5 },
+  fileChipState: { color: t.text.muted, fontSize: 10.5 },
+  fileChipStateError: { color: t.semantic.dangerText },
+  fileChipClose: { color: t.text.muted, fontSize: 15, lineHeight: 17 },
   quoteBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2522,13 +2529,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#151B26',
+    backgroundColor: t.bg.surface,
     borderLeftWidth: 2,
-    borderLeftColor: '#3A6BD6',
+    borderLeftColor: t.text.primary,
   },
-  quoteTag: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '700' },
-  quoteText: { flex: 1, color: '#8A93A6', fontSize: 11 },
-  quoteClose: { color: '#6E7585', fontSize: 16, lineHeight: 18 },
+  quoteTag: { color: t.text.primary, fontSize: 10.5, fontWeight: '700' },
+  quoteText: { flex: 1, color: t.text.secondary, fontSize: 11 },
+  quoteClose: { color: t.text.muted, fontSize: 16, lineHeight: 18 },
   connBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2538,41 +2545,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#2A2318',
+    backgroundColor: t.semantic.gateAmberBg,
   },
-  connDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#E8B75C' },
-  connText: { color: '#E8B75C', fontSize: 11 },
+  connDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.semantic.gateAmberText },
+  connText: { color: t.semantic.gateAmberText, fontSize: 11 },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#1E2128',
+    borderTopColor: t.border.subtle,
   },
   input: {
     flex: 1,
     maxHeight: 120,
     minHeight: 40,
-    backgroundColor: '#15171C',
+    backgroundColor: t.bg.surface,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 10,
-    color: '#EDEFF3',
+    color: t.text.primary,
     fontSize: 15,
   },
   send: {
     marginLeft: 8,
-    backgroundColor: '#F5F6F8',
+    backgroundColor: t.action.primaryBg,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   sendDisabled: { opacity: 0.3 },
-  sendText: { color: '#0B0C0F', fontSize: 14, fontWeight: '600' },
+  sendText: { color: t.action.primaryText, fontSize: 14, fontWeight: '600' },
   localImages: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
-  localImage: { width: 120, height: 90, borderRadius: 8, backgroundColor: '#1B1E25' },
+  localImage: { width: 120, height: 90, borderRadius: 8, backgroundColor: t.bg.surface },
   attach: {
     width: 40,
     height: 40,
@@ -2580,10 +2587,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
-    backgroundColor: '#15171C',
+    backgroundColor: t.bg.surface,
   },
   attachDisabled: { opacity: 0.4 },
-  attachText: { color: '#8A90A0', fontSize: 20, lineHeight: 22 },
+  attachText: { color: t.text.muted, fontSize: 20, lineHeight: 22 },
   pickedRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2592,7 +2599,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   pickedItem: { position: 'relative' },
-  pickedImage: { width: 64, height: 64, borderRadius: 8, backgroundColor: '#1B1E25' },
+  pickedImage: { width: 64, height: 64, borderRadius: 8, backgroundColor: t.bg.surface },
   pickedRemove: {
     position: 'absolute',
     top: -6,
@@ -2600,16 +2607,18 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#2A2E37',
+    backgroundColor: t.border.default,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pickedRemoveText: { color: '#C9CDD6', fontSize: 12, lineHeight: 14, fontWeight: '700' },
+  pickedRemoveText: { color: t.text.secondary, fontSize: 12, lineHeight: 14, fontWeight: '700' },
   outlineButton: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
   },
-  outlineText: { color: '#C9CDD6', fontSize: 12, fontWeight: '600' },
-});
+  outlineText: { color: t.text.secondary, fontSize: 12, fontWeight: '600' },
+  });
+}
+
