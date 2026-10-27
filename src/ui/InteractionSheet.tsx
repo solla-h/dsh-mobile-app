@@ -23,6 +23,7 @@ import {
   type QuestionAnswer,
 } from '../protocol/interactions';
 import { approvalRisk } from '../protocol/risk';
+import { chargeStartFeedback, successFeedback } from './haptics';
 
 interface Props {
   approval: PendingApproval | null;
@@ -118,6 +119,7 @@ function ApprovalBody({
 
   const startCharge = () => {
     if (doneRef.current) return;
+    chargeStartFeedback();
     Animated.timing(fill, {
       toValue: 1,
       duration: 550,
@@ -126,6 +128,7 @@ function ApprovalBody({
     }).start(({ finished }) => {
       if (!finished || doneRef.current) return;
       doneRef.current = true;
+      successFeedback();
       onApproval('allowed-once');
     });
   };
