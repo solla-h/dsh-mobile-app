@@ -748,6 +748,14 @@ function AppBody() {
             session={active}
             queued={queues[active.sessionId] ?? []}
             capabilities={hello?.capabilities ?? []}
+            running={Boolean(active.running)}
+            onRunningChange={(next) => {
+              // 运行状态放这里存：重连后 sessions 帧会把它刷成服务端的真实值，
+              // 会话页只负责读，不会再各存一份各跑各的。
+              setActive((current) =>
+                current && current.running !== next ? { ...current, running: next } : current,
+              );
+            }}
             onBack={() => {
               setActive(null);
               client.send({ type: 'sessions' });
