@@ -1,25 +1,47 @@
 {
   "expo": {
-    "name": "dsh-mobile-app",
-    "slug": "dsh-mobile-app",
-    "version": "1.0.0",
+    "name": "DSH Mobile",
+    "slug": "dsh-mobile",
+    "version": "0.1.0",
+    "scheme": "dshmobile",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.dshmobile.client"
     },
     "android": {
+      "package": "app.dshmobile.client",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B0C0F",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "扫描服务器上 dsh-pair 打印的二维码，完成设备配对。",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "从相册选择图片，随消息一起发送给 agent。",
+          "cameraPermission": "拍摄照片，随消息一起发送给 agent。"
+        }
+      ],
+      "expo-sharing"
+    ]
   }
 }
