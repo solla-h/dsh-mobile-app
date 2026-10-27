@@ -89,6 +89,9 @@ interface Props {
   /** hello.capabilities：老网关可能没开文件下载，别把卡片画成一个点了没反应的按钮 */
   capabilities: string[];
   onBack: () => void;
+  /** 会话是否在跑：由 App 持有，重连后能跟着会话列表一起刷新 */
+  running: boolean;
+  onRunningChange: (next: boolean) => void;
   /** fork 出来的新会话，交给上层切过去 */
   onForked: (sessionId: string) => void;
   /** 跳到另一个会话（比如分叉的来源） */
@@ -194,6 +197,8 @@ export function SessionScreen({
   queued,
   capabilities,
   onBack,
+  running,
+  onRunningChange,
   onForked,
   onOpenSession,
 }: Props) {
@@ -203,7 +208,6 @@ export function SessionScreen({
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(Boolean(session.running));
   const [error, setError] = useState<string | null>(null);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
@@ -287,10 +291,13 @@ export function SessionScreen({
   const onForkedRef = useRef(onForked);
   /** 能力列表晚到会让 canPickPreset 翻转，同样不能让它触发重订阅（会清空待发附件）。 */
   const canPickPresetRef = useRef(canPickPreset);
+  /** running 存在上层，帧回调里要通过 ref 改，免得它进依赖把订阅带着重跑。 */
+  const onRunningChangeRef = useRef(onRunningChange);
   useEffect(() => {
     onForkedRef.current = onForked;
     canPickPresetRef.current = canPickPreset;
-  }, [onForked, canPickPreset]);
+    onRunningChangeRef.current = onRunningChange;
+  }, [onForked, canPickPreset, onRunningChange]);
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -409,13 +416,13 @@ export function SessionScreen({
         if (eventFrame.sessionId !== session.sessionId || !eventFrame.event) return;
         const type = eventFrame.event.type;
         if (type === 'turn/start') {
-          setRunning(true);
+          onRunningChangeRef.current(true);
           setCancelling(false);
         }
         // 正式消息已落地，撤掉流式草稿，避免同一段文字出现两份。
         if (type === 'assistant/message') setStreaming(null);
         if (type === 'turn/end') {
-          setRunning(false);
+          onRunningChangeRef.current(false);
           setCancelling(false);
           setStreaming(null);
           const payload = eventFrame.event as Record<string, any>;
@@ -450,7 +457,7 @@ export function SessionScreen({
         if (streamFrame.sessionId !== session.sessionId || !streamFrame.frame) return;
         const inner = streamFrame.frame;
         if (inner.type === 'start') {
-          setRunning(true);
+          onRunningChangeRef.current(true);
           setStreaming({
             attemptId: String(inner.attemptId ?? ''),
             text: '',
@@ -475,7 +482,7 @@ export function SessionScreen({
         }
         if (inner.type === 'end') {
           setStreaming(null);
-          if (inner.outcome?.kind !== 'committed') setRunning(false);
+          if (inner.outcome?.kind !== 'committed') onRunningChangeRef.current(false);
           return;
         }
         return;
@@ -1253,7 +1260,7 @@ export function SessionScreen({
           localUris: images.map((item) => item.uri),
         },
       ]);
-      setRunning(true);
+      onRunningChangeRef.current(true);
       // 自己发消息一定是要看最新进展的。
       atBottomRef.current = true;
       setShowJump(false);
