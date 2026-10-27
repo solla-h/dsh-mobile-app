@@ -71,6 +71,7 @@ import type { GatewayClient } from '../transport/gateway-client';
 import { ActionSheet, type SheetAction } from './ActionSheet';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
+import { tapFeedback } from './haptics';
 import { InteractionSheet } from './InteractionSheet';
 import { MarkdownView } from './Markdown';
 import { ImageViewer, MessageImages } from './MessageImages';
@@ -1104,6 +1105,7 @@ export function SessionScreen({
         : undefined,
     });
     if (sent) {
+      tapFeedback();
       setDraft('');
       setPicked([]);
       setQuote(null);
