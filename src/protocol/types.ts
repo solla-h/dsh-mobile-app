@@ -262,6 +262,43 @@ export interface ForkFrame {
   sessionId: string;
 }
 
+/** 网关支持的全部 agent 预设。 */
+export interface AgentPresetsFrame {
+  kind: 'agent-presets';
+  presets?: unknown;
+  modeSelectionEnabled?: boolean;
+}
+
+/**
+ * 当前会话用的预设。locked 一旦变 true 就不会再变回来：
+ * 会话只要跑过任何一轮，预设就固定了。
+ */
+export interface SessionAgentPresetFrame {
+  kind: 'session-agent-preset';
+  sessionId: string;
+  agentPreset?: string | null;
+  locked?: boolean;
+  requestId?: string;
+}
+
+/** 切换成功。注意：响应里故意没有 locked 字段。 */
+export interface SelectAgentPresetFrame {
+  kind: 'select-agent-preset';
+  sessionId: string;
+  agentPreset: string;
+  requestId?: string;
+}
+
+/** 预设变化推送：只带变化的那个字段，按字段合并。 */
+export interface SessionAgentPresetUpdatedFrame {
+  kind: 'session-agent-preset-updated';
+  sessionId: string;
+  agentPreset?: string;
+  locked?: boolean;
+  seq?: number;
+  time?: number;
+}
+
 export interface SessionCreatedFrame {
   kind: 'session-created';
   requestId: string;
@@ -292,6 +329,10 @@ export type ServerFrame =
   | TasksFrame
   | GoalFrame
   | ForkFrame
+  | AgentPresetsFrame
+  | SessionAgentPresetFrame
+  | SelectAgentPresetFrame
+  | SessionAgentPresetUpdatedFrame
   | FileResolvedFrame
   | FileDownloadOpenedFrame
   | FileDownloadChunkFrame
@@ -340,6 +381,9 @@ export type ClientFrame =
   | { type: 'command-select'; sessionId: string; command: string; optionId: string }
   | { type: 'session-stats'; sessionId: string }
   | { type: 'fork'; sessionId: string; atSeq?: number; historyFormatVersion?: number }
+  | { type: 'agent-presets' }
+  | { type: 'session-agent-preset'; sessionId: string; requestId?: string }
+  | { type: 'select-agent-preset'; sessionId: string; agentPreset: string; requestId?: string }
   | { type: 'tasks'; sessionId: string }
   | { type: 'goal'; sessionId: string }
   | {

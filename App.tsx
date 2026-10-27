@@ -92,6 +92,10 @@ function AppBody() {
   const [pending, setPending] = useState<PendingMap>({});
   /** 正在重命名的会话；非 null 时弹输入框。 */
   const [renaming, setRenaming] = useState<SessionItem | null>(null);
+  const [menuSession, setMenuSession] = useState<SessionItem | null>(null);
+  /** 默认不显示归档会话，避免列表越来越长 */
+  const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState('');
   const [renameDraft, setRenameDraft] = useState('');
   /** 每个会话的待发送队列；agent 还在跑的时候新消息会排在这里。 */
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
@@ -106,8 +110,16 @@ function AppBody() {
 
   const visibleSessions = useMemo(() => {
     const hidden = new Set(archived);
-    return sessions.filter((item) => !hidden.has(item.sessionId));
-  }, [archived, sessions]);
+    const query = search.trim().toLowerCase();
+    return sessions.filter((item) => {
+      if (!showArchived && hidden.has(item.sessionId)) return false;
+      if (!query) return true;
+      const title = item.projections?.values.title ?? '';
+      return (
+        title.toLowerCase().includes(query) || (item.cwd ?? '').toLowerCase().includes(query)
+      );
+    });
+  }, [archived, search, sessions, showArchived]);
 
   /** 连上 control 通道；只有拿到长期 token 之后才可能成功。 */
   const startControl = useCallback(
@@ -222,6 +234,19 @@ function AppBody() {
         }
         case 'session-archives': {
           setArchived((frame as { archivedSessionIds?: string[] }).archivedSessionIds ?? []);
+          break;
+        }
+        case 'fork': {
+          // 分叉出来的是新会话，直接切过去看。
+          const forked = frame as { sessionId?: string };
+          if (!forked.sessionId) break;
+          setActive({
+            sessionId: forked.sessionId,
+            updatedAt: Date.now(),
+            running: false,
+            blank: true,
+          });
+          client.send({ type: 'sessions' });
           break;
         }
         case 'session-created': {
@@ -466,26 +491,52 @@ function AppBody() {
     setRenaming(null);
   }, [client, renameDraft, renaming]);
 
-  const openSessionMenu = useCallback(
-    (item: SessionItem) => {
-      const title = item.projections?.values.title ?? '未命名会话';
-      Alert.alert(title, undefined, [
-        {
-          text: '重命名',
-          onPress: () => {
-            setRenameDraft(item.projections?.values.title ?? '');
-            setRenaming(item);
-          },
-        },
-        {
-          text: '归档',
-          style: 'destructive',
-          onPress: () => client.send({ type: 'session-archive', sessionId: item.sessionId }),
-        },
-        { text: '取消', style: 'cancel' },
-      ]);
+  const openSessionMenu = useCallback((item: SessionItem) => setMenuSession(item), []);
+
+  const sessionActions = useMemo<SheetAction[]>(() => {
+    const item = menuSession;
+    if (!item) return [];
+    const isArchived = archived.includes(item.sessionId);
+    return [
+      {
+        id: 'rename',
+        label: '重命名',
+        hint: item.projections?.values.title ?? '未命名会话',
+      },
+      {
+        id: 'fork',
+        label: '从最近一轮分叉',
+        hint: '复制出一个新会话，原会话不动',
+      },
+      isArchived
+        ? { id: 'unarchive', label: '取消归档' }
+        : { id: 'archive', label: '归档', hint: '从列表里收起来，随时可以再显示' },
+    ];
+  }, [archived, menuSession]);
+
+  const runSessionAction = useCallback(
+    (id: string) => {
+      const item = menuSession;
+      setMenuSession(null);
+      if (!item) return;
+      if (id === 'rename') {
+        setRenameDraft(item.projections?.values.title ?? '');
+        setRenaming(item);
+        return;
+      }
+      if (id === 'fork') {
+        client.send({ type: 'fork', sessionId: item.sessionId });
+        return;
+      }
+      if (id === 'archive') {
+        client.send({ type: 'session-archive', sessionId: item.sessionId, archived: true });
+        return;
+      }
+      if (id === 'unarchive') {
+        client.send({ type: 'session-archive', sessionId: item.sessionId, archived: false });
+      }
     },
-    [client],
+    [client, menuSession],
   );
 
   const handleForget = useCallback(async () => {
@@ -596,6 +647,25 @@ function AppBody() {
               <Text style={styles.metaLabel}>协议</Text>
               <Text style={styles.metaValue}>v{hello?.protocol ?? '?'}</Text>
             </View>
+            {sessions.length > 3 ? (
+              <View style={styles.searchWrap}>
+                <TextInput
+                  style={styles.searchInput}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="搜索标题或目录"
+                  placeholderTextColor="#5B6070"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                {search ? (
+                  <Pressable hitSlop={10} onPress={() => setSearch('')} style={styles.searchClear}>
+                    <Text style={styles.searchClearText}>×</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             <View style={styles.sectionRow}>
               <Text style={styles.sectionTitle}>会话 · {visibleSessions.length}</Text>
               <Pressable style={styles.newButton} onPress={handleCreate} disabled={creating}>
@@ -610,7 +680,20 @@ function AppBody() {
               data={visibleSessions}
               keyExtractor={(item) => item.sessionId}
               contentContainerStyle={styles.listContent}
-              ListEmptyComponent={<Text style={styles.empty}>还没有会话</Text>}
+              ListEmptyComponent={
+                <Text style={styles.empty}>
+                  {search ? '没有匹配的会话' : showArchived ? '还没有会话' : '还没有会话'}
+                </Text>
+              }
+              ListFooterComponent={
+                archived.length > 0 ? (
+                  <Pressable style={styles.archiveToggle} onPress={() => setShowArchived((v) => !v)}>
+                    <Text style={styles.archiveToggleText}>
+                      {showArchived ? '隐藏已归档' : `已归档 ${archived.length} 个 · 显示`}
+                    </Text>
+                  </Pressable>
+                ) : undefined
+              }
               renderItem={({ item }) => {
                 const waiting = pendingItems(pending, item.sessionId);
                 return (
@@ -698,6 +781,14 @@ function AppBody() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <ActionSheet
+        visible={menuSession !== null}
+        title={menuSession?.projections?.values.title ?? '未命名会话'}
+        actions={sessionActions}
+        onPick={runSessionAction}
+        onClose={() => setMenuSession(null)}
+      />
 
       <ActionSheet
         visible={gatewaySheet}
@@ -877,6 +968,20 @@ const styles = StyleSheet.create({
   },
   metaLabel: { color: '#5B6070', fontSize: 12 },
   metaValue: { color: '#C9CDD6', fontSize: 12, marginRight: 12 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 10,
+    backgroundColor: '#15171C',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  searchInput: { flex: 1, color: '#EDEFF3', fontSize: 14, paddingVertical: 9 },
+  searchClear: { paddingHorizontal: 6, paddingVertical: 4 },
+  searchClearText: { color: '#6E7585', fontSize: 18, lineHeight: 20 },
+  archiveToggle: { alignItems: 'center', paddingVertical: 14 },
+  archiveToggleText: { color: '#6E7585', fontSize: 12, fontWeight: '600' },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
