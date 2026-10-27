@@ -228,6 +228,8 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   const [sheetHidden, setSheetHidden] = useState(false);
   /** 长按某条消息后弹出的操作表；null 表示没打开。 */
   const [actionMessage, setActionMessage] = useState<ChatMessage | null>(null);
+  /** 连接状态：断线时输入框上方给一条提示，别让用户对着空气发消息。 */
+  const [conn, setConn] = useState<string>('ready');
   /** 轻量提示（复制成功之类），2 秒后自己消失。 */
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -654,6 +656,8 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
 
   // 断线重连后服务端不再记得我们的订阅，必须重新订阅并补一次历史，
   // 否则回到前台会一直看着断线前的旧内容。
+  useEffect(() => client.onState((state) => setConn(state)), [client]);
+
   useEffect(() => {
     const off = client.onState((state) => {
       if (state !== 'ready') return;
@@ -1526,6 +1530,14 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
               ) : null}
             </View>
           ) : null}
+          {conn !== 'ready' ? (
+            <View style={styles.connBar}>
+              <View style={styles.connDot} />
+              <Text style={styles.connText}>
+                {conn === 'connecting' ? '正在连接网关…' : '连接已断开，正在自动重连'}
+              </Text>
+            </View>
+          ) : null}
           <CommandPalette groups={paletteGroups} onPick={pickCommand} />
           <View style={styles.composer}>
             <Pressable
@@ -2012,6 +2024,19 @@ const styles = StyleSheet.create({
   statusChipText: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '600' },
   statusChipTextLocked: { color: '#6E7585' },
   statusMeta: { flex: 1, color: '#4C5261', fontSize: 10.5 },
+  connBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 14,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#2A2318',
+  },
+  connDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#E8B75C' },
+  connText: { color: '#E8B75C', fontSize: 11 },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
