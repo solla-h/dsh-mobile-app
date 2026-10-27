@@ -113,12 +113,14 @@ export class FileUploader {
       waiter.reject(error);
       return;
     }
-    // 没有对应的等待者（比如已经超时了），只能让所有在途上传一起失败。
-    for (const [id, pending] of this.waiters) {
-      this.waiters.delete(id);
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
+    // 错误帧常常只带 requestType、不带 id：这时按「最早的那个在途请求」认领，
+    // 别把其他文件的上传也一起打断。
+    const first = this.waiters.entries().next();
+    if (first.done) return;
+    const [id, pending] = first.value;
+    this.waiters.delete(id);
+    clearTimeout(pending.timer);
+    pending.reject(error);
   }
 
   private request(

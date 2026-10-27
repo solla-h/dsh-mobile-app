@@ -86,3 +86,22 @@ npx expo lint
 - **不要改手机的输入法设置**（`ime enable/disable/set`）。需要输入空格时用设备侧引号：
   `adb shell "input text 'a b c'"`。
 
+
+## 文件上传（file-upload-v1）
+
+`src/transport/file-upload.ts` 实现 open → chunk → finish 三段式，收到 `receiptId` 后
+把它放进 `message.files`：
+
+```
+{type:'file-upload-open', requestId, sessionId, name, size, sha256}   // name 只能是叶子文件名
+{type:'file-upload-chunk', uploadId, offset, data}                    // offset = 已发送的字节数
+{type:'file-upload-finish', uploadId}
+{type:'message', sessionId, text, files:[{receiptId}]}
+```
+
+- 每片长度必须是 4 的倍数；**末片带 `=` 填充**，所以 offset 要用「解码后字节数」累加，
+  不能用 `chars/4*3`（会多算 1~2 字节，整条上传被 `file-upload-offset` 拒掉）。
+  `decodedBytesOf()` 就是干这个的，已有单测覆盖。
+- 上传绑定在创建它的连接上，断线即作废，所以离线时不允许带文件发送。
+- 本地限制 24 MB（服务端允许 512 MB）：整份读成 base64 放内存，手机上再大就容易 OOM。
+
