@@ -40,14 +40,17 @@ const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 export function MarkdownView({
   text,
   onFileLink,
+  onQuoteCode,
 }: {
   text: string;
   /** 本地文件链接交给调用方打开；网页链接仍然走系统浏览器。 */
   onFileLink?: (path: string) => void;
+  /** 代码块「引用」：手机上没有好用的拖选，整块塞进输入框更实际。 */
+  onQuoteCode?: (lang: string, code: string) => void;
 }) {
   const tokens = useMemo(() => md.parse(text, {}) as unknown as MdToken[], [text]);
   if (!text.trim()) return null;
-  return <View>{renderBlocks(tokens, 0, tokens.length, 'md', onFileLink)}</View>;
+  return <View>{renderBlocks(tokens, 0, tokens.length, 'md', onFileLink, onQuoteCode)}</View>;
 }
 
 function findClose(tokens: MdToken[], from: number, open: string, close: string): number {
@@ -68,6 +71,7 @@ function renderBlocks(
   to: number,
   keyBase: string,
   onFileLink?: (path: string) => void,
+  onQuoteCode?: (lang: string, code: string) => void,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let i = from;
@@ -100,7 +104,14 @@ function renderBlocks(
       case 'fence':
       case 'code_block': {
         const lang = (token.info || '').trim().split(/\s+/)[0] ?? '';
-        out.push(<CodeBlock key={keyBase + '-c' + i} code={token.content.replace(/\n$/, '')} lang={lang} />);
+        out.push(
+          <CodeBlock
+            key={keyBase + '-c' + i}
+            code={token.content.replace(/\n$/, '')}
+            lang={lang}
+            onQuote={onQuoteCode}
+          />,
+        );
         i += 1;
         break;
       }
@@ -109,7 +120,7 @@ function renderBlocks(
         const key = keyBase + '-q' + i;
         out.push(
           <View key={key} style={styles.quote}>
-            {renderBlocks(tokens, i + 1, end, key, onFileLink)}
+            {renderBlocks(tokens, i + 1, end, key, onFileLink, onQuoteCode)}
           </View>,
         );
         i = end + 1;
@@ -134,7 +145,9 @@ function renderBlocks(
           items.push(
             <View key={key} style={styles.listRow}>
               <Text style={styles.listMarker}>{ordered ? start + index + '.' : '•'}</Text>
-              <View style={styles.listBody}>{renderBlocks(tokens, cursor + 1, itemEnd, key, onFileLink)}</View>
+              <View style={styles.listBody}>
+                {renderBlocks(tokens, cursor + 1, itemEnd, key, onFileLink, onQuoteCode)}
+              </View>
             </View>,
           );
           index += 1;
@@ -515,23 +528,38 @@ const SPAN_COLOR: Record<SpanKind, { color: string }> = {
   literal: { color: '#C792EA' },
 };
 
-function CodeBlock({ code, lang }: { code: string; lang: string }) {
+function CodeBlock({
+  code,
+  lang,
+  onQuote,
+}: {
+  code: string;
+  lang: string;
+  onQuote?: (lang: string, code: string) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const spans = useMemo(() => highlight(code, lang), [code, lang]);
   return (
     <View style={styles.codeBlock}>
       <View style={styles.codeHeader}>
         <Text style={styles.codeLang}>{lang || 'text'}</Text>
-        <Pressable
-          hitSlop={8}
-          onPress={() => {
-            void Clipboard.setStringAsync(code);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-        >
-          <Text style={styles.copy}>{copied ? '已复制' : '复制'}</Text>
-        </Pressable>
+        <View style={styles.codeActions}>
+          {onQuote ? (
+            <Pressable hitSlop={8} onPress={() => onQuote(lang, code)}>
+              <Text style={styles.copy}>引用</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              void Clipboard.setStringAsync(code);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            <Text style={styles.copy}>{copied ? '已复制' : '复制'}</Text>
+          </Pressable>
+        </View>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.codeScroll}>
         <Text style={styles.codeText}>
@@ -614,6 +642,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1E2128',
   },
   codeLang: { color: '#5B6070', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase' },
+  codeActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   copy: { color: '#7A8091', fontSize: 11 },
   codeScroll: { paddingHorizontal: 10, paddingVertical: 8 },
   codeText: { fontFamily: MONO, fontSize: 12.5, lineHeight: 18 },

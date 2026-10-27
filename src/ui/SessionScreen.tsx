@@ -141,6 +141,15 @@ function dayLabel(ms: number): string | null {
     : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+/** 引用代码块时拼进消息里的文本；太长就截断，别把一整屏代码塞进去。 */
+function formatQuote(quote: { lang: string; code: string }): string {
+  const lines = quote.code.split('\n');
+  const shown = lines.slice(0, 12);
+  const fence = '```' + (quote.lang || '');
+  const tail = lines.length > shown.length ? [`…（共 ${lines.length} 行）`] : [];
+  return [`> 引用代码${quote.lang ? `（${quote.lang}）` : ''}：`, fence, ...shown, ...tail, '```'].join('\n');
+}
+
 /** 长按菜单标题：只给一眼能认出是哪条消息的摘要。 */
 function previewOf(text: string): string | undefined {
   const flat = text.replace(/\s+/g, ' ').trim();
@@ -230,6 +239,8 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   const [actionMessage, setActionMessage] = useState<ChatMessage | null>(null);
   /** 连接状态：断线时输入框上方给一条提示，别让用户对着空气发消息。 */
   const [conn, setConn] = useState<string>('ready');
+  /** 从代码块引用过来的内容，发送时自动拼在正文前面。 */
+  const [quote, setQuote] = useState<{ lang: string; code: string } | null>(null);
   /** 上下文占用百分比，0 表示还没拿到统计 */
   const contextPct = useMemo(() => {
     const pressure = stats?.contextPressure;
@@ -1017,7 +1028,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   }, [cancelling, client, running, session.sessionId]);
 
   const send = useCallback(() => {
-    const text = draft.trim();
+    const text = [quote ? formatQuote(quote) : '', draft.trim()].filter(Boolean).join('\n\n');
     const images = picked;
     if (!text && images.length === 0) return;
     const sent = client.send({
@@ -1033,6 +1044,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
     if (sent) {
       setDraft('');
       setPicked([]);
+      setQuote(null);
       setPendingSends((current) => [
         ...current,
         {
@@ -1059,9 +1071,10 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
       });
       setDraft('');
       setPicked([]);
+      setQuote(null);
       setError(null);
     }
-  }, [client, draft, picked, running, sendMode, session.sessionId]);
+  }, [client, draft, picked, quote, running, sendMode, session.sessionId]);
 
   /** 离线待发的消息：直接删掉，不再重试。 */
   const discardOffline = useCallback((id: string) => {
@@ -1402,8 +1415,9 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
                 onOpenFile={openFile}
                 canDownloadFiles={canDownloadFiles}
                   onDiscardOffline={discardOffline}
-                  onLongPress={setActionMessage}
-                />
+                onLongPress={setActionMessage}
+                onQuoteCode={(lang, code) => setQuote({ lang, code })}
+              />
               </View>
             )}
           />
@@ -1551,6 +1565,17 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
               ) : null}
             </View>
           ) : null}
+          {quote ? (
+            <View style={styles.quoteBar}>
+              <Text style={styles.quoteTag}>引用{quote.lang ? ' · ' + quote.lang : ''}</Text>
+              <Text style={styles.quoteText} numberOfLines={1}>
+                {quote.code.split('\n')[0].trim()}
+              </Text>
+              <Pressable hitSlop={8} onPress={() => setQuote(null)}>
+                <Text style={styles.quoteClose}>×</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {conn !== 'ready' ? (
             <View style={styles.connBar}>
               <View style={styles.connDot} />
@@ -1696,6 +1721,7 @@ function MessageRow({
   canDownloadFiles,
   onDiscardOffline,
   onLongPress,
+  onQuoteCode,
 }: {
   message: ChatMessage;
   attachmentCache: Record<string, string>;
@@ -1707,6 +1733,7 @@ function MessageRow({
   canDownloadFiles: boolean;
   onDiscardOffline: (id: string) => void;
   onLongPress: (message: ChatMessage) => void;
+  onQuoteCode: (lang: string, code: string) => void;
 }) {
   const [toolOpen, setToolOpen] = useState(false);
   /** 本地回显图片的全屏预览；历史图片走 MessageImages 自己的查看器。 */
@@ -1838,7 +1865,11 @@ function MessageRow({
             {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
           </>
         ) : message.text ? (
-          <MarkdownView text={message.text} onFileLink={canDownloadFiles ? onOpenFile : undefined} />
+          <MarkdownView
+            text={message.text}
+            onFileLink={canDownloadFiles ? onOpenFile : undefined}
+            onQuoteCode={onQuoteCode}
+          />
         ) : (
           <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>
         )}
@@ -2047,6 +2078,22 @@ const styles = StyleSheet.create({
   statusChipText: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '600' },
   statusChipTextLocked: { color: '#6E7585' },
   statusMeta: { flex: 1, color: '#4C5261', fontSize: 10.5 },
+  quoteBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#151B26',
+    borderLeftWidth: 2,
+    borderLeftColor: '#3A6BD6',
+  },
+  quoteTag: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '700' },
+  quoteText: { flex: 1, color: '#8A93A6', fontSize: 11 },
+  quoteClose: { color: '#6E7585', fontSize: 16, lineHeight: 18 },
   connBar: {
     flexDirection: 'row',
     alignItems: 'center',
