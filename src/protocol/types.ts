@@ -401,6 +401,17 @@ export type ClientFrame =
   | { type: 'file-download-open'; requestId: string; sessionId: string; path: string }
   | { type: 'file-download-read'; transferId: string; offset: number }
   | { type: 'file-download-cancel'; transferId: string }
+  | {
+      type: 'file-upload-open';
+      requestId: string;
+      sessionId: string;
+      name: string;
+      size: number;
+      sha256: string;
+    }
+  | { type: 'file-upload-chunk'; uploadId: string; offset: number; data: string }
+  | { type: 'file-upload-finish'; uploadId: string }
+  | { type: 'file-upload-cancel'; uploadId: string }
   | { type: 'session-archive'; sessionId: string; archived?: boolean; requestId?: string }
   | { type: 'session-rename'; sessionId: string; title: string }
   | { type: 'attachment'; sessionId: string; attachmentId: string }
@@ -419,4 +430,6 @@ export type ClientFrame =
       clientTimeZone?: string;
       /** 纯图片消息允许 text 为空，但 text 和 images 至少要有一项。 */
       images?: OutgoingImage[];
+      /** 已上传文件的收据，来自 file-upload-completed.receiptId */
+      files?: { receiptId: string }[];
     };
