@@ -1201,13 +1201,18 @@ export function SessionScreen({
     if (editingQueue) {
       const next = draft.trim();
       if (!next) return;
-      client.send({
+      const edited = client.send({
         type: 'queue-update',
         sessionId: session.sessionId,
         itemId: editingQueue,
         action: 'edit',
         text: next,
       });
+      if (!edited) {
+        // 断线时别把改到一半的内容清掉：留在输入框里，重连后再发。
+        setError('连接已断开，排队消息没改成');
+        return;
+      }
       setEditingQueue(null);
       setDraft('');
       return;
@@ -1352,14 +1357,26 @@ export function SessionScreen({
 
   const removeQueued = useCallback(
     (queueId: string) => {
-      client.send({ type: 'queue-update', sessionId: session.sessionId, itemId: queueId, action: 'remove' });
+      const sent = client.send({
+        type: 'queue-update',
+        sessionId: session.sessionId,
+        itemId: queueId,
+        action: 'remove',
+      });
+      if (!sent) setError('连接已断开，队列没改成');
     },
     [client, session.sessionId],
   );
 
   const steerQueued = useCallback(
     (queueId: string) => {
-      client.send({ type: 'queue-update', sessionId: session.sessionId, itemId: queueId, action: 'steer' });
+      const sent = client.send({
+        type: 'queue-update',
+        sessionId: session.sessionId,
+        itemId: queueId,
+        action: 'steer',
+      });
+      if (!sent) setError('连接已断开，插话没发出去');
     },
     [client, session.sessionId],
   );
