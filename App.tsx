@@ -626,7 +626,11 @@ function AppBody() {
         </View>
 
         {detail && !connected ? <Text style={styles.hint}>{detail}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <Pressable onPress={() => setError(null)} hitSlop={6}>
+            <Text style={styles.error}>{error} · 点击关闭</Text>
+          </Pressable>
+        ) : null}
 
         {connected && active ? (
           <SessionScreen
