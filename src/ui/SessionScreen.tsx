@@ -270,6 +270,8 @@ export function SessionScreen({
   const [conn, setConn] = useState<string>('ready');
   /** 从代码块引用过来的内容，发送时自动拼在正文前面。 */
   const [quote, setQuote] = useState<{ lang: string; code: string } | null>(null);
+  /** 正在编辑的排队消息 id；非 null 时「发送」变成「保存排队内容」。 */
+  const [editingQueue, setEditingQueue] = useState<string | null>(null);
   /** 上下文占用百分比，0 表示还没拿到统计 */
   const contextPct = useMemo(() => {
     const pressure = stats?.contextPressure;
@@ -629,6 +631,11 @@ export function SessionScreen({
         client.send({ type: 'goal', sessionId: session.sessionId });
         return;
       }
+      if (kind === 'queue-item-updated') {
+        const result = frame as unknown as { accepted?: boolean; action?: string };
+        if (result.accepted === false) setError('排队消息没有改成，可能已经开始执行了');
+        return;
+      }
       if (kind === 'session-stream-reset') {
         setStreaming(null);
         return;
@@ -689,6 +696,8 @@ export function SessionScreen({
     todosSeqRef.current = -1;
     goalSeqRef.current = -1;
     setFileStates({});
+    setEditingQueue(null);
+    setPickedFiles([]);
     const downloader = new FileDownloader(
       session.sessionId,
       (frame) => client.send(frame),
@@ -1160,6 +1169,21 @@ export function SessionScreen({
   const canSend = !uploadingFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
 
   const send = useCallback(() => {
+    // 编辑排队消息：走 queue-update 的 edit，不要新发一条。
+    if (editingQueue) {
+      const next = draft.trim();
+      if (!next) return;
+      client.send({
+        type: 'queue-update',
+        sessionId: session.sessionId,
+        itemId: editingQueue,
+        action: 'edit',
+        text: next,
+      });
+      setEditingQueue(null);
+      setDraft('');
+      return;
+    }
     const text = [quote ? formatQuote(quote) : '', draft.trim()].filter(Boolean).join('\n\n');
     const images = picked;
     const files = readyFiles;
@@ -1215,7 +1239,7 @@ export function SessionScreen({
       setQuote(null);
       setError(null);
     }
-  }, [client, draft, picked, quote, readyFiles, running, sendMode, session.sessionId]);
+  }, [client, draft, editingQueue, picked, quote, readyFiles, running, sendMode, session.sessionId]);
 
   /** 离线待发的消息：直接删掉，不再重试。 */
   const discardOffline = useCallback((id: string) => {
@@ -1275,6 +1299,19 @@ export function SessionScreen({
     },
     [actionMessage, client, session.sessionId, showToast],
   );
+
+  /** 把排队中的消息拉回输入框改；改完用 queue-update 的 edit 覆盖。 */
+  const startEditQueued = useCallback((queueId: string, text: string) => {
+    setEditingQueue(queueId);
+    setDraft(text);
+    setQuote(null);
+    composerRef.current?.focus();
+  }, []);
+
+  const cancelEditQueued = useCallback(() => {
+    setEditingQueue(null);
+    setDraft('');
+  }, []);
 
   const removeQueued = useCallback(
     (queueId: string) => {
@@ -1542,6 +1579,7 @@ export function SessionScreen({
                 attachmentCache={attachmentCache}
                 onNeedAttachment={requestAttachment}
                 onRemoveQueued={removeQueued}
+                onEditQueued={startEditQueued}
                 onSteerQueued={steerQueued}
                 fileStates={fileStates}
                 onOpenFile={openFile}
@@ -1704,6 +1742,14 @@ export function SessionScreen({
                   {statsLine}
                 </Text>
               ) : null}
+            </View>
+          ) : null}
+          {editingQueue ? (
+            <View style={styles.editBar}>
+              <Text style={styles.editBarText}>正在编辑排队消息</Text>
+              <Pressable hitSlop={8} onPress={cancelEditQueued}>
+                <Text style={styles.editBarAction}>取消</Text>
+              </Pressable>
             </View>
           ) : null}
           {pickedFiles.length > 0 ? (
@@ -1893,6 +1939,7 @@ function MessageRow({
   onNeedAttachment,
   onRemoveQueued,
   onSteerQueued,
+  onEditQueued,
   fileStates,
   onOpenFile,
   canDownloadFiles,
@@ -1905,6 +1952,7 @@ function MessageRow({
   onNeedAttachment: (attachmentId: string) => void;
   onRemoveQueued: (queueId: string) => void;
   onSteerQueued: (queueId: string) => void;
+  onEditQueued: (queueId: string, text: string) => void;
   fileStates: Record<string, FileUiState>;
   onOpenFile: (path: string) => void;
   canDownloadFiles: boolean;
@@ -1958,6 +2006,9 @@ function MessageRow({
               </Pressable>
             ) : message.pending ? null : (
               <View style={styles.queuedActions}>
+                <Pressable hitSlop={8} onPress={() => onEditQueued(message.queueId, message.text)}>
+                  <Text style={styles.queuedAction}>编辑</Text>
+                </Pressable>
                 {steering ? null : (
                   <Pressable hitSlop={8} onPress={() => onSteerQueued(message.queueId)}>
                     <Text style={styles.queuedAction}>插话发送</Text>
@@ -2256,6 +2307,19 @@ const styles = StyleSheet.create({
   statusChipText: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '600' },
   statusChipTextLocked: { color: '#6E7585' },
   statusMeta: { flex: 1, color: '#4C5261', fontSize: 10.5 },
+  editBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 14,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#1E1B2A',
+  },
+  editBarText: { color: '#C4A8FF', fontSize: 11.5 },
+  editBarAction: { color: '#8FB6FF', fontSize: 11.5, fontWeight: '600' },
   fileChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
