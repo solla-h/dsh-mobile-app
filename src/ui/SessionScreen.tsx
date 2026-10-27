@@ -36,6 +36,7 @@ import {
   type CommandItem,
   type CommandOption,
 } from '../protocol/commands';
+import { imageMediaType } from '../protocol/image';
 import type {
   PendingApproval,
   PendingQuestion,
@@ -941,7 +942,8 @@ export function SessionScreen({
             items.push({
               id: asset.assetId ?? asset.uri + ':' + Date.now() + ':' + items.length,
               uri: asset.uri,
-              mediaType: asset.mimeType ?? 'image/jpeg',
+              // 选择器给的类型是原文件的，quality 压缩后字节可能已经是 jpeg，按字节重新判。
+              mediaType: imageMediaType(asset.base64, asset.mimeType ?? undefined),
               data: asset.base64,
               name: asset.fileName ?? undefined,
               bytes: base64Bytes(asset.base64),
