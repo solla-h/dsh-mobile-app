@@ -1,6 +1,8 @@
 import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { DirectoryListing } from '../protocol/directories';
+import { useTheme, useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 /**
  * 目录选择器：给「新建会话」指定一个项目目录。
@@ -28,6 +30,8 @@ export function DirectoryPicker({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -67,7 +71,7 @@ export function DirectoryPicker({
 
           {loading && !listing ? (
             <View style={styles.center}>
-              <ActivityIndicator color="#8A90A0" />
+              <ActivityIndicator color={t.text.muted} />
             </View>
           ) : error ? (
             <View style={styles.center}>
@@ -106,7 +110,7 @@ export function DirectoryPicker({
               onPress={onConfirm}
             >
               {loading && listing ? (
-                <ActivityIndicator size="small" color="#0B0C0F" />
+                <ActivityIndicator size="small" color={t.bg.canvas} />
               ) : (
                 <Text style={styles.confirmText}>在这里新建会话</Text>
               )}
@@ -118,10 +122,11 @@ export function DirectoryPicker({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingTop: 14,
@@ -135,40 +140,40 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   headerText: { flex: 1 },
-  title: { color: '#EDEFF3', fontSize: 16, fontWeight: '700' },
-  subtitle: { color: '#6E7585', fontSize: 12, marginTop: 3 },
-  close: { color: '#8A90A0', fontSize: 14, fontWeight: '600', paddingLeft: 12, paddingTop: 2 },
+  title: { color: t.text.primary, fontSize: 16, fontWeight: '700' },
+  subtitle: { color: t.text.muted, fontSize: 12, marginTop: 3 },
+  close: { color: t.text.muted, fontSize: 14, fontWeight: '600', paddingLeft: 12, paddingTop: 2 },
   crumbs: { flexGrow: 0, maxHeight: 34, paddingHorizontal: 14 },
   crumbsContent: { alignItems: 'center', paddingVertical: 6 },
   crumbWrap: { flexDirection: 'row', alignItems: 'center' },
-  crumb: { color: '#8A90A0', fontSize: 12, maxWidth: 160 },
-  crumbCurrent: { color: '#EDEFF3', fontWeight: '600' },
-  crumbSep: { color: '#4A4F5C', fontSize: 12, marginHorizontal: 6 },
-  list: { flex: 1, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#22252D' },
+  crumb: { color: t.text.muted, fontSize: 12, maxWidth: 160 },
+  crumbCurrent: { color: t.text.primary, fontWeight: '600' },
+  crumbSep: { color: t.text.muted, fontSize: 12, marginHorizontal: 6 },
+  list: { flex: 1, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border.default },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1D2027',
+    borderBottomColor: t.bg.surface,
   },
-  rowName: { flex: 1, color: '#DDE0E7', fontSize: 14 },
-  rowHidden: { color: '#6E7585' },
-  rowChevron: { color: '#4A4F5C', fontSize: 18, marginLeft: 8 },
+  rowName: { flex: 1, color: t.text.primary, fontSize: 14 },
+  rowHidden: { color: t.text.muted },
+  rowChevron: { color: t.text.muted, fontSize: 18, marginLeft: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  empty: { color: '#6E7585', fontSize: 13, textAlign: 'center', paddingVertical: 32 },
-  error: { color: '#FF7A7A', fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  retry: { marginTop: 14, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1E222A' },
-  retryText: { color: '#DDE0E7', fontSize: 13, fontWeight: '600' },
+  empty: { color: t.text.muted, fontSize: 13, textAlign: 'center', paddingVertical: 32 },
+  error: { color: t.semantic.dangerText, fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  retry: { marginTop: 14, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, backgroundColor: t.bg.surface },
+  retryText: { color: t.text.primary, fontSize: 13, fontWeight: '600' },
   footer: {
     paddingHorizontal: 20,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#22252D',
+    borderTopColor: t.border.default,
   },
-  path: { color: '#6E7585', fontSize: 11, marginBottom: 10 },
-  confirm: { backgroundColor: '#C9CDD6', borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  path: { color: t.text.muted, fontSize: 11, marginBottom: 10 },
+  confirm: { backgroundColor: t.text.secondary, borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
   confirmOff: { opacity: 0.45 },
-  confirmText: { color: '#0B0C0F', fontSize: 15, fontWeight: '700' },
+  confirmText: { color: t.bg.canvas, fontSize: 15, fontWeight: '700' },
 });

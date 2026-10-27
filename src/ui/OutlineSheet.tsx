@@ -1,6 +1,8 @@
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { TurnOutlineItem } from '../protocol/outline';
+import { useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 interface Props {
   visible: boolean;
@@ -11,6 +13,7 @@ interface Props {
 
 /** 轮次大纲：长会话里直接跳到某一轮，不用一屏一屏滑。 */
 export function OutlineSheet({ visible, items, onPick, onClose }: Props) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -55,10 +58,11 @@ export function OutlineSheet({ visible, items, onPick, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingHorizontal: 16,
@@ -70,36 +74,36 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#2E323B',
+    backgroundColor: t.border.default,
     marginTop: 8,
     marginBottom: 12,
   },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  title: { color: '#F5F6F8', fontSize: 16, fontWeight: '700' },
-  close: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: '#1B1E25' },
-  closeText: { color: '#C9CDD6', fontSize: 12, fontWeight: '600' },
-  empty: { color: '#5B6070', fontSize: 13, textAlign: 'center', paddingVertical: 28 },
+  title: { color: t.text.primary, fontSize: 16, fontWeight: '700' },
+  close: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: t.bg.surface },
+  closeText: { color: t.text.secondary, fontSize: 12, fontWeight: '600' },
+  empty: { color: t.text.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 },
   list: { paddingBottom: 8 },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#22252D',
+    borderBottomColor: t.border.default,
   },
   turnBadge: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
     marginTop: 1,
   },
-  turnText: { color: '#8A90A0', fontSize: 11, fontWeight: '700' },
+  turnText: { color: t.text.muted, fontSize: 11, fontWeight: '700' },
   rowBody: { flex: 1 },
-  prompt: { color: '#E6E8EE', fontSize: 14, lineHeight: 20 },
-  response: { color: '#7E8698', fontSize: 12, lineHeight: 17, marginTop: 3 },
-  go: { color: '#4A4F5C', fontSize: 18, marginLeft: 6, marginTop: 2 },
+  prompt: { color: t.text.primary, fontSize: 14, lineHeight: 20 },
+  response: { color: t.text.secondary, fontSize: 12, lineHeight: 17, marginTop: 3 },
+  go: { color: t.text.muted, fontSize: 18, marginLeft: 6, marginTop: 2 },
 });

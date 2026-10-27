@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { EINK_SLATE, MONO_FONT, PAPER, type Palette } from '../theme/tokens';
 
@@ -8,6 +9,15 @@ import { EINK_SLATE, MONO_FONT, PAPER, type Palette } from '../theme/tokens';
 export function useTheme(): Palette {
   const scheme = useColorScheme();
   return scheme === 'light' ? PAPER : EINK_SLATE;
+}
+
+/**
+ * 按色板生成样式表：makeStyles 写成模块级函数（引用稳定），
+ * 组件里 const styles = useThemedStyles(makeStyles) 即可跟随系统切换。
+ */
+export function useThemedStyles<T>(makeStyles: (t: Palette) => T): T {
+  const t = useTheme();
+  return useMemo(() => makeStyles(t), [makeStyles, t]);
 }
 
 /** 代码 / 推理 / 遥测用的等宽字体。 */

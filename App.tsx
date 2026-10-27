@@ -45,6 +45,8 @@ import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
 import { DirectoryPicker } from './src/ui/DirectoryPicker';
 import { ScanScreen } from './src/ui/ScanScreen';
 import { SessionScreen } from './src/ui/SessionScreen';
+import { useTheme, useThemedStyles } from './src/ui/theme';
+import type { Palette } from './src/theme/tokens';
 
 /** 会话列表按网关分开缓存，切换网关时不会串味。 */
 const sessionsCacheKey = (gatewayId: string) => `sessions-${gatewayId}`;
@@ -74,6 +76,8 @@ export default function App() {
 }
 
 function AppBody() {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const client = useMemo(() => new GatewayClient(), []);
   /**
    * 第二条连接，只跑 control 通道：它不订阅任何会话，
@@ -697,7 +701,7 @@ function AppBody() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" />
+      <StatusBar style={t.name === 'paper' ? 'dark' : 'light'} />
       {/* Android 走 edge-to-edge 时窗口不会自己缩，必须让 KAV 补键盘高度。
           这一层包住整屏，frame 底边正好是屏幕底边，算出来的重叠量最准。 */}
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
@@ -814,7 +818,7 @@ function AppBody() {
                   value={search}
                   onChangeText={setSearch}
                   placeholder="搜索标题或目录"
-                  placeholderTextColor="#5B6070"
+                  placeholderTextColor={t.text.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="search"
@@ -834,7 +838,7 @@ function AppBody() {
                 disabled={creating || !connected}
               >
                 {creating ? (
-                  <ActivityIndicator size="small" color="#C9CDD6" />
+                  <ActivityIndicator size="small" color={t.text.secondary} />
                 ) : (
                   <Text style={[styles.newButtonText, !connected && styles.newButtonTextOff]}>+ 新建</Text>
                 )}
@@ -929,7 +933,7 @@ function AppBody() {
               disabled={busy}
               onPress={() => setScanning(true)}
             >
-              {busy ? <ActivityIndicator color="#0B0C0F" /> : <Text style={styles.primaryText}>扫码配对</Text>}
+              {busy ? <ActivityIndicator color={t.bg.canvas} /> : <Text style={styles.primaryText}>扫码配对</Text>}
             </Pressable>
 
             <Pressable style={styles.linkButton} onPress={() => setManual((current) => !current)}>
@@ -942,7 +946,7 @@ function AppBody() {
                   style={styles.input}
                   multiline
                   placeholder="粘贴配对内容（Base64URL）"
-                  placeholderTextColor="#5B6070"
+                  placeholderTextColor={t.text.muted}
                   value={pairingText}
                   onChangeText={setPairingText}
                   autoCapitalize="none"
@@ -1016,7 +1020,7 @@ function AppBody() {
               style={[styles.modalInput, styles.modalInputTall]}
               multiline
               placeholder="粘贴配对内容（Base64URL）"
-              placeholderTextColor="#5B6070"
+              placeholderTextColor={t.text.muted}
               value={pairingText}
               onChangeText={setPairingText}
               autoCapitalize="none"
@@ -1066,7 +1070,7 @@ function AppBody() {
               value={renameDraft}
               onChangeText={setRenameDraft}
               placeholder="会话名称"
-              placeholderTextColor="#5B6070"
+              placeholderTextColor={t.text.muted}
               autoFocus
               maxLength={80}
               onSubmitEditing={submitRename}
@@ -1098,8 +1102,9 @@ function AppBody() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0B0C0F' },
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: t.bg.canvas },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -1109,27 +1114,27 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderRadius: 16,
     padding: 18,
     gap: 14,
   },
-  modalTitle: { color: '#F5F6F8', fontSize: 16, fontWeight: '700' },
+  modalTitle: { color: t.text.primary, fontSize: 16, fontWeight: '700' },
   modalInput: {
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#EDEFF3',
+    color: t.text.primary,
     fontSize: 15,
   },
-  modalHint: { color: '#7A8091', fontSize: 12, lineHeight: 18, marginTop: -6 },
+  modalHint: { color: t.text.muted, fontSize: 12, lineHeight: 18, marginTop: -6 },
   modalInputTall: { minHeight: 76, textAlignVertical: 'top' },
   modalDisabled: { opacity: 0.4 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   modalAction: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  modalActionText: { color: '#8A90A0', fontSize: 14, fontWeight: '600' },
-  modalPrimaryText: { color: '#3DDC97', fontSize: 14, fontWeight: '700' },
+  modalActionText: { color: t.text.muted, fontSize: 14, fontWeight: '600' },
+  modalPrimaryText: { color: t.semantic.diffAddText, fontSize: 14, fontWeight: '700' },
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -1140,25 +1145,25 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   headerTitleBlock: { flex: 1, paddingRight: 12 },
-  title: { color: '#F5F6F8', fontSize: 28, fontWeight: '700', letterSpacing: 0.5 },
-  titleCount: { color: '#4C5261', fontSize: 14, fontWeight: '600' },
-  subtitle: { color: '#7A8091', fontSize: 13, marginTop: 2 },
-  subtitleChevron: { color: '#4C5261' },
+  title: { color: t.text.primary, fontSize: 28, fontWeight: '700', letterSpacing: 0.5 },
+  titleCount: { color: t.text.muted, fontSize: 14, fontWeight: '600' },
+  subtitle: { color: t.text.muted, fontSize: 13, marginTop: 2 },
+  subtitleChevron: { color: t.text.muted },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#15171C',
+    backgroundColor: t.bg.surface,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
-  dotOn: { backgroundColor: '#3DDC97' },
-  dotBusy: { backgroundColor: '#F5B84C' },
-  dotOff: { backgroundColor: '#5B6070' },
-  statusText: { color: '#C9CDD6', fontSize: 12 },
-  hint: { color: '#8A90A0', fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
-  error: { color: '#FF7A7A', fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
+  dotOn: { backgroundColor: t.semantic.diffAddText },
+  dotBusy: { backgroundColor: t.semantic.gateAmberText },
+  dotOff: { backgroundColor: t.text.muted },
+  statusText: { color: t.text.secondary, fontSize: 12 },
+  hint: { color: t.text.muted, fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
+  error: { color: t.semantic.dangerText, fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1166,8 +1171,8 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 8,
   },
-  metaLabel: { color: '#5B6070', fontSize: 12 },
-  metaValue: { color: '#C9CDD6', fontSize: 12, marginRight: 12 },
+  metaLabel: { color: t.text.muted, fontSize: 12 },
+  metaValue: { color: t.text.secondary, fontSize: 12, marginRight: 12 },
   gatePill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1177,45 +1182,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#2A2318',
+    backgroundColor: t.semantic.gateAmberBg,
   },
-  gatePillText: { flex: 1, color: '#E8B75C', fontSize: 13, fontWeight: '600' },
-  gatePillGo: { color: '#E8B75C', fontSize: 12, fontWeight: '700' },
+  gatePillText: { flex: 1, color: t.semantic.gateAmberText, fontSize: 13, fontWeight: '600' },
+  gatePillGo: { color: t.semantic.gateAmberText, fontSize: 12, fontWeight: '700' },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 20,
     marginBottom: 10,
-    backgroundColor: '#15171C',
+    backgroundColor: t.bg.surface,
     borderRadius: 10,
     paddingHorizontal: 12,
   },
-  searchInput: { flex: 1, color: '#EDEFF3', fontSize: 14, paddingVertical: 9 },
+  searchInput: { flex: 1, color: t.text.primary, fontSize: 14, paddingVertical: 9 },
   searchClear: { paddingHorizontal: 6, paddingVertical: 4 },
-  searchClearText: { color: '#6E7585', fontSize: 18, lineHeight: 20 },
+  searchClearText: { color: t.text.muted, fontSize: 18, lineHeight: 20 },
   tagRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   tag: {
-    color: '#8FB6FF',
+    color: t.text.primary,
     fontSize: 10,
     fontWeight: '600',
-    backgroundColor: '#1A2233',
+    backgroundColor: t.bg.surface,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 999,
     overflow: 'hidden',
   },
   tagWarn: {
-    color: '#E8B75C',
+    color: t.semantic.gateAmberText,
     fontSize: 10,
     fontWeight: '600',
-    backgroundColor: '#2A2318',
+    backgroundColor: t.semantic.gateAmberBg,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 999,
     overflow: 'hidden',
   },
   archiveToggle: { alignItems: 'center', paddingVertical: 14 },
-  archiveToggleText: { color: '#6E7585', fontSize: 12, fontWeight: '600' },
+  archiveToggleText: { color: t.text.muted, fontSize: 12, fontWeight: '600' },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1226,7 +1231,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
     minWidth: 62,
     alignItems: 'center',
   },
@@ -1234,11 +1239,11 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   newButtonTextOff: {
-    color: '#5B6070',
+    color: t.text.muted,
   },
-  newButtonText: { color: '#C9CDD6', fontSize: 12 },
+  newButtonText: { color: t.text.secondary, fontSize: 12 },
   sectionTitle: {
-    color: '#7A8091',
+    color: t.text.muted,
     fontSize: 12,
     letterSpacing: 1,
     textTransform: 'uppercase',
@@ -1247,15 +1252,15 @@ const styles = StyleSheet.create({
   },
   listContent: { paddingHorizontal: 20, paddingBottom: 12 },
   card: {
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: '#EDEFF3', fontSize: 15, fontWeight: '600', flex: 1 },
-  runningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3DDC97', marginLeft: 8 },
-  cardMeta: { color: '#5B6070', fontSize: 12, marginTop: 6 },
+  cardTitle: { color: t.text.primary, fontSize: 15, fontWeight: '600', flex: 1 },
+  runningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: t.semantic.diffAddText, marginLeft: 8 },
+  cardMeta: { color: t.text.muted, fontSize: 12, marginTop: 6 },
   pendingPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1263,19 +1268,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 8,
-    backgroundColor: '#3A2A12',
+    backgroundColor: t.border.default,
   },
-  pendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#F5B84C', marginRight: 6 },
-  pendingText: { flex: 1, color: '#F5B84C', fontSize: 11 },
-  empty: { color: '#5B6070', fontSize: 13, paddingVertical: 20 },
+  pendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.semantic.gateAmberText, marginRight: 6 },
+  pendingText: { flex: 1, color: t.semantic.gateAmberText, fontSize: 11 },
+  empty: { color: t.text.muted, fontSize: 13, paddingVertical: 20 },
   pairCard: { paddingTop: 8 },
-  pairHint: { color: '#8A90A0', fontSize: 13, paddingHorizontal: 20, paddingBottom: 12 },
+  pairHint: { color: t.text.muted, fontSize: 13, paddingHorizontal: 20, paddingBottom: 12 },
   input: {
     marginHorizontal: 20,
     minHeight: 96,
     borderRadius: 14,
-    backgroundColor: '#14161B',
-    color: '#EDEFF3',
+    backgroundColor: t.bg.canvas,
+    color: t.text.primary,
     padding: 14,
     fontSize: 13,
     textAlignVertical: 'top',
@@ -1286,26 +1291,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
   },
-  footerActionText: { color: '#7A8091', fontSize: 13 },
+  footerActionText: { color: t.text.muted, fontSize: 13 },
   linkButton: { alignItems: 'center', paddingVertical: 12 },
-  linkText: { color: '#7A8091', fontSize: 13 },
+  linkText: { color: t.text.muted, fontSize: 13 },
   primaryButton: {
     marginHorizontal: 20,
     marginTop: 14,
-    backgroundColor: '#F5F6F8',
+    backgroundColor: t.action.primaryBg,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.35 },
-  primaryText: { color: '#0B0C0F', fontSize: 15, fontWeight: '600' },
+  primaryText: { color: t.bg.canvas, fontSize: 15, fontWeight: '600' },
   secondaryButton: {
     marginHorizontal: 20,
     marginTop: 10,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  secondaryText: { color: '#8A90A0', fontSize: 13 },
+  secondaryText: { color: t.text.muted, fontSize: 13 },
 });

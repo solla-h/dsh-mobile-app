@@ -1,6 +1,8 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { baseName, fileKindLabel, type PresentedFile } from '../protocol/files';
+import { useTheme, useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 export interface FileUiState {
   status: 'resolving' | 'downloading' | 'ready' | 'error';
@@ -20,6 +22,8 @@ export function FileCards({
   states: Record<string, FileUiState>;
   onOpen: (path: string) => void;
 }) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   if (files.length === 0) return null;
   return (
     <View style={styles.wrap}>
@@ -56,7 +60,7 @@ export function FileCards({
             <View style={styles.trailing}>
               {busy ? (
                 <>
-                  <ActivityIndicator size="small" color="#8A90A0" />
+                  <ActivityIndicator size="small" color={t.text.muted} />
                   <Text style={styles.trailingText}>
                     {status === 'resolving'
                       ? '解析中'
@@ -78,7 +82,8 @@ export function FileCards({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   wrap: { marginTop: 8, gap: 6 },
   card: {
     flexDirection: 'row',
@@ -87,25 +92,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: '#101216',
+    backgroundColor: t.bg.subtle,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#262A33',
+    borderColor: t.border.default,
   },
-  cardPressed: { backgroundColor: '#1B1E25' },
+  cardPressed: { backgroundColor: t.bg.surface },
   badge: {
     width: 38,
     height: 38,
     borderRadius: 8,
-    backgroundColor: '#1A2233',
+    backgroundColor: t.bg.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: '#8FB6FF', fontSize: 9.5, fontWeight: '700', letterSpacing: 0.4 },
+  badgeText: { color: t.text.primary, fontSize: 9.5, fontWeight: '700', letterSpacing: 0.4 },
   body: { flex: 1 },
-  name: { color: '#EDEFF3', fontSize: 13.5, fontWeight: '600' },
-  desc: { color: '#6E7585', fontSize: 11.5, marginTop: 2, lineHeight: 16 },
-  error: { color: '#FF7A7A', fontSize: 11, marginTop: 3 },
+  name: { color: t.text.primary, fontSize: 13.5, fontWeight: '600' },
+  desc: { color: t.text.muted, fontSize: 11.5, marginTop: 2, lineHeight: 16 },
+  error: { color: t.semantic.dangerText, fontSize: 11, marginTop: 3 },
   trailing: { alignItems: 'flex-end', gap: 4 },
-  trailingText: { color: '#7A8091', fontSize: 11, fontWeight: '600' },
-  retry: { color: '#FF7A7A' },
+  trailingText: { color: t.text.muted, fontSize: 11, fontWeight: '600' },
+  retry: { color: t.semantic.dangerText },
 });

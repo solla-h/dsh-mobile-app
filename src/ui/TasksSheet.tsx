@@ -1,6 +1,8 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { describePhase, type GoalInfo, type TodoItem } from '../protocol/tasks';
+import { useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 const STATUS_MARK: Record<string, string> = {
   completed: '✓',
@@ -26,6 +28,7 @@ export function TasksSheet({
   onResume: () => void;
   onClear: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const done = todos?.filter((item) => item.status === 'completed').length ?? 0;
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -97,7 +100,8 @@ export function TasksSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -105,52 +109,52 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   sheet: {
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderRadius: 16,
     paddingTop: 14,
     paddingBottom: 8,
     maxHeight: '70%',
   },
-  title: { color: '#F5F6F8', fontSize: 15, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 10 },
+  title: { color: t.text.primary, fontSize: 15, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 10 },
   goalCard: {
     marginHorizontal: 14,
     marginBottom: 10,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#12161F',
+    backgroundColor: t.bg.canvas,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#22304A',
+    borderColor: t.action.primaryBg,
   },
   goalHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   goalTag: {
-    color: '#8FB6FF',
+    color: t.text.primary,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.6,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    backgroundColor: '#1A2233',
+    backgroundColor: t.bg.surface,
   },
-  goalPhase: { color: '#7A8091', fontSize: 11 },
-  goalText: { color: '#EDEFF3', fontSize: 13.5, lineHeight: 19, marginTop: 8 },
-  goalMeta: { color: '#5B6070', fontSize: 11, marginTop: 6 },
+  goalPhase: { color: t.text.muted, fontSize: 11 },
+  goalText: { color: t.text.primary, fontSize: 13.5, lineHeight: 19, marginTop: 8 },
+  goalMeta: { color: t.text.muted, fontSize: 11, marginTop: 6 },
   goalActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   goalAction: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
   },
-  goalActionText: { color: '#C9CDD6', fontSize: 12, fontWeight: '600' },
-  danger: { color: '#FF7A7A' },
+  goalActionText: { color: t.text.secondary, fontSize: 12, fontWeight: '600' },
+  danger: { color: t.semantic.dangerText },
   list: { maxHeight: 380 },
   listContent: { paddingHorizontal: 16, paddingBottom: 10 },
   row: { flexDirection: 'row', gap: 10, paddingVertical: 7 },
-  mark: { width: 16, color: '#4C5261', fontSize: 13, lineHeight: 20 },
-  markDone: { color: '#3DDC97' },
-  markActive: { color: '#F5B84C' },
-  text: { flex: 1, color: '#D6DAE3', fontSize: 13.5, lineHeight: 20 },
-  textDone: { color: '#5B6070', textDecorationLine: 'line-through' },
-  empty: { color: '#5B6070', fontSize: 13, paddingVertical: 16 },
+  mark: { width: 16, color: t.text.muted, fontSize: 13, lineHeight: 20 },
+  markDone: { color: t.semantic.diffAddText },
+  markActive: { color: t.semantic.gateAmberText },
+  text: { flex: 1, color: t.text.primary, fontSize: 13.5, lineHeight: 20 },
+  textDone: { color: t.text.muted, textDecorationLine: 'line-through' },
+  empty: { color: t.text.muted, fontSize: 13, paddingVertical: 16 },
 });

@@ -24,6 +24,8 @@ import {
 } from '../protocol/interactions';
 import { approvalRisk } from '../protocol/risk';
 import { chargeStartFeedback, successFeedback } from './haptics';
+import { useTheme, useThemedStyles } from './theme';
+import type { Palette } from '../theme/tokens';
 
 interface Props {
   approval: PendingApproval | null;
@@ -47,6 +49,7 @@ export function InteractionSheet({
   onAnswer,
   onCancelQuestion,
 }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const requestKey = approval?.rpcId ?? question?.rpcId ?? '';
 
   return (
@@ -110,6 +113,7 @@ function ApprovalBody({
   error: string | null;
   onApproval: (outcome: 'allowed-once' | 'rejected') => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const reason = pickDisplayReason(approval.displayReason, approval.reason);
   const risk = useMemo(() => approvalRisk(approval), [approval]);
   // 用 state 装 Animated.Value：渲染期读 ref.current 会被 react-hooks/refs 拦。
@@ -194,6 +198,8 @@ function QuestionBody({
   onAnswer: (answers: QuestionAnswer[]) => void;
   onCancel: () => void;
 }) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [drafts, setDrafts] = useState<Record<string, DraftAnswer>>(() =>
     Object.fromEntries(question.questions.map((item) => [item.id, { selected: [], custom: '' }])),
   );
@@ -278,7 +284,7 @@ function QuestionBody({
                       ? '补充说明（可选）'
                       : '或者自己写一个答案'
                 }
-                placeholderTextColor="#4C5261"
+                placeholderTextColor={t.text.muted}
                 multiline
               />
             </View>
@@ -310,7 +316,8 @@ function QuestionBody({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
   backdrop: {
     position: 'absolute',
     top: 0,
@@ -326,11 +333,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#2B303B',
+    backgroundColor: t.border.default,
     marginBottom: 12,
   },
   sheet: {
-    backgroundColor: '#14161B',
+    backgroundColor: t.bg.canvas,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
@@ -338,7 +345,7 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     maxHeight: '82%',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: '#262A33',
+    borderColor: t.border.default,
   },
   flex: { maxHeight: '100%' },
   kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
@@ -347,62 +354,62 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#1B1E25',
+    backgroundColor: t.bg.surface,
   },
-  laterText: { color: '#C9CDD6', fontSize: 12, fontWeight: '600' },
-  kicker: { color: '#F5B84C', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  laterText: { color: t.text.secondary, fontSize: 12, fontWeight: '600' },
+  kicker: { color: t.semantic.gateAmberText, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
   toolChip: {
     flexShrink: 1,
-    color: '#8FB6FF',
+    color: t.text.primary,
     fontSize: 11,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
-    backgroundColor: '#1B2230',
+    backgroundColor: t.bg.surface,
     overflow: 'hidden',
   },
-  reason: { color: '#EDEFF3', fontSize: 15, lineHeight: 22 },
-  note: { color: '#5B6070', fontSize: 12, marginTop: 10 },
-  error: { color: '#FF7A7A', fontSize: 12, marginTop: 10 },
+  reason: { color: t.text.primary, fontSize: 15, lineHeight: 22 },
+  note: { color: t.text.muted, fontSize: 12, marginTop: 10 },
+  error: { color: t.semantic.dangerText, fontSize: 12, marginTop: 10 },
   buttonRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
   button: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   buttonDisabled: { opacity: 0.35 },
-  reject: { backgroundColor: '#1B1E25' },
-  rejectText: { color: '#C9CDD6', fontSize: 15, fontWeight: '600' },
-  allow: { backgroundColor: '#F5F6F8' },
-  allowText: { color: '#0B0C0F', fontSize: 15, fontWeight: '700' },
+  reject: { backgroundColor: t.bg.surface },
+  rejectText: { color: t.text.secondary, fontSize: 15, fontWeight: '600' },
+  allow: { backgroundColor: t.action.primaryBg },
+  allowText: { color: t.bg.canvas, fontSize: 15, fontWeight: '700' },
   riskRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   riskTag: {
-    color: '#FF9E7A',
+    color: t.semantic.dangerText,
     fontSize: 10,
     fontWeight: '700',
-    backgroundColor: '#33201A',
+    backgroundColor: t.semantic.dangerBg,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     overflow: 'hidden',
   },
-  riskText: { color: '#B58C7A', fontSize: 11 },
+  riskText: { color: t.semantic.gateAmberText, fontSize: 11 },
   holdButton: { overflow: 'hidden', justifyContent: 'center' },
   holdFill: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: '#E8B75C',
+    backgroundColor: t.semantic.gateAmberText,
   },
   questionScroll: { flexGrow: 0, flexShrink: 1 },
   questionContent: { paddingBottom: 6 },
   questionBlock: { marginBottom: 18 },
-  questionHeader: { color: '#7A8091', fontSize: 11, letterSpacing: 1, marginBottom: 4 },
-  questionTitle: { color: '#EDEFF3', fontSize: 15, fontWeight: '600', lineHeight: 21 },
-  questionDetail: { color: '#7A8091', fontSize: 12, marginTop: 4, lineHeight: 17 },
+  questionHeader: { color: t.text.muted, fontSize: 11, letterSpacing: 1, marginBottom: 4 },
+  questionTitle: { color: t.text.primary, fontSize: 15, fontWeight: '600', lineHeight: 21 },
+  questionDetail: { color: t.text.muted, fontSize: 12, marginTop: 4, lineHeight: 17 },
   noOptions: {
-    color: '#8A6D3B',
+    color: t.semantic.gateAmberText,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 8,
-    backgroundColor: '#241D12',
+    backgroundColor: t.semantic.gateAmberBg,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -411,7 +418,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: '#1A1D24',
+    backgroundColor: t.bg.surface,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -419,30 +426,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  optionChecked: { borderColor: '#2B6BFF', backgroundColor: '#161C29' },
+  optionChecked: { borderColor: t.action.primaryBg, backgroundColor: t.bg.canvas },
   marker: {
     width: 18,
     height: 18,
     borderWidth: 1.5,
-    borderColor: '#3A3F4C',
+    borderColor: t.border.default,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
   },
   markerCircle: { borderRadius: 9 },
   markerBox: { borderRadius: 4 },
-  markerOn: { borderColor: '#2B6BFF' },
-  markerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2B6BFF' },
+  markerOn: { borderColor: t.action.primaryBg },
+  markerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: t.action.primaryBg },
   markerDotBox: { borderRadius: 2 },
   optionText: { flex: 1 },
-  optionLabel: { color: '#EDEFF3', fontSize: 14 },
-  optionDescription: { color: '#7A8091', fontSize: 12, marginTop: 2, lineHeight: 17 },
+  optionLabel: { color: t.text.primary, fontSize: 14 },
+  optionDescription: { color: t.text.muted, fontSize: 12, marginTop: 2, lineHeight: 17 },
   customInput: {
-    backgroundColor: '#15171C',
+    backgroundColor: t.bg.surface,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#EDEFF3',
+    color: t.text.primary,
     fontSize: 14,
     marginTop: 10,
     minHeight: 44,
