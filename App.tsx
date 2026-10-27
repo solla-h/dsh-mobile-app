@@ -36,6 +36,7 @@ import {
   type SavedGateway,
 } from './src/storage/gateway-store';
 import { GatewayClient, type ConnectionState } from './src/transport/gateway-client';
+import { draftSessionIds } from './src/storage/drafts';
 import { outbox } from './src/transport/outbox';
 import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
 import { ScanScreen } from './src/ui/ScanScreen';
@@ -96,6 +97,9 @@ function AppBody() {
   /** 默认不显示归档会话，避免列表越来越长 */
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState('');
+  /** 有草稿/待发消息的会话，列表卡片上打标 */
+  const [draftIds, setDraftIds] = useState<string[]>([]);
+  const [outboxTick, setOutboxTick] = useState(0);
   const [renameDraft, setRenameDraft] = useState('');
   /** 每个会话的待发送队列；agent 还在跑的时候新消息会排在这里。 */
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
@@ -367,7 +371,14 @@ function AppBody() {
   // 冷启动：先把离线发件箱读回来，再决定要不要自动重连。
   useEffect(() => {
     void outbox.load();
+    return outbox.subscribe(() => setOutboxTick((value) => value + 1));
   }, []);
+
+  // 从会话页回到列表时刷新草稿标记（草稿是在会话页里改的）。
+  useEffect(() => {
+    if (active) return;
+    void draftSessionIds().then(setDraftIds);
+  }, [active]);
 
   // 冷启动：有保存的 token 就直接重连，不再让用户手动点一次。
   useEffect(() => {
@@ -679,6 +690,8 @@ function AppBody() {
             <FlatList
               data={visibleSessions}
               keyExtractor={(item) => item.sessionId}
+              // 草稿/待发标记不在 item 里，得靠 extraData 才会重绘。
+              extraData={`${outboxTick}:${draftIds.join(',')}`}
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={
                 <Text style={styles.empty}>
@@ -720,6 +733,19 @@ function AppBody() {
                         </Text>
                       </View>
                     ) : null}
+                    {(() => {
+                      const pendingCount = outbox.countFor(item.sessionId);
+                      const hasDraft = draftIds.includes(item.sessionId);
+                      if (!pendingCount && !hasDraft) return null;
+                      return (
+                        <View style={styles.tagRow}>
+                          {pendingCount > 0 ? (
+                            <Text style={styles.tagWarn}>待发送 {pendingCount}</Text>
+                          ) : null}
+                          {hasDraft ? <Text style={styles.tag}>草稿</Text> : null}
+                        </View>
+                      );
+                    })()}
                   </Pressable>
                 );
               }}
@@ -980,6 +1006,27 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: '#EDEFF3', fontSize: 14, paddingVertical: 9 },
   searchClear: { paddingHorizontal: 6, paddingVertical: 4 },
   searchClearText: { color: '#6E7585', fontSize: 18, lineHeight: 20 },
+  tagRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  tag: {
+    color: '#8FB6FF',
+    fontSize: 10,
+    fontWeight: '600',
+    backgroundColor: '#1A2233',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  tagWarn: {
+    color: '#E8B75C',
+    fontSize: 10,
+    fontWeight: '600',
+    backgroundColor: '#2A2318',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
   archiveToggle: { alignItems: 'center', paddingVertical: 14 },
   archiveToggleText: { color: '#6E7585', fontSize: 12, fontWeight: '600' },
   sectionRow: {
