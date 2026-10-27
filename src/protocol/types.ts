@@ -241,6 +241,27 @@ export interface FileDownloadChunkFrame {
   sha256?: string;
 }
 
+/** 任务列表 / 当前目标；todos、goal 的结构见 protocol/tasks.ts。 */
+export interface TasksFrame {
+  kind: 'tasks' | 'tasks-updated';
+  sessionId?: string;
+  asOfSeq?: number;
+  todos?: unknown;
+}
+
+export interface GoalFrame {
+  kind: 'goal' | 'goal-updated';
+  sessionId?: string;
+  asOfSeq?: number;
+  goal?: unknown;
+}
+
+/** fork 成功，返回新会话的 id。 */
+export interface ForkFrame {
+  kind: 'fork';
+  sessionId: string;
+}
+
 export interface SessionCreatedFrame {
   kind: 'session-created';
   requestId: string;
@@ -268,6 +289,9 @@ export type ServerFrame =
   | CommandOptionsFrame
   | CommandSelectedFrame
   | SessionStatsFrame
+  | TasksFrame
+  | GoalFrame
+  | ForkFrame
   | FileResolvedFrame
   | FileDownloadOpenedFrame
   | FileDownloadChunkFrame
@@ -315,6 +339,19 @@ export type ClientFrame =
   | { type: 'command-options'; sessionId: string; command: string }
   | { type: 'command-select'; sessionId: string; command: string; optionId: string }
   | { type: 'session-stats'; sessionId: string }
+  | { type: 'fork'; sessionId: string; atSeq?: number; historyFormatVersion?: number }
+  | { type: 'tasks'; sessionId: string }
+  | { type: 'goal'; sessionId: string }
+  | {
+      type: 'goal-edit';
+      sessionId: string;
+      ref: { id: string; revision: number };
+      objective?: string;
+      maxGoalRounds?: number;
+    }
+  | { type: 'goal-pause'; sessionId: string; ref: { id: string; revision: number } }
+  | { type: 'goal-resume'; sessionId: string; ref: { id: string; revision: number } }
+  | { type: 'goal-clear'; sessionId: string; ref: { id: string; revision: number } }
   | { type: 'file-resolve'; requestId: string; sessionId: string; path: string }
   | { type: 'file-list'; requestId: string; sessionId: string; path?: string }
   | { type: 'file-download-open'; requestId: string; sessionId: string; path: string }

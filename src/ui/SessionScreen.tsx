@@ -1,5 +1,6 @@
+import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -59,16 +60,19 @@ import {
   readProjectionValues,
   type TurnOutlineItem,
 } from '../protocol/outline';
+import { goalRef, mapGoal, mapTodos, type GoalInfo, type TodoItem } from '../protocol/tasks';
 import { FileDownloader } from '../transport/file-download';
 import { loadDraft, saveDraft } from '../storage/drafts';
 import { outbox, type OutboxItem } from '../transport/outbox';
 import type { GatewayClient } from '../transport/gateway-client';
+import { ActionSheet, type SheetAction } from './ActionSheet';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
 import { InteractionSheet } from './InteractionSheet';
 import { MarkdownView } from './Markdown';
 import { MessageImages } from './MessageImages';
 import { OutlineSheet } from './OutlineSheet';
+import { TasksSheet } from './TasksSheet';
 
 interface Props {
   client: GatewayClient;
@@ -77,6 +81,8 @@ interface Props {
   /** hello.capabilities：老网关可能没开文件下载，别把卡片画成一个点了没反应的按钮 */
   capabilities: string[];
   onBack: () => void;
+  /** fork 出来的新会话，交给上层切过去 */
+  onForked: (sessionId: string) => void;
 }
 
 interface StreamingDraft {
@@ -111,6 +117,13 @@ function base64Bytes(data: string): number {
   return Math.floor((data.length * 3) / 4) - padding;
 }
 
+/** 长按菜单标题：只给一眼能认出是哪条消息的摘要。 */
+function previewOf(text: string): string | undefined {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (!flat) return undefined;
+  return flat.length > 60 ? flat.slice(0, 60) + '…' : flat;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
   if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
@@ -125,7 +138,7 @@ const TIME_ZONE = (() => {
   }
 })();
 
-export function SessionScreen({ client, session, queued, capabilities, onBack }: Props) {
+export function SessionScreen({ client, session, queued, capabilities, onBack, onForked }: Props) {
   const canDownloadFiles = capabilities.includes('file-downloads');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -169,6 +182,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
   const [offlineItems, setOfflineItems] = useState<OutboxItem[]>(() => outbox.list(session.sessionId));
   /** 草稿是否已经从磁盘读回来了，读完之前不许写盘。 */
   const draftReadyRef = useRef(false);
+  /** 任务列表与当前目标；asOfSeq 只允许变大，避免旧推送覆盖新查询。 */
+  const [todos, setTodos] = useState<TodoItem[] | null>(null);
+  const [goal, setGoal] = useState<GoalInfo | null>(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const todosSeqRef = useRef(-1);
+  const goalSeqRef = useRef(-1);
   const downloaderRef = useRef<FileDownloader | null>(null);
   /** 点了大纲里的某一轮：要先把历史翻到那个 seq，再滚过去。 */
   const jumpTargetRef = useRef<number | null>(null);
@@ -176,6 +195,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
   const [jumpTick, setJumpTick] = useState(0);
   /** 用户点了「稍后」：面板收起，但请求仍然挂在服务端，可以随时再打开。 */
   const [sheetHidden, setSheetHidden] = useState(false);
+  /** 长按某条消息后弹出的操作表；null 表示没打开。 */
+  const [actionMessage, setActionMessage] = useState<ChatMessage | null>(null);
+  /** 轻量提示（复制成功之类），2 秒后自己消失。 */
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const composerRef = useRef<ComponentRef<typeof TextInput>>(null);
   const settledRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<ChatMessage>>(null);
   /** 用户往上翻看历史时不要再把他拽回底部。 */
@@ -435,6 +460,29 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
         setDraft('');
         return;
       }
+      if (kind === 'tasks' || kind === 'tasks-updated') {
+        const tasksFrame = frame as unknown as { sessionId?: string; asOfSeq?: number; todos?: unknown };
+        if (tasksFrame.sessionId && tasksFrame.sessionId !== session.sessionId) return;
+        const asOf = typeof tasksFrame.asOfSeq === 'number' ? tasksFrame.asOfSeq : 0;
+        if (asOf < todosSeqRef.current) return;
+        todosSeqRef.current = asOf;
+        setTodos(mapTodos(tasksFrame.todos));
+        return;
+      }
+      if (kind === 'goal' || kind === 'goal-updated') {
+        const goalFrame = frame as unknown as { sessionId?: string; asOfSeq?: number; goal?: unknown };
+        if (goalFrame.sessionId && goalFrame.sessionId !== session.sessionId) return;
+        const asOf = typeof goalFrame.asOfSeq === 'number' ? goalFrame.asOfSeq : 0;
+        if (asOf < goalSeqRef.current) return;
+        goalSeqRef.current = asOf;
+        setGoal(mapGoal(goalFrame.goal));
+        return;
+      }
+      if (kind === 'fork') {
+        const forked = frame as unknown as { sessionId?: string };
+        if (forked.sessionId) onForked(forked.sessionId);
+        return;
+      }
       if (kind === 'session-stats') {
         const statsFrame = frame as unknown as SessionStatsFrame;
         if (statsFrame.sessionId && statsFrame.sessionId !== session.sessionId) return;
@@ -495,6 +543,10 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
     setOptionSheet(null);
     setStatusLabel(null);
     setStats(null);
+    setTodos(null);
+    setGoal(null);
+    todosSeqRef.current = -1;
+    goalSeqRef.current = -1;
     setFileStates({});
     const downloader = new FileDownloader(
       session.sessionId,
@@ -510,6 +562,8 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
       historyFormatVersion: HISTORY_FORMAT_VERSION,
     });
     client.send({ type: 'session-stats', sessionId: session.sessionId });
+    client.send({ type: 'tasks', sessionId: session.sessionId });
+    client.send({ type: 'goal', sessionId: session.sessionId });
     return () => {
       off();
       downloader.dispose();
@@ -534,6 +588,8 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
         historyFormatVersion: HISTORY_FORMAT_VERSION,
       });
       client.send({ type: 'session-stats', sessionId: session.sessionId });
+      client.send({ type: 'tasks', sessionId: session.sessionId });
+      client.send({ type: 'goal', sessionId: session.sessionId });
     });
     return off;
   }, [client, session.sessionId]);
@@ -737,6 +793,16 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
     downloaderRef.current?.open(path);
   }, []);
 
+  /** 目标写操作必须带上刚读到的 {id, revision}，否则会被 CAS 拒绝。 */
+  const goalAction = useCallback(
+    (action: 'goal-pause' | 'goal-resume' | 'goal-clear') => {
+      const current = goal;
+      if (!current) return;
+      client.send({ type: action, sessionId: session.sessionId, ref: goalRef(current) });
+    },
+    [client, goal, session.sessionId],
+  );
+
   const removePicked = useCallback((id: string) => {
     setPicked((current) => current.filter((item) => item.id !== id));
   }, []);
@@ -888,6 +954,70 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
     outbox.remove(id);
   }, []);
 
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2000);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  /** 长按菜单里能做什么，取决于这条消息是什么类型。 */
+  const messageActions = useMemo(() => {
+    const message = actionMessage;
+    if (!message) return [];
+    const actions: SheetAction[] = [];
+    const text = 'text' in message ? message.text : '';
+    if (text) actions.push({ id: 'copy', label: '复制文本' });
+    if ('seq' in message && typeof message.seq === 'number') {
+      actions.push({
+        id: 'fork',
+        label: '从这里分叉',
+        hint: '以这条消息为界复制一份新会话，原来的不动',
+      });
+    }
+    if (message.kind === 'user' && text) {
+      actions.push({ id: 'edit', label: '重新编辑', hint: '把内容放回输入框' });
+    }
+    return actions;
+  }, [actionMessage]);
+
+  const runMessageAction = useCallback(
+    (id: string) => {
+      const message = actionMessage;
+      setActionMessage(null);
+      if (!message) return;
+      if (id === 'copy') {
+        const text = 'text' in message ? message.text : '';
+        if (!text) return;
+        void Clipboard.setStringAsync(text).then(
+          () => showToast('已复制'),
+          () => showToast('复制失败'),
+        );
+        return;
+      }
+      if (id === 'fork') {
+        if (!('seq' in message) || typeof message.seq !== 'number') return;
+        client.send({
+          type: 'fork',
+          sessionId: session.sessionId,
+          atSeq: message.seq,
+          historyFormatVersion: HISTORY_FORMAT_VERSION,
+        });
+        showToast('正在分叉…');
+        return;
+      }
+      if (id === 'edit') {
+        if (!('text' in message)) return;
+        setDraft(message.text);
+        composerRef.current?.focus();
+      }
+    },
+    [actionMessage, client, session.sessionId, showToast],
+  );
+
   const removeQueued = useCallback(
     (queueId: string) => {
       client.send({ type: 'queue-update', sessionId: session.sessionId, itemId: queueId, action: 'remove' });
@@ -1033,6 +1163,17 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
         <Text style={styles.title} numberOfLines={1}>
           {session.projections?.values.title ?? '未命名会话'}
         </Text>
+        {todos && todos.length > 0 ? (
+          <Pressable style={styles.outlineButton} onPress={() => setTasksOpen(true)}>
+            <Text style={styles.outlineText}>
+              任务 {todos.filter((item) => item.status === 'completed').length}/{todos.length}
+            </Text>
+          </Pressable>
+        ) : goal ? (
+          <Pressable style={styles.outlineButton} onPress={() => setTasksOpen(true)}>
+            <Text style={styles.outlineText}>目标</Text>
+          </Pressable>
+        ) : null}
         {outline.length > 0 ? (
           <Pressable style={styles.outlineButton} onPress={() => setOutlineOpen(true)}>
             <Text style={styles.outlineText}>轮次</Text>
@@ -1128,6 +1269,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
                 onOpenFile={openFile}
                 canDownloadFiles={canDownloadFiles}
                 onDiscardOffline={discardOffline}
+                onLongPress={setActionMessage}
               />
             )}
           />
@@ -1143,6 +1285,20 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
           onAnswer={answerQuestion}
           onCancelQuestion={cancelQuestion}
         />
+
+        <ActionSheet
+          visible={actionMessage !== null}
+          title={actionMessage && 'text' in actionMessage ? previewOf(actionMessage.text) : undefined}
+          actions={messageActions}
+          onPick={runMessageAction}
+          onClose={() => setActionMessage(null)}
+        />
+
+        {toast ? (
+          <View style={styles.toast} pointerEvents="none">
+            <Text style={styles.toastText}>{toast}</Text>
+          </View>
+        ) : null}
 
         {sheetHidden && (approval || question) ? (
           <Pressable style={styles.pendingBar} onPress={() => setSheetHidden(false)}>
@@ -1162,6 +1318,16 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
           state={optionSheet}
           onClose={() => setOptionSheet(null)}
           onPick={chooseOption}
+        />
+
+        <TasksSheet
+          visible={tasksOpen}
+          todos={todos}
+          goal={goal}
+          onClose={() => setTasksOpen(false)}
+          onPause={() => goalAction('goal-pause')}
+          onResume={() => goalAction('goal-resume')}
+          onClear={() => goalAction('goal-clear')}
         />
 
         <OutlineSheet
@@ -1241,6 +1407,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack }:
               )}
             </Pressable>
             <TextInput
+              ref={composerRef}
               style={styles.input}
               value={draft}
               onChangeText={setDraft}
@@ -1362,6 +1529,7 @@ function MessageRow({
   onOpenFile,
   canDownloadFiles,
   onDiscardOffline,
+  onLongPress,
 }: {
   message: ChatMessage;
   attachmentCache: Record<string, string>;
@@ -1372,6 +1540,7 @@ function MessageRow({
   onOpenFile: (path: string) => void;
   canDownloadFiles: boolean;
   onDiscardOffline: (id: string) => void;
+  onLongPress: (message: ChatMessage) => void;
 }) {
   const [toolOpen, setToolOpen] = useState(false);
   if (message.kind === 'files') {
@@ -1476,7 +1645,11 @@ function MessageRow({
   const isUser = message.kind === 'user';
   return (
     <View style={[styles.bubbleRow, isUser ? styles.rowRight : styles.rowLeft]}>
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+      <Pressable
+        onLongPress={() => onLongPress(message)}
+        delayLongPress={320}
+        style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}
+      >
         {message.kind === 'assistant' && message.reasoning ? (
           <Reasoning text={message.reasoning} />
         ) : null}
@@ -1499,7 +1672,7 @@ function MessageRow({
         {message.kind === 'assistant' && message.failure ? (
           <Text style={styles.failure}>{message.failure}</Text>
         ) : null}
-      </View>
+      </Pressable>
     </View>
   );
 }
@@ -1528,6 +1701,22 @@ const styles = StyleSheet.create({
   stopDisabled: { opacity: 0.5 },
   stopText: { color: '#FF7A7A', fontSize: 12, fontWeight: '600' },
   error: { color: '#FF7A7A', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
+  toast: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 96,
+    alignItems: 'center',
+  },
+  toastText: {
+    backgroundColor: 'rgba(30,33,40,0.95)',
+    color: '#EDEFF3',
+    fontSize: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { paddingHorizontal: 14, paddingBottom: 12 },
   empty: { color: '#5B6070', textAlign: 'center', marginTop: 40 },

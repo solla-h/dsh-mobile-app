@@ -25,17 +25,29 @@ import {
 } from './src/protocol/pending';
 import type { HelloFrame, ServerFrame, SessionItem } from './src/protocol/types';
 import {
+  activateGateway,
   clearGateway,
   getDeviceId,
   getDeviceName,
-  loadGateway,
-  saveGateway,
+  loadActiveGateway,
+  loadGateways,
+  removeGateway,
+  upsertGateway,
   type SavedGateway,
 } from './src/storage/gateway-store';
 import { GatewayClient, type ConnectionState } from './src/transport/gateway-client';
 import { outbox } from './src/transport/outbox';
+import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
 import { ScanScreen } from './src/ui/ScanScreen';
 import { SessionScreen } from './src/ui/SessionScreen';
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
 
 const STATE_LABEL: Record<ConnectionState, string> = {
   idle: '未连接',
@@ -67,6 +79,10 @@ function AppBody() {
   const [pairingText, setPairingText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedGateway | null>(null);
+  /** 配对过的全部网关，可以在顶部切换 */
+  const [gateways, setGateways] = useState<SavedGateway[]>([]);
+  const [gatewaySheet, setGatewaySheet] = useState(false);
+  const [addGateway, setAddGateway] = useState(false);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<SessionItem | null>(null);
   const [creating, setCreating] = useState(false);
@@ -146,6 +162,16 @@ function AppBody() {
           const helloFrame = frame as HelloFrame;
           setHello(helloFrame);
           if (helloFrame.authenticated) client.send({ type: 'sessions' });
+          // 网关自报的名字比 URL 好认，顺手补进本地记录里。
+          const current = savedRef.current;
+          if (helloFrame.gatewayName && current && current.gatewayName !== helloFrame.gatewayName) {
+            const next = { ...current, gatewayName: helloFrame.gatewayName };
+            savedRef.current = next;
+            setSaved(next);
+            upsertGateway(next)
+              .then(() => loadGateways().then(setGateways))
+              .catch(() => undefined);
+          }
           break;
         }
         case 'paired': {
@@ -156,7 +182,13 @@ function AppBody() {
           pendingGateway.current = null;
           savedRef.current = next;
           setSaved(next);
-          saveGateway(next).catch(() => undefined);
+          upsertGateway(next)
+            .then((entry) => {
+              savedRef.current = entry;
+              setSaved(entry);
+              void loadGateways().then(setGateways);
+            })
+            .catch(() => undefined);
           // 拿到长期 token 之后 control 通道才能连；配对码是一次性的，不能复用。
           void startControl(next);
           break;
@@ -285,6 +317,7 @@ function AppBody() {
       const candidates = [payload.publicUrl, ...(payload.endpoints ?? [])];
       const url = candidates.find((item) => item.startsWith('wss://')) ?? candidates[0];
       const gateway: SavedGateway = {
+        id: payload.gatewayId ? 'gw:' + payload.gatewayId : 'url:' + url,
         url,
         label: payload.gatewayName ?? new URL(url).host,
         gatewayId: payload.gatewayId,
@@ -314,7 +347,10 @@ function AppBody() {
   // 冷启动：有保存的 token 就直接重连，不再让用户手动点一次。
   useEffect(() => {
     let cancelled = false;
-    loadGateway()
+    void loadGateways().then((items) => {
+      if (!cancelled) setGateways(items);
+    });
+    loadActiveGateway()
       .then((gateway) => {
         if (cancelled || !gateway) return;
         savedRef.current = gateway;
@@ -334,9 +370,89 @@ function AppBody() {
     client.send({ type: 'session-create', requestId: randomUUID() } as never);
   }, [client, connected]);
 
+  /** 顶部网关菜单：切换、添加、移除。 */
+  const gatewayActions = useMemo<SheetAction[]>(() => {
+    const list: SheetAction[] = gateways.map((item) => {
+      const name = item.gatewayName ?? item.label ?? hostOf(item.url);
+      const current = item.id === saved?.id;
+      const hint = [current ? (connected ? '当前 · 已连接' : '当前') : null, hostOf(item.url)]
+        .filter(Boolean)
+        .join(' · ');
+      return { id: 'gw:' + item.id, label: (current ? '✓ ' : '') + name, hint };
+    });
+    list.push({ id: 'add', label: '＋ 添加网关', hint: '扫码或粘贴配对串' });
+    if (saved) {
+      list.push({
+        id: 'forget',
+        label: '移除当前网关',
+        hint: '只删本地记录，服务器上的设备授权需要另行撤销',
+        destructive: true,
+      });
+    }
+    return list;
+  }, [connected, gateways, saved]);
+
   const handleReconnect = useCallback(() => {
     if (saved) connectWith(saved);
   }, [connectWith, saved]);
+
+  /** 切到另一台网关：上一个网关的会话/队列都不属于新网关，先清干净再连。 */
+  const switchGateway = useCallback(
+    async (gateway: SavedGateway) => {
+      setGatewaySheet(false);
+      if (gateway.id === savedRef.current?.id && connected) return;
+      client.disconnect();
+      control.disconnect();
+      setSessions([]);
+      setQueues({});
+      setActive(null);
+      setPending({});
+      setHello(null);
+      setError(null);
+      setArchived([]);
+      savedRef.current = gateway;
+      setSaved(gateway);
+      await activateGateway(gateway.id).catch(() => undefined);
+      await connectWith(gateway);
+    },
+    [client, connected, connectWith, control],
+  );
+
+  const forgetGateway = useCallback(
+    (gateway: SavedGateway) => {
+      const name = gateway.gatewayName ?? gateway.label ?? new URL(gateway.url).host;
+      Alert.alert('移除网关', `不再连接 ${name}？本地记录会被删除。`, [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '移除',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const rest = await removeGateway(gateway.id);
+              setGateways(rest);
+              if (gateway.id !== savedRef.current?.id) return;
+              // 删掉的正好是当前网关：断开并退回到列表/扫码页。
+              client.disconnect();
+              control.disconnect();
+              savedRef.current = null;
+              setSaved(null);
+              setHello(null);
+              setSessions([]);
+              setActive(null);
+              const next = rest[0];
+              if (next) {
+                savedRef.current = next;
+                setSaved(next);
+                await activateGateway(next.id).catch(() => undefined);
+                await connectWith(next);
+              }
+            })();
+          },
+        },
+      ]);
+    },
+    [client, connectWith, control],
+  );
 
   const submitRename = useCallback(() => {
     const target = renaming;
@@ -394,6 +510,8 @@ function AppBody() {
               setActive(null);
               setError(null);
               setPending({});
+              setGateways([]);
+              setQueues({});
             })();
           },
         },
@@ -406,6 +524,7 @@ function AppBody() {
       <ScanScreen
         onScanned={(payload) => {
           setScanning(false);
+          setAddGateway(false);
           void pairWithText(payload);
         }}
         onCancel={() => setScanning(false)}
@@ -420,12 +539,19 @@ function AppBody() {
           这一层包住整屏，frame 底边正好是屏幕底边，算出来的重叠量最准。 */}
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>DSH</Text>
-            <Text style={styles.subtitle}>
-              {hello?.gatewayName ?? saved?.label ?? '未配置网关'}
+          <Pressable
+            style={styles.headerTitleBlock}
+            onPress={() => setGatewaySheet(true)}
+            hitSlop={8}
+          >
+            <Text style={styles.title}>
+              DSH{gateways.length > 1 ? <Text style={styles.titleCount}> {gateways.length}</Text> : null}
             </Text>
-          </View>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {hello?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? '未配置网关'}
+              <Text style={styles.subtitleChevron}> ›</Text>
+            </Text>
+          </Pressable>
           <View style={styles.statusPill}>
             <View
               style={[
@@ -448,6 +574,17 @@ function AppBody() {
             capabilities={hello?.capabilities ?? []}
             onBack={() => {
               setActive(null);
+              client.send({ type: 'sessions' });
+            }}
+            onForked={(sessionId) => {
+              // 分叉出来的是个全新会话，列表里还没有它，先塞个占位再让网关补全。
+              setActive({
+                sessionId,
+                updatedAt: Date.now(),
+                running: false,
+                blank: true,
+                parentSessionId: active.sessionId,
+              });
               client.send({ type: 'sessions' });
             }}
           />
@@ -562,6 +699,78 @@ function AppBody() {
         )}
       </KeyboardAvoidingView>
 
+      <ActionSheet
+        visible={gatewaySheet}
+        title="网关"
+        subtitle="同一台设备可以记住多台网关，切换时会重新拉取会话列表"
+        actions={gatewayActions}
+        onPick={(id) => {
+          if (id === 'add') {
+            setGatewaySheet(false);
+            setAddGateway(true);
+            return;
+          }
+          if (id === 'forget') {
+            setGatewaySheet(false);
+            if (saved) forgetGateway(saved);
+            return;
+          }
+          const target = gateways.find((item) => 'gw:' + item.id === id);
+          if (target) void switchGateway(target);
+        }}
+        onClose={() => setGatewaySheet(false)}
+      />
+
+      <Modal
+        visible={addGateway}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setAddGateway(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setAddGateway(false)}>
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>添加网关</Text>
+            <Text style={styles.modalHint}>在服务器上运行 dsh-pair，扫码或粘贴它输出的配对串。</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalInputTall]}
+              multiline
+              placeholder="粘贴配对内容（Base64URL）"
+              placeholderTextColor="#5B6070"
+              value={pairingText}
+              onChangeText={setPairingText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalAction}
+                onPress={() => {
+                  setAddGateway(false);
+                  setScanning(true);
+                }}
+              >
+                <Text style={styles.modalActionText}>扫码</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalAction}
+                disabled={!pairingText.trim() || busy}
+                onPress={() => {
+                  setAddGateway(false);
+                  handlePair();
+                }}
+              >
+                <Text
+                  style={[styles.modalPrimaryText, !pairingText.trim() || busy ? styles.modalDisabled : null]}
+                >
+                  配对并连接
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <Modal
         visible={renaming !== null}
         transparent
@@ -623,6 +832,9 @@ const styles = StyleSheet.create({
     color: '#EDEFF3',
     fontSize: 15,
   },
+  modalHint: { color: '#7A8091', fontSize: 12, lineHeight: 18, marginTop: -6 },
+  modalInputTall: { minHeight: 76, textAlignVertical: 'top' },
+  modalDisabled: { opacity: 0.4 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   modalAction: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   modalActionText: { color: '#8A90A0', fontSize: 14, fontWeight: '600' },
@@ -636,8 +848,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 16,
   },
+  headerTitleBlock: { flex: 1, paddingRight: 12 },
   title: { color: '#F5F6F8', fontSize: 28, fontWeight: '700', letterSpacing: 0.5 },
+  titleCount: { color: '#4C5261', fontSize: 14, fontWeight: '600' },
   subtitle: { color: '#7A8091', fontSize: 13, marginTop: 2 },
+  subtitleChevron: { color: '#4C5261' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
