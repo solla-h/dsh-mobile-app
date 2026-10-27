@@ -33,6 +33,7 @@ import {
   type SavedGateway,
 } from './src/storage/gateway-store';
 import { GatewayClient, type ConnectionState } from './src/transport/gateway-client';
+import { outbox } from './src/transport/outbox';
 import { ScanScreen } from './src/ui/ScanScreen';
 import { SessionScreen } from './src/ui/SessionScreen';
 
@@ -235,7 +236,11 @@ function AppBody() {
     const offState = client.onState((next, message) => {
       setState(next);
       setDetail(message ?? null);
-      if (next === 'ready') setError(null);
+      if (next === 'ready') {
+        setError(null);
+        // 断线期间写下的消息在重连后补发，顺序按写入先后。
+        outbox.flush((frame) => client.send(frame));
+      }
     });
     const offFrame = client.onFrame(handleFrame);
     return () => {
@@ -300,6 +305,11 @@ function AppBody() {
   const handlePair = useCallback(() => {
     void pairWithText(pairingText);
   }, [pairWithText, pairingText]);
+
+  // 冷启动：先把离线发件箱读回来，再决定要不要自动重连。
+  useEffect(() => {
+    void outbox.load();
+  }, []);
 
   // 冷启动：有保存的 token 就直接重连，不再让用户手动点一次。
   useEffect(() => {
