@@ -1,4 +1,5 @@
 import * as Network from 'expo-network';
+import { AppState } from 'react-native';
 
 import type { ClientFrame, ServerFrame } from '../protocol/types';
 
@@ -44,6 +45,8 @@ export class GatewayClient {
   /** 网络状态监听；断网/恢复时立刻调整重连节奏。 */
   private unwatchNetwork: { remove: () => void } | null = null;
   private online = true;
+  /** 前后台监听；后台期间 JS 定时器会被挂起，回前台不能拿旧时间戳判假死。 */
+  private unwatchAppState: { remove: () => void } | null = null;
 
   onFrame(listener: FrameListener): () => void {
     this.frameListeners.add(listener);
@@ -61,6 +64,7 @@ export class GatewayClient {
     this.stopped = false;
     this.attempt = 0;
     this.watchNetwork();
+    this.watchForeground();
     this.open();
   }
 
@@ -75,6 +79,8 @@ export class GatewayClient {
     this.clearTimers();
     this.unwatchNetwork?.remove();
     this.unwatchNetwork = null;
+    this.unwatchAppState?.remove();
+    this.unwatchAppState = null;
     if (this.socket) {
       const socket = this.socket;
       this.socket = null;
@@ -240,6 +246,33 @@ export class GatewayClient {
       });
     } catch {
       this.unwatchNetwork = null;
+    }
+  }
+
+  /**
+   * 回到前台时把心跳基准拉回现在。
+   *
+   * 后台期间 JS 定时器会被系统挂起，lastFrameAt 会停在进后台前的时间点；
+   * 回前台后心跳第一跳就会看到「超过两轮没收到帧」，把好端端的连接判成假死，
+   * 白白断一次（界面还会掉回配对页）。这里重置基准并补一个 ping。
+   */
+  private watchForeground(): void {
+    if (this.unwatchAppState) return;
+    try {
+      this.unwatchAppState = AppState.addEventListener('change', (next) => {
+        if (next !== 'active' || this.stopped) return;
+        if (!this.socket) return;
+        if (this.socket.readyState !== 1) {
+          // 后台期间 socket 已经被系统掐了：别等心跳，立刻重连。
+          this.socket = null;
+          if (!this.reconnectTimer) this.scheduleReconnect();
+          return;
+        }
+        this.lastFrameAt = Date.now();
+        this.send({ type: 'ping' });
+      });
+    } catch {
+      this.unwatchAppState = null;
     }
   }
 

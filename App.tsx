@@ -650,7 +650,9 @@ function AppBody() {
           </Pressable>
         ) : null}
 
-        {connected && active ? (
+        {/* 会话页只要选中了就别卸载：断线时保留历史和草稿，只让顶部提示 + 输入框变灰。
+            卸载会让本地状态（附件、草稿、滚动位置）全丢，还会掉回「配对」页。 */}
+        {active ? (
           <SessionScreen
             client={client}
             session={active}
