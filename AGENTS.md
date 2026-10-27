@@ -39,3 +39,50 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## 这个项目的实际结构
+
+Expo SDK 58 + React Native 0.88，**没有用 expo-router**：整个 App 是 `App.tsx` 里的一个状态机
+（未配对 → 会话列表 → 会话页），下面的规则优先于上面「Navigation & Routing」那一节的模板建议。
+
+```
+App.tsx                  网关配对、会话列表、多网关切换、全局待办
+src/protocol/            纯函数：帧 → App 内部模型（可单测，别在这里 import react-native）
+src/transport/           WebSocket 客户端、文件下载器、离线发件箱
+src/storage/             SecureStore / FileSystem 持久化（网关、草稿、状态）
+src/ui/                  屏幕与组件
+```
+
+## 协议
+
+服务端是第三方插件 `dsh-plugin-mobile-gateway`（protocol `dsh-mobile-v1`）。
+不确定帧名/字段时，先 `npm pack dsh-plugin-mobile-gateway@<版本>` 解开读 `lib/index.mjs`，
+不要靠猜。
+
+几个已经踩过的坑：
+
+- 通道：带 `X-DSH-Channel: conversation` 的连接只接受 `message/history/subscribe/unsubscribe`；
+  `tasks/goal/fork/agent-presets/session-agent-preset` 都是 **control 专属**。本 App 的会话连接是
+  legacy（不带 channel 头），所以两边都能发；不要随手给它加 channel。
+- `goal` 响应是双层嵌套 `goal.goal.{id,revision,...}`；写操作的响应 **不回 sessionId/requestId**，
+  只能整体重查一次拿新 revision。
+- `ref.revision` 必须是正整数；读不到合法 revision 就当没有目标（`mapGoal` 已按这个约定实现）。
+- `fork` 带 `atSeq` 时必须同时带 `historyFormatVersion: 4`，否则 `history-format-mismatch`；
+  响应里的 `sessionId` 是**新会话**的 id。
+- 文件下载的 `offset` 是**解码后**的字节数，下一页 = 服务端 offset + base64 解码长度。
+- `agent-preset` 一旦会话跑过一轮就 `locked`，锁上不会再解开。
+
+## 命令
+
+```bash
+npx jest              # 协议层单测（纯函数，秒级）
+npx tsc --noEmit
+npx expo lint
+```
+
+## 真机调试
+
+- `adb reverse tcp:8081 tcp:8081` 在 adb server 重启后会丢，重新拉一次再用 `exp://127.0.0.1:8081` 打开。
+- **不要改手机的输入法设置**（`ime enable/disable/set`）。需要输入空格时用设备侧引号：
+  `adb shell "input text 'a b c'"`。
+
