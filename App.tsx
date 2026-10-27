@@ -38,10 +38,14 @@ import {
 } from './src/storage/gateway-store';
 import { GatewayClient, type ConnectionState } from './src/transport/gateway-client';
 import { draftSessionIds } from './src/storage/drafts';
+import { readJson, removeJson, writeJson } from './src/storage/persisted-state';
 import { outbox } from './src/transport/outbox';
 import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
 import { ScanScreen } from './src/ui/ScanScreen';
 import { SessionScreen } from './src/ui/SessionScreen';
+
+/** 会话列表按网关分开缓存，切换网关时不会串味。 */
+const sessionsCacheKey = (gatewayId: string) => `sessions-${gatewayId}`;
 
 function hostOf(url: string): string {
   try {
@@ -213,6 +217,9 @@ function AppBody() {
         case 'sessions': {
           const list = (frame as { items?: SessionItem[] }).items ?? [];
           setSessions(list);
+          // 顺手存一份：断网冷启动时先摆出上次的列表，总比一张配对二维码有用。
+          const gateway = savedRef.current;
+          if (gateway) void writeJson(sessionsCacheKey(gateway.id), list.slice(0, 30));
           // 按 ID 打开会话（分叉→来源）时 active 里没有标题，列表刷新后补上，
           // 否则标题栏一直显示「未命名会话」。
           setActive((current) => {
@@ -395,10 +402,12 @@ function AppBody() {
       if (!cancelled) setGateways(items);
     });
     loadActiveGateway()
-      .then((gateway) => {
+      .then(async (gateway) => {
         if (cancelled || !gateway) return;
         savedRef.current = gateway;
         setSaved(gateway);
+        const cached = await readJson<SessionItem[]>(sessionsCacheKey(gateway.id));
+        if (!cancelled && cached?.length) setSessions(cached);
         if (gateway.token) void connectWith(gateway);
       })
       .catch(() => undefined);
@@ -484,6 +493,7 @@ function AppBody() {
             void (async () => {
               const rest = await removeGateway(gateway.id);
               setGateways(rest);
+              void removeJson(sessionsCacheKey(gateway.id));
               if (gateway.id !== savedRef.current?.id) return;
               // 删掉的正好是当前网关：断开并退回到列表/扫码页。
               client.disconnect();
@@ -643,7 +653,14 @@ function AppBody() {
           </View>
         </View>
 
-        {detail && !connected ? <Text style={styles.hint}>{detail}</Text> : null}
+        {detail && !connected ? (
+          <Pressable onPress={saved ? handleReconnect : undefined} hitSlop={6}>
+            <Text style={styles.hint}>
+              {detail}
+              {saved ? ' · 点这里重连' : ''}
+            </Text>
+          </Pressable>
+        ) : null}
         {error ? (
           <Pressable onPress={() => setError(null)} hitSlop={6}>
             <Text style={styles.error}>{error} · 点击关闭</Text>
@@ -679,7 +696,9 @@ function AppBody() {
               client.send({ type: 'sessions' });
             }}
           />
-        ) : connected ? (
+        ) : connected || saved ? (
+          // 已经配过网关就别再退回「扫码配对」：断线时保留列表，顶部提示重连，
+          // 只有一台网关都没配过时才需要配对页。
           <View style={styles.flex}>
             {(() => {
               const blocked = sessions.filter((item) => pendingItems(pending, item.sessionId).length > 0);
@@ -727,11 +746,15 @@ function AppBody() {
             ) : null}
             <View style={styles.sectionRow}>
               <Text style={styles.sectionTitle}>会话 · {visibleSessions.length}</Text>
-              <Pressable style={styles.newButton} onPress={handleCreate} disabled={creating}>
+              <Pressable
+                style={[styles.newButton, !connected && styles.newButtonOff]}
+                onPress={handleCreate}
+                disabled={creating || !connected}
+              >
                 {creating ? (
                   <ActivityIndicator size="small" color="#C9CDD6" />
                 ) : (
-                  <Text style={styles.newButtonText}>+ 新建</Text>
+                  <Text style={[styles.newButtonText, !connected && styles.newButtonTextOff]}>+ 新建</Text>
                 )}
               </Pressable>
             </View>
@@ -743,7 +766,13 @@ function AppBody() {
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={
                 <Text style={styles.empty}>
-                  {search ? '没有匹配的会话' : showArchived ? '还没有会话' : '还没有会话'}
+                  {!connected
+                    ? '连接断开，正在重连…'
+                    : search
+                      ? '没有匹配的会话'
+                      : showArchived
+                        ? '还没有会话'
+                        : '还没有会话'}
                 </Text>
               }
               ListFooterComponent={
@@ -847,11 +876,6 @@ function AppBody() {
               </View>
             ) : null}
 
-            {saved?.token ? (
-              <Pressable style={styles.secondaryButton} onPress={handleReconnect}>
-                <Text style={styles.secondaryText}>重新连接 {saved.label ?? saved.url}</Text>
-              </Pressable>
-            ) : null}
           </View>
         )}
       </KeyboardAvoidingView>
@@ -1103,6 +1127,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B1E25',
     minWidth: 62,
     alignItems: 'center',
+  },
+  newButtonOff: {
+    opacity: 0.45,
+  },
+  newButtonTextOff: {
+    color: '#5B6070',
   },
   newButtonText: { color: '#C9CDD6', fontSize: 12 },
   sectionTitle: {
