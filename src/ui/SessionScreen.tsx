@@ -282,6 +282,14 @@ export function SessionScreen({
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const composerRef = useRef<ComponentRef<typeof TextInput>>(null);
+  /** 父组件每次渲染都会传一个新函数，用 ref 兜住，别让它把下面的会话 effect 带着重跑。 */
+  const onForkedRef = useRef(onForked);
+  /** 能力列表晚到会让 canPickPreset 翻转，同样不能让它触发重订阅（会清空待发附件）。 */
+  const canPickPresetRef = useRef(canPickPreset);
+  useEffect(() => {
+    onForkedRef.current = onForked;
+    canPickPresetRef.current = canPickPreset;
+  }, [onForked, canPickPreset]);
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -607,7 +615,7 @@ export function SessionScreen({
       }
       if (kind === 'fork') {
         const forked = frame as unknown as { sessionId?: string };
-        if (forked.sessionId) onForked(forked.sessionId);
+        if (forked.sessionId) onForkedRef.current(forked.sessionId);
         return;
       }
       if (kind === 'session-stats') {
@@ -662,7 +670,7 @@ export function SessionScreen({
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [client, onForked, session.sessionId],
+    [client, session.sessionId],
   );
 
   useEffect(() => {
@@ -724,7 +732,7 @@ export function SessionScreen({
     client.send({ type: 'session-stats', sessionId: session.sessionId });
     client.send({ type: 'tasks', sessionId: session.sessionId });
     client.send({ type: 'goal', sessionId: session.sessionId });
-    if (canPickPreset) {
+    if (canPickPresetRef.current) {
       // 预设目录全局一份，会话级状态每次进来都要重查（推送没有回放）。
       client.send({ type: 'agent-presets' });
       client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
@@ -737,7 +745,7 @@ export function SessionScreen({
       if (uploaderRef.current === uploader) uploaderRef.current = null;
       client.send({ type: 'unsubscribe' });
     };
-  }, [canPickPreset, client, handleFrame, session.sessionId]);
+  }, [client, handleFrame, session.sessionId]);
 
   // 断线重连后服务端不再记得我们的订阅，必须重新订阅并补一次历史，
   // 否则回到前台会一直看着断线前的旧内容。
@@ -1190,6 +1198,8 @@ export function SessionScreen({
     if (!text && images.length === 0 && files.length === 0) return;
     const sent = client.send({
       type: 'message',
+      // 网关要求「带文件的消息」必须有 requestId，否则整条被 bad-request 拒掉。
+      requestId: files.length ? randomUUID() : undefined,
       sessionId: session.sessionId,
       text,
       clientTimeZone: TIME_ZONE,

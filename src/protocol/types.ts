@@ -409,9 +409,9 @@ export type ClientFrame =
       size: number;
       sha256: string;
     }
-  | { type: 'file-upload-chunk'; uploadId: string; offset: number; data: string }
-  | { type: 'file-upload-finish'; uploadId: string }
-  | { type: 'file-upload-cancel'; uploadId: string }
+  | { type: 'file-upload-chunk'; requestId: string; uploadId: string; offset: number; data: string }
+  | { type: 'file-upload-finish'; requestId: string; uploadId: string }
+  | { type: 'file-upload-cancel'; requestId: string; uploadId: string }
   | { type: 'session-archive'; sessionId: string; archived?: boolean; requestId?: string }
   | { type: 'session-rename'; sessionId: string; title: string }
   | { type: 'attachment'; sessionId: string; attachmentId: string }
@@ -424,6 +424,8 @@ export type ClientFrame =
     }
   | {
       type: 'message';
+      /** 带文件的消息必须带 requestId（1..128 字符），网关用它做幂等。 */
+      requestId?: string;
       sessionId?: string;
       text: string;
       mode?: 'queue' | 'steer';

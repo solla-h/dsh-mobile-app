@@ -162,9 +162,10 @@ export class FileUploader {
     }
 
     let uploadId = '';
+    let sha256 = '';
     try {
       this.onState(localId, { status: 'hashing', progress: 0 });
-      const sha256 = await file.digest('SHA-256');
+      sha256 = await file.digest('SHA-256');
       if (this.disposed || this.cancelled.has(localId)) return;
 
       const requestId = randomUUID();
@@ -181,7 +182,7 @@ export class FileUploader {
       // 整份读成 base64：移动端附件通常只有几 MB，比在 JS 里逐块编码简单可靠。
       const base64 = await file.base64();
       if (this.disposed || this.cancelled.has(localId)) {
-        this.send({ type: 'file-upload-cancel', uploadId });
+        this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
         return;
       }
 
@@ -191,13 +192,16 @@ export class FileUploader {
       let sentBytes = 0;
       while (chars < base64.length) {
         if (this.disposed || this.cancelled.has(localId)) {
-          this.send({ type: 'file-upload-cancel', uploadId });
+          this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
           return;
         }
         const slice = base64.slice(chars, chars + charsPerChunk);
+        // 网关按 requestId 回帧（错误帧也带它），所以 waiter 必须用 requestId 做键；
+        // uploadId 只在帧里带上，别拿它当键，否则每片都要等满超时。
+        const chunkRequestId = randomUUID();
         const accepted = await this.request(
-          uploadId,
-          { type: 'file-upload-chunk', uploadId, offset: sentBytes, data: slice },
+          chunkRequestId,
+          { type: 'file-upload-chunk', requestId: chunkRequestId, uploadId, offset: sentBytes, data: slice },
           30_000,
         );
         const nextOffset = accepted.nextOffset;
@@ -212,12 +216,17 @@ export class FileUploader {
         });
       }
 
-      const finished = await this.request(uploadId, { type: 'file-upload-finish', uploadId }, 120_000);
+      const finishRequestId = randomUUID();
+      const finished = await this.request(
+        finishRequestId,
+        { type: 'file-upload-finish', requestId: finishRequestId, uploadId },
+        120_000,
+      );
       const receiptId = typeof finished.receiptId === 'string' ? finished.receiptId : '';
       if (!receiptId) throw new Error('网关没有返回 receiptId');
       this.onState(localId, { status: 'done', progress: 1, receiptId });
     } catch (error) {
-      if (uploadId) this.send({ type: 'file-upload-cancel', uploadId });
+      if (uploadId) this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
       if (this.disposed) return;
       this.onState(localId, {
         status: 'error',
