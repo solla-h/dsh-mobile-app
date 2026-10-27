@@ -211,7 +211,7 @@ export function SessionScreen({
   const [cancelling, setCancelling] = useState(false);
   /** 本地乐观回显：点发送立刻出现，等服务端确认后再撤掉。 */
   const [pendingSends, setPendingSends] = useState<
-    { id: string; text: string; localUris: string[] }[]
+    { id: string; text: string; localUris: string[]; requestId: string; failed?: boolean }[]
   >([]);
   const [sendMode, setSendMode] = useState<'queue' | 'steer'>('queue');
   /** 待发送图片 */
@@ -667,6 +667,18 @@ export function SessionScreen({
               : `${failure.code ?? 'error'}：${failure.message ?? ''}`,
           );
           return;
+        }
+        if (failure.requestType === 'message') {
+          // 服务端拒收这条消息：把本地回显标成失败，别让它一直显示「发送中…」。
+          setPendingSends((current) => {
+            const index = failure.requestId
+              ? current.findIndex((item) => item.requestId === failure.requestId)
+              : current.findIndex((item) => !item.failed);
+            if (index < 0) return current;
+            const next = [...current];
+            next[index] = { ...next[index], failed: true };
+            return next;
+          });
         }
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
@@ -1204,10 +1216,11 @@ export function SessionScreen({
     const images = picked;
     const files = readyFiles;
     if (!text && images.length === 0 && files.length === 0) return;
+    // 每条消息都带 requestId：网关会把它回显在错误帧里，失败时才能对上号。
+    const requestId = randomUUID();
     const sent = client.send({
       type: 'message',
-      // 网关要求「带文件的消息」必须有 requestId，否则整条被 bad-request 拒掉。
-      requestId: files.length ? randomUUID() : undefined,
+      requestId,
       sessionId: session.sessionId,
       text,
       clientTimeZone: TIME_ZONE,
@@ -1228,7 +1241,8 @@ export function SessionScreen({
       setPendingSends((current) => [
         ...current,
         {
-          id: String(Date.now()),
+          id: requestId,
+          requestId,
           // 纯图片消息没有文本，用一个占位串当去重键，否则回显永远撤不掉。
           text: text || IMAGE_ONLY_TEXT,
           localUris: images.map((item) => item.uri),
@@ -1262,6 +1276,11 @@ export function SessionScreen({
   /** 离线待发的消息：直接删掉，不再重试。 */
   const discardOffline = useCallback((id: string) => {
     outbox.remove(id);
+  }, []);
+
+  /** 被服务端拒收的本地回显：点「移除」清掉，错误原因留在顶部。 */
+  const discardPending = useCallback((id: string) => {
+    setPendingSends((current) => current.filter((item) => item.id !== id));
   }, []);
 
   /** 长按菜单里能做什么，取决于这条消息是什么类型。 */
@@ -1391,8 +1410,10 @@ export function SessionScreen({
         kind: 'queued' as const,
         text: item.text,
         time: 0,
-        queueId: '',
+        // 失败回显也用同一个 id 移除，队列里的 id 不会和它冲突。
+        queueId: item.id,
         pending: true,
+        failed: item.failed,
         localUris: item.localUris,
       })),
       ...offlineItems.map((item) => ({
@@ -1607,6 +1628,7 @@ export function SessionScreen({
                 onOpenFile={openFile}
                 canDownloadFiles={canDownloadFiles}
                   onDiscardOffline={discardOffline}
+                onDiscardPending={discardPending}
                 onLongPress={setActionMessage}
                 onQuoteCode={(lang, code) => setQuote({ lang, code })}
               />
@@ -1966,6 +1988,7 @@ function MessageRow({
   onOpenFile,
   canDownloadFiles,
   onDiscardOffline,
+  onDiscardPending,
   onLongPress,
   onQuoteCode,
 }: {
@@ -1979,6 +2002,7 @@ function MessageRow({
   onOpenFile: (path: string) => void;
   canDownloadFiles: boolean;
   onDiscardOffline: (id: string) => void;
+  onDiscardPending: (id: string) => void;
   onLongPress: (message: ChatMessage) => void;
   onQuoteCode: (lang: string, code: string) => void;
 }) {
@@ -2013,18 +2037,24 @@ function MessageRow({
           ) : null}
           {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
           <View style={styles.queuedFooter}>
-            <Text style={styles.queuedTag}>
+            <Text style={[styles.queuedTag, message.failed ? styles.queuedTagFailed : null]}>
               {message.offline
                 ? '待发送 · 联网后自动重发'
-                : message.pending
-                  ? '发送中…'
-                  : steering
-                    ? '插话中 · 下一步生效'
-                    : '排队中'}
+                : message.failed
+                  ? '发送失败'
+                  : message.pending
+                    ? '发送中…'
+                    : steering
+                      ? '插话中 · 下一步生效'
+                      : '排队中'}
             </Text>
             {message.offline ? (
               <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
                 <Text style={styles.queuedAction}>删除</Text>
+              </Pressable>
+            ) : message.failed ? (
+              <Pressable hitSlop={8} onPress={() => onDiscardPending(message.queueId)}>
+                <Text style={styles.queuedAction}>移除</Text>
               </Pressable>
             ) : message.pending ? null : (
               <View style={styles.queuedActions}>
@@ -2201,6 +2231,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   queuedTag: { color: '#7E9CC9', fontSize: 10 },
+  queuedTagFailed: { color: '#FF7A7A' },
   queuedActions: { flexDirection: 'row', gap: 12 },
   queuedAction: { color: '#8FB6FF', fontSize: 10, fontWeight: '600' },
   // 助手消息可能带表格/代码块，撑满整行才能算出可滚动的宽度。
