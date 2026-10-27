@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import type { ImageAttachmentRef } from '../protocol/types';
 
@@ -11,15 +11,17 @@ interface Props {
 }
 
 const GAP = 6;
-/** 单图别缩得太小，多图按列数摊平。 */
+/** 和 SessionScreen 的 list.paddingHorizontal / bubble.maxWidth / padding 对齐。 */
+const LIST_PADDING = 28;
+const BUBBLE_RATIO = 0.86;
+const BUBBLE_PADDING = 28;
 const MAX_SINGLE = 220;
 const MAX_CELL = 148;
 
 /** 历史里的图片只有引用，字节要靠 attachment 请求单独取，取到之前先占位。 */
 export function MessageImages({ refs, cache, onNeed }: Props) {
   const [viewing, setViewing] = useState<string | null>(null);
-  /** 气泡可用宽度：按它算列宽，否则固定 148 在窄气泡里只能排一列。 */
-  const [boxWidth, setBoxWidth] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
 
   useEffect(() => {
     if (!onNeed) return;
@@ -30,21 +32,17 @@ export function MessageImages({ refs, cache, onNeed }: Props) {
 
   if (refs.length === 0) return null;
 
+  // 按气泡的最大可用宽度算列宽。别用 onLayout 量这一行：换行行本身的宽度
+  // 取决于子项宽度，会和气泡互相收敛到「一列」，反而排不开。
   const columns = refs.length === 1 ? 1 : refs.length <= 4 ? 2 : 3;
-  const available = boxWidth > 0 ? boxWidth - GAP * (columns - 1) : MAX_CELL * columns;
+  const content = (windowWidth - LIST_PADDING) * BUBBLE_RATIO - BUBBLE_PADDING;
   const cell = Math.min(
-    Math.max(available / columns, 56),
+    Math.max((content - GAP * (columns - 1)) / columns, 56),
     refs.length === 1 ? MAX_SINGLE : MAX_CELL,
   );
 
   return (
-    <View
-      style={styles.row}
-      onLayout={(event) => {
-        const next = Math.round(event.nativeEvent.layout.width);
-        if (next > 0 && next !== boxWidth) setBoxWidth(next);
-      }}
-    >
+    <View style={styles.row}>
       {refs.map((ref) => {
         const data = cache[ref.attachmentId];
         const ratio = ref.width && ref.height ? ref.width / ref.height : 4 / 3;
