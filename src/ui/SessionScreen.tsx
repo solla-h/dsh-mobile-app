@@ -27,6 +27,16 @@ import {
   type ChatMessage,
   type QueuedMessage,
 } from '../protocol/chat';
+import { ApprovalDock } from './dock/ApprovalDock';
+import { GraceUndo } from './dock/GraceUndo';
+import { TriageSheet } from './dock/TriageSheet';
+import { ContextHairline, StatusPill } from './nav/AmbientContext';
+import { ArcDial } from './nav/ArcDial';
+import { AnswerCard } from './stream/AnswerCard';
+import { groupMessages, type StreamRow } from './stream/group';
+import { ThinkPill } from './stream/ThinkPill';
+import { ToolGroup } from './stream/ToolGroup';
+import { parseArgs } from './tool-format';
 import {
   filterCommands,
   insertTextOf,
@@ -37,11 +47,13 @@ import {
   type CommandOption,
 } from '../protocol/commands';
 import { imageMediaType } from '../protocol/image';
+import { pickDisplayReason } from '../protocol/interactions';
 import type {
   PendingApproval,
   PendingQuestion,
   QuestionAnswer,
 } from '../protocol/interactions';
+import { approvalRisk } from '../protocol/risk';
 import {
   HISTORY_FORMAT_VERSION,
   type AttachmentFrame,
@@ -82,6 +94,8 @@ import { ImageViewer, MessageImages } from './MessageImages';
 import { OutlineSheet } from './OutlineSheet';
 import { TasksSheet } from './TasksSheet';
 
+type ApprovalOutcome = 'allowed-once' | 'rejected';
+
 interface Props {
   client: GatewayClient;
   session: SessionItem;
@@ -91,6 +105,8 @@ interface Props {
   onBack: () => void;
   /** 会话是否在跑：由 App 持有，重连后能跟着会话列表一起刷新 */
   running: boolean;
+  /** 会话列表，右侧弧形转盘用 */
+  sessions: SessionItem[];
   onRunningChange: (next: boolean) => void;
   /** fork 出来的新会话，交给上层切过去 */
   onForked: (sessionId: string) => void;
@@ -161,13 +177,14 @@ function dayLabel(ms: number): string | null {
     : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-/** 引用代码块时拼进消息里的文本；太长就截断，别把一整屏代码塞进去。 */
-function formatQuote(quote: { lang: string; code: string }): string {
+/** 引用代码块 / Diff 某一行时拼进消息里的文本；太长就截断，别把一整屏代码塞进去。 */
+function formatQuote(quote: { lang: string; code: string; label?: string }): string {
   const lines = quote.code.split('\n');
   const shown = lines.slice(0, 12);
   const fence = '```' + (quote.lang || '');
   const tail = lines.length > shown.length ? [`…（共 ${lines.length} 行）`] : [];
-  return [`> 引用代码${quote.lang ? `（${quote.lang}）` : ''}：`, fence, ...shown, ...tail, '```'].join('\n');
+  const what = quote.label ? ` ${quote.label}` : quote.lang ? `（${quote.lang}）` : '';
+  return [`> 引用${what}：`, fence, ...shown, ...tail, '```'].join('\n');
 }
 
 /** 长按菜单标题：只给一眼能认出是哪条消息的摘要。 */
@@ -198,6 +215,7 @@ export function SessionScreen({
   capabilities,
   onBack,
   running,
+  sessions,
   onRunningChange,
   onForked,
   onOpenSession,
@@ -218,6 +236,17 @@ export function SessionScreen({
     { id: string; text: string; localUris: string[]; requestId: string; failed?: boolean }[]
   >([]);
   const [sendMode, setSendMode] = useState<'queue' | 'steer'>('queue');
+  /** 审批抽屉：78% 高的三段式决策卡 */
+  const [triageOpen, setTriageOpen] = useState(false);
+  /** 已经信任的目录，同目录下的低风险补丁不再打扰 */
+  const [trustedDirs, setTrustedDirs] = useState<string[]>([]);
+  /** 已经拍板、等网关回执的那一条：按钮先禁用，回执来了 approval 一换自动复位 */
+  const [decidedId, setDecidedId] = useState<string | null>(null);
+  /** 悔棋窗提示文案；非空时审批坞让位给胶囊 */
+  const [graceLabel, setGraceLabel] = useState<string | null>(null);
+  /** 悔棋窗里压着还没发的决定 */
+  const graceRef = useRef<{ approval: PendingApproval; outcome: ApprovalOutcome } | null>(null);
+  const autoApprovedRef = useRef<Set<string>>(new Set());
   /** 待发送图片 */
   const [picked, setPicked] = useState<PickedImage[]>([]);
   /** 待发送文件（上传完成后才有 receiptId） */
@@ -274,7 +303,7 @@ export function SessionScreen({
   /** 连接状态：断线时输入框上方给一条提示，别让用户对着空气发消息。 */
   const [conn, setConn] = useState<string>('ready');
   /** 从代码块引用过来的内容，发送时自动拼在正文前面。 */
-  const [quote, setQuote] = useState<{ lang: string; code: string } | null>(null);
+  const [quote, setQuote] = useState<{ lang: string; code: string; label?: string } | null>(null);
   /** 正在编辑的排队消息 id；非 null 时「发送」变成「保存排队内容」。 */
   const [editingQueue, setEditingQueue] = useState<string | null>(null);
   /** 上下文占用百分比，0 表示还没拿到统计 */
@@ -310,7 +339,7 @@ export function SessionScreen({
   }, []);
 
   const settledRef = useRef<Set<string>>(new Set());
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<StreamRow>>(null);
   /** 用户往上翻看历史时不要再把他拽回底部。 */
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -860,20 +889,74 @@ export function SessionScreen({
     if (requestKey) setSheetHidden(false);
   }, [requestKey]);
 
-  const respondApproval = useCallback(
-    (outcome: 'allowed-once' | 'rejected') => {
-      if (!approval) return;
+  /** 把某一条审批的决定真正发给网关。 */
+  const sendApproval = useCallback(
+    (target: PendingApproval, outcome: ApprovalOutcome) => {
       client.send({
         type: 'approval-response',
-        rpcId: approval.rpcId,
-        sessionId: approval.sessionId,
-        approvalId: approval.approvalId,
+        rpcId: target.rpcId,
+        sessionId: target.sessionId,
+        approvalId: target.approvalId,
         outcome,
       });
       setInteractionError(null);
     },
-    [approval, client],
+    [client],
   );
+
+  const respondApproval = useCallback(
+    (outcome: ApprovalOutcome) => {
+      if (!approval) return;
+      sendApproval(approval, outcome);
+    },
+    [approval, sendApproval],
+  );
+
+  /**
+   * 拍板：界面立刻推进，真正的 approval-response 压到悔棋窗结束再发。
+   * 网关的审批是一次性的（重复提交只回 accepted:false），所以撤回只能在发送前拦下来。
+   */
+  const decideApproval = useCallback(
+    (outcome: ApprovalOutcome) => {
+      if (!approval) return;
+      graceRef.current = { approval, outcome };
+      setDecidedId(approval.approvalId);
+      setGraceLabel(outcome === 'allowed-once' ? '已批准' : '已拦截');
+      setTriageOpen(false);
+    },
+    [approval],
+  );
+
+  const undoDecision = useCallback(() => {
+    graceRef.current = null;
+    setGraceLabel(null);
+    setDecidedId(null);
+    showToast('已撤回拍板');
+  }, [showToast]);
+
+  const expireGrace = useCallback(() => {
+    const pending = graceRef.current;
+    graceRef.current = null;
+    setGraceLabel(null);
+    if (pending) sendApproval(pending.approval, pending.outcome);
+  }, [sendApproval]);
+
+  /** 会话页被卸载时别再等倒计时，直接把还没发的决定发出去。 */
+  useEffect(
+    () => () => {
+      const pending = graceRef.current;
+      graceRef.current = null;
+      if (pending) sendApproval(pending.approval, pending.outcome);
+    },
+    [sendApproval],
+  );
+
+  const toggleTrustedDir = useCallback((dir: string | undefined) => {
+    if (!dir) return;
+    setTrustedDirs((current) =>
+      current.includes(dir) ? current.filter((item) => item !== dir) : [...current, dir],
+    );
+  }, []);
 
   const answerQuestion = useCallback(
     (answers: QuestionAnswer[]) => {
@@ -1407,6 +1490,55 @@ export function SessionScreen({
     });
   }, [messages, pendingSends.length, queued]);
 
+  /** 审批面板要展示的东西：目标文件、diff、风险等级。 */
+  const approvalInfo = useMemo(() => {
+    if (!approval) return null;
+    const call = approval.callId
+      ? messages.find((message) => message.kind === 'tool' && message.callId === approval.callId)
+      : undefined;
+    const args = call && call.kind === 'tool' ? parseArgs(call.args) : null;
+    const filePath =
+      args && typeof args.file_path === 'string'
+        ? args.file_path
+        : args && typeof args.path === 'string'
+          ? args.path
+          : undefined;
+    const rawDiff =
+      args && typeof args.patch === 'string'
+        ? args.patch
+        : args && typeof args.diff === 'string'
+          ? args.diff
+          : undefined;
+    const diff = rawDiff && /^(\+\+\+|---|@@|diff --git)/m.test(rawDiff) ? rawDiff : undefined;
+    const diffLines = diff ? diff.split('\n') : [];
+    return {
+      target: filePath ?? approval.toolName ?? '工具调用',
+      dir: filePath ? filePath.replace(/\/[^/]*$/, '') : undefined,
+      detail: pickDisplayReason(approval.displayReason, approval.reason) || undefined,
+      diff,
+      additions: diff
+        ? diffLines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length
+        : undefined,
+      deletions: diff
+        ? diffLines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length
+        : undefined,
+      risk: approvalRisk(approval),
+    };
+  }, [approval, messages]);
+
+  // 目录级信任：同目录、低风险的后续补丁直接放行，不再打断（§3.4）。
+  useEffect(() => {
+    if (!approval || !approvalInfo) return;
+    if (approvalInfo.risk.level !== 'normal') return;
+    if (!approvalInfo.dir || !trustedDirs.includes(approvalInfo.dir)) return;
+    if (autoApprovedRef.current.has(approval.approvalId)) return;
+    autoApprovedRef.current.add(approval.approvalId);
+    setDecidedId(approval.approvalId);
+    respondApproval('allowed-once');
+    showToast(`已按目录信任放行 · ${approvalInfo.dir}`);
+  }, [approval, approvalInfo, trustedDirs, respondApproval, showToast]);
+
+
   const baseRows: ChatMessage[] = useMemo(() => (streaming
     ? [
         ...messages,
@@ -1421,9 +1553,8 @@ export function SessionScreen({
       ]
     : messages), [messages, streaming]);
 
-  const rows: ChatMessage[] = useMemo(
-    () => [
-      ...baseRows,
+  const rows: StreamRow[] = useMemo(() => {
+    const extras: ChatMessage[] = [
       ...queued.map((item) => ({
         id: `queue-${item.id}`,
         kind: 'queued' as const,
@@ -1453,9 +1584,10 @@ export function SessionScreen({
         pending: true,
         offline: true,
       })),
-    ],
-    [baseRows, offlineItems, pendingSends, queued],
-  );
+    ];
+    // 连续的 tool 调用合并成一组，其余消息原样透传。
+    return groupMessages([...baseRows, ...extras]);
+  }, [baseRows, offlineItems, pendingSends, queued]);
 
   // 进会话先把上次没发完的草稿捞回来。切换会话时先清空，
   // 否则上一会话的文字会被当成这一会话的草稿写回去。
@@ -1518,20 +1650,9 @@ export function SessionScreen({
   return (
     <View style={styles.root}>
       {/* 2px 上下文水位线：不占排版高度，扫一眼就知道还剩多少上下文。 */}
-      <View style={styles.waterline}>
-        {contextPct > 0 ? (
-          <View
-            style={[
-              styles.waterlineFill,
-              {
-                width: `${contextPct}%`,
-                backgroundColor:
-                  contextPct >= 85 ? '#8A3B33' : contextPct >= 60 ? '#6E5C33' : '#3A3F4B',
-              },
-            ]}
-          />
-        ) : null}
-      </View>
+      <ContextHairline ratio={contextPct / 100} />
+      {/* 右侧弧形会话转盘：按住感应条上下滑，松手切换会话。 */}
+      <ArcDial sessions={sessions} activeId={session.sessionId} onSelect={onOpenSession} />
       <View style={styles.header}>
         <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
@@ -1541,6 +1662,11 @@ export function SessionScreen({
             {session.projections?.values.title ?? '未命名会话'}
           </Text>
         </Pressable>
+        {approval ? (
+          <StatusPill text="待批复" tone="gate" onPress={() => setTriageOpen(true)} />
+        ) : running ? (
+          <StatusPill text="THINKING" tone="busy" />
+        ) : null}
         {todos && todos.length > 0 ? (
           <Pressable style={styles.outlineButton} onPress={() => setTasksOpen(true)}>
             <Text style={styles.outlineText}>
@@ -1585,7 +1711,7 @@ export function SessionScreen({
             <ActivityIndicator color="#8A90A0" />
           </View>
         ) : (
-          <FlatList
+          <FlatList<StreamRow>
             ref={listRef}
             data={rows}
             keyExtractor={(item) => item.id}
@@ -1640,33 +1766,67 @@ export function SessionScreen({
                 {conn === 'ready' ? '还没有消息' : '连接断开，重连后会自动加载历史'}
               </Text>
             }
-            renderItem={({ item, index }) => (
-              <View>
-                {dayLabel(item.time) && dayLabel(item.time) !== dayLabel(rows[index - 1]?.time ?? 0) ? (
-                  <Text style={styles.dayDivider}>{dayLabel(item.time)}</Text>
-                ) : null}
-                <MessageRow
-                message={item}
-                attachmentCache={attachmentCache}
-                onNeedAttachment={requestAttachment}
-                onRemoveQueued={removeQueued}
-                onEditQueued={startEditQueued}
-                onSteerQueued={steerQueued}
-                fileStates={fileStates}
-                onOpenFile={openFile}
-                canDownloadFiles={canDownloadFiles}
-                  onDiscardOffline={discardOffline}
-                onDiscardPending={discardPending}
-                onLongPress={setActionMessage}
-                onQuoteCode={(lang, code) => setQuote({ lang, code })}
-              />
-              </View>
-            )}
+            renderItem={({ item, index }) => {
+              const time = item.kind === 'tools' ? (item.tools[0]?.time ?? 0) : item.message.time;
+              const previous = rows[index - 1];
+              const previousTime = previous
+                ? previous.kind === 'tools'
+                  ? (previous.tools[0]?.time ?? 0)
+                  : previous.message.time
+                : 0;
+              return (
+                <View>
+                  {dayLabel(time) && dayLabel(time) !== dayLabel(previousTime) ? (
+                    <Text style={styles.dayDivider}>{dayLabel(time)}</Text>
+                  ) : null}
+                  {item.kind === 'tools' ? (
+                    <View style={styles.toolGroupWrap}>
+                      <ToolGroup tools={item.tools} />
+                    </View>
+                  ) : (
+                    <MessageRow
+                      message={item.message}
+                      attachmentCache={attachmentCache}
+                      onNeedAttachment={requestAttachment}
+                      onRemoveQueued={removeQueued}
+                      onEditQueued={startEditQueued}
+                      onSteerQueued={steerQueued}
+                      fileStates={fileStates}
+                      onOpenFile={openFile}
+                      canDownloadFiles={canDownloadFiles}
+                      onDiscardOffline={discardOffline}
+                      onDiscardPending={discardPending}
+                      onLongPress={setActionMessage}
+                      onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
+                    />
+                  )}
+                </View>
+              );
+            }}
           />
         )}
 
+        <TriageSheet
+          visible={triageOpen && Boolean(approval)}
+          target={approvalInfo?.target ?? ''}
+          reason={approvalInfo?.detail}
+          diff={approvalInfo?.diff}
+          highRisk={approvalInfo?.risk.level === 'high'}
+          busy={Boolean(approval && decidedId === approval.approvalId)}
+          onClose={() => setTriageOpen(false)}
+          onApprove={() => decideApproval('allowed-once')}
+          onReject={() => decideApproval('rejected')}
+          onQuote={(line) =>
+            setQuote({
+              lang: 'diff',
+              label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+              code: line.text,
+            })
+          }
+        />
+
         <InteractionSheet
-          approval={approval}
+          approval={null}
           question={question}
           error={interactionError}
           hidden={sheetHidden}
@@ -1712,15 +1872,11 @@ export function SessionScreen({
           </View>
         ) : null}
 
-        {sheetHidden && (approval || question) ? (
+        {sheetHidden && question ? (
           <Pressable style={styles.pendingBar} onPress={() => setSheetHidden(false)}>
             <View style={styles.pendingBarDot} />
             <Text style={styles.pendingBarText} numberOfLines={1}>
-              {approval
-                ? approval.toolName
-                  ? '待审批 · ' + approval.toolName
-                  : '待审批'
-                : '待回答 · ' + (question?.questions.length ?? 1) + ' 个问题'}
+              {'待回答 · ' + question.questions.length + ' 个问题'}
             </Text>
             <Text style={styles.pendingBarAction}>打开</Text>
           </Pressable>
@@ -1754,6 +1910,27 @@ export function SessionScreen({
             setJumpTick((value) => value + 1);
           }}
         />
+
+        {graceLabel ? (
+          <GraceUndo label={graceLabel} onUndo={undoDecision} onExpire={expireGrace} />
+        ) : null}
+
+        {approval && approvalInfo && !graceLabel ? (
+          <ApprovalDock
+            target={approvalInfo.target}
+            detail={approvalInfo.detail}
+            additions={approvalInfo.additions}
+            deletions={approvalInfo.deletions}
+            highRisk={approvalInfo.risk.level === 'high'}
+            riskLabels={approvalInfo.risk.labels}
+            busy={decidedId === approval.approvalId}
+            trusted={Boolean(approvalInfo.dir && trustedDirs.includes(approvalInfo.dir))}
+            onToggleTrust={() => toggleTrustedDir(approvalInfo.dir)}
+            onApprove={() => decideApproval('allowed-once')}
+            onReject={() => decideApproval('rejected')}
+            onExpand={() => setTriageOpen(true)}
+          />
+        ) : null}
 
         <View>
           {picked.length > 0 ? (
@@ -1950,60 +2127,6 @@ function describeStats(stats: SessionStatsFrame | null): string | null {
   return parts.length ? parts.join(' · ') : null;
 }
 
-function parseArgs(args?: string): Record<string, any> | null {
-  if (!args) return null;
-  try {
-    const parsed = JSON.parse(args);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/** 把工具参数压成一行人类可读的摘要。 */
-function describeTool(name: string, args?: string): string {
-  const parsed = parseArgs(args);
-  if (!parsed) return (args ?? '').replace(/\s+/g, ' ').slice(0, 160);
-  const pick = (key: string) => (typeof parsed[key] === 'string' ? (parsed[key] as string) : undefined);
-  switch (name) {
-    case 'bash':
-    case 'shell':
-      return pick('description') ?? pick('command')?.split('\n')[0] ?? '';
-    case 'read':
-    case 'write':
-    case 'edit':
-      return pick('file_path') ?? pick('path') ?? '';
-    case 'grep':
-      return `/${pick('pattern') ?? ''}/ ${pick('path') ?? ''}`.trim();
-    case 'glob':
-      return pick('pattern') ?? '';
-    default: {
-      const first = Object.values(parsed).find((value) => typeof value === 'string');
-      return typeof first === 'string' ? first.slice(0, 120) : '';
-    }
-  }
-}
-
-function toolCommand(name: string, args?: string): string | undefined {
-  if (name !== 'bash' && name !== 'shell') return undefined;
-  const parsed = parseArgs(args);
-  const command = parsed?.command;
-  return typeof command === 'string' ? command.trim() : undefined;
-}
-
-function Reasoning({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const long = text.length > 120;
-  return (
-    <Pressable onPress={long ? () => setOpen((value) => !value) : undefined} disabled={!long}>
-      <Text style={styles.reasoning} numberOfLines={open ? undefined : 3}>
-        <Text style={styles.reasoningTag}>思考 </Text>
-        {text}
-      </Text>
-      {long ? <Text style={styles.reasoningToggle}>{open ? '收起' : '展开'}</Text> : null}
-    </Pressable>
-  );
-}
 
 function MessageRow({
   message,
@@ -2034,7 +2157,6 @@ function MessageRow({
   onLongPress: (message: ChatMessage) => void;
   onQuoteCode: (lang: string, code: string) => void;
 }) {
-  const [toolOpen, setToolOpen] = useState(false);
   /** 本地回显图片的全屏预览；历史图片走 MessageImages 自己的查看器。 */
   const [preview, setPreview] = useState<string | null>(null);
   if (message.kind === 'files') {
@@ -2111,79 +2233,45 @@ function MessageRow({
       </View>
     );
   }
-  if (message.kind === 'tool') {
-    const command = toolCommand(message.name, message.args);
-    const summary = describeTool(message.name, message.args);
-    const output = message.output?.trim();
-    // Host 的 isError 不反映 shell 退出码，输出末尾的 [exit code: N] 才是。
-    const exitCode = output ? /\[exit code: (-?\d+)\]\s*$/.exec(output) : null;
-    const failed = Boolean(message.isError) || Boolean(exitCode && exitCode[1] !== '0');
-    const expandable = Boolean(command || output);
+  // 工具调用已经在列表层合并成 ToolGroup，这里只兜底。
+  if (message.kind === 'tool') return null;
+  if (message.kind === 'assistant') {
+    // Stage 1/2 展开推理，Stage 3 自动折叠成胶囊，正式回答单独一张提亮卡片。
     return (
-      <Pressable
-        style={[styles.toolCard, failed ? styles.toolCardError : null]}
-        onPress={expandable ? () => setToolOpen((value) => !value) : undefined}
-        disabled={!expandable}
-      >
-        <View style={styles.toolHeader}>
-          <Text style={styles.toolName}>{message.name}</Text>
-          <Text style={styles.toolSummary} numberOfLines={1}>
-            {summary}
-          </Text>
-          {failed ? (
-            <Text style={styles.toolError}>{exitCode ? '退出码 ' + exitCode[1] : '失败'}</Text>
-          ) : null}
-        </View>
-        {command && (toolOpen || command !== summary) ? (
-          <Text style={styles.toolCommand} numberOfLines={toolOpen ? undefined : 2}>
-            {command}
-          </Text>
+      <View style={styles.assistantWrap}>
+        {message.reasoning ? (
+          <ThinkPill text={message.reasoning} streaming={message.streaming} />
         ) : null}
-        {output ? (
-          <Text style={styles.toolBody} numberOfLines={toolOpen ? undefined : 5}>
-            {output}
-          </Text>
-        ) : (
-          <Text style={styles.toolPending}>运行中…</Text>
-        )}
-        {expandable ? <Text style={styles.toolMore}>{toolOpen ? '收起' : '展开全部'}</Text> : null}
-      </Pressable>
+        {message.text || message.streaming || message.failure ? (
+          <AnswerCard failed={Boolean(message.failure)}>
+            <Pressable onLongPress={() => onLongPress(message)} delayLongPress={320}>
+              {message.text ? (
+                <MarkdownView
+                  text={message.text}
+                  onFileLink={canDownloadFiles ? onOpenFile : undefined}
+                  onQuoteCode={onQuoteCode}
+                />
+              ) : (
+                <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>
+              )}
+              {message.failure ? <Text style={styles.failure}>{message.failure}</Text> : null}
+            </Pressable>
+          </AnswerCard>
+        ) : null}
+      </View>
     );
   }
-  const isUser = message.kind === 'user';
   return (
-    <View style={[styles.bubbleRow, isUser ? styles.rowRight : styles.rowLeft]}>
+    <View style={[styles.bubbleRow, styles.rowRight]}>
       <Pressable
         onLongPress={() => onLongPress(message)}
         delayLongPress={320}
-        style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}
+        style={[styles.bubble, styles.bubbleUser]}
       >
-        {message.kind === 'assistant' && message.reasoning ? (
-          <Reasoning text={message.reasoning} />
+        {'images' in message && message.images?.length ? (
+          <MessageImages refs={message.images} cache={attachmentCache} onNeed={onNeedAttachment} />
         ) : null}
-        {isUser ? (
-          <>
-            {message.images?.length ? (
-              <MessageImages
-                refs={message.images}
-                cache={attachmentCache}
-                onNeed={onNeedAttachment}
-              />
-            ) : null}
-            {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
-          </>
-        ) : message.text ? (
-          <MarkdownView
-            text={message.text}
-            onFileLink={canDownloadFiles ? onOpenFile : undefined}
-            onQuoteCode={onQuoteCode}
-          />
-        ) : (
-          <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>
-        )}
-        {message.kind === 'assistant' && message.failure ? (
-          <Text style={styles.failure}>{message.failure}</Text>
-        ) : null}
+        {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
       </Pressable>
     </View>
   );
@@ -2246,6 +2334,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   bubbleRow: { flexDirection: 'row', marginBottom: 10 },
+  assistantWrap: { gap: 8, marginBottom: 12, flexShrink: 1 },
+  toolGroupWrap: { marginBottom: 10 },
   rowRight: { justifyContent: 'flex-end' },
   rowLeft: { justifyContent: 'flex-start' },
   bubble: { maxWidth: '86%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
