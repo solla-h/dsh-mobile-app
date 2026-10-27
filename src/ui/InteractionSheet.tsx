@@ -111,7 +111,8 @@ function ApprovalBody({
 }) {
   const reason = pickDisplayReason(approval.displayReason, approval.reason);
   const risk = useMemo(() => approvalRisk(approval), [approval]);
-  const fill = useRef(new Animated.Value(0)).current;
+  // 用 state 装 Animated.Value：渲染期读 ref.current 会被 react-hooks/refs 拦。
+  const [fill] = useState(() => new Animated.Value(0));
   const doneRef = useRef(false);
   const high = risk.level === 'high';
 
