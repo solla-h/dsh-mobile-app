@@ -59,10 +59,14 @@ export function mapGoal(value: unknown): GoalInfo | null {
   const raw = inner as Record<string, unknown>;
   const id = str(raw.id);
   const objective = str(raw.objective);
+  // 写操作要用 ref.revision 做 CAS，非正整数会被网关直接 bad-request。
+  // 读不到合法 revision 时宁可当作「没有目标」，也不要给 UI 一个点不动的按钮。
+  const revision = raw.revision;
   if (!id || !objective) return null;
+  if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) return null;
   return {
     id,
-    revision: typeof raw.revision === 'number' ? raw.revision : 0,
+    revision,
     objective,
     phase: str(raw.phase),
     maxGoalRounds: typeof raw.maxGoalRounds === 'number' ? raw.maxGoalRounds : undefined,
