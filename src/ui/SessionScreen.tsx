@@ -989,12 +989,18 @@ export function SessionScreen({
   }, []);
 
   const askImageSource = useCallback(() => {
-    Alert.alert('添加附件', undefined, [
-      { text: '拍照', onPress: () => pickImage('camera') },
-      { text: '从相册选择', onPress: () => pickImage('library') },
-      { text: '文件', onPress: pickFiles },
-      { text: '取消', style: 'cancel' },
-    ]);
+    // Android 的 AlertDialog 最多三个按钮，第四个「取消」会被丢掉；
+    // 这里显式允许点外部/返回键关闭，别让用户被弹窗困住。
+    Alert.alert(
+      '添加附件',
+      undefined,
+      [
+        { text: '拍照', onPress: () => pickImage('camera') },
+        { text: '从相册选择', onPress: () => pickImage('library') },
+        { text: '文件', onPress: pickFiles },
+      ],
+      { cancelable: true },
+    );
   }, [pickFiles, pickImage]);
 
   /** 点文件卡片：没下过就下，下过就直接打开。 */

@@ -213,6 +213,13 @@ function AppBody() {
         case 'sessions': {
           const list = (frame as { items?: SessionItem[] }).items ?? [];
           setSessions(list);
+          // 按 ID 打开会话（分叉→来源）时 active 里没有标题，列表刷新后补上，
+          // 否则标题栏一直显示「未命名会话」。
+          setActive((current) => {
+            if (!current) return current;
+            const match = list.find((item) => item.sessionId === current.sessionId);
+            return match ? { ...current, ...match } : current;
+          });
           break;
         }
         case 'session-queues': {
@@ -655,6 +662,8 @@ function AppBody() {
             }}
             onOpenSession={(sessionId) => {
               setActive({ sessionId, updatedAt: Date.now(), running: false, blank: false });
+              // 新 active 只有 id，标题/目录要等列表回来补。
+              client.send({ type: 'sessions' });
             }}
             onForked={(sessionId) => {
               // 分叉出来的是个全新会话，列表里还没有它，先塞个占位再让网关补全。
