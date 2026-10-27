@@ -230,6 +230,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   const [actionMessage, setActionMessage] = useState<ChatMessage | null>(null);
   /** 连接状态：断线时输入框上方给一条提示，别让用户对着空气发消息。 */
   const [conn, setConn] = useState<string>('ready');
+  /** 上下文占用百分比，0 表示还没拿到统计 */
+  const contextPct = useMemo(() => {
+    const pressure = stats?.contextPressure;
+    if (!pressure?.contextWindow || typeof pressure.pressureTokens !== 'number') return 0;
+    return Math.max(0, Math.min(100, Math.round((pressure.pressureTokens / pressure.contextWindow) * 100)));
+  }, [stats]);
   /** 轻量提示（复制成功之类），2 秒后自己消失。 */
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1264,6 +1270,21 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
 
   return (
     <View style={styles.root}>
+      {/* 2px 上下文水位线：不占排版高度，扫一眼就知道还剩多少上下文。 */}
+      <View style={styles.waterline}>
+        {contextPct > 0 ? (
+          <View
+            style={[
+              styles.waterlineFill,
+              {
+                width: `${contextPct}%`,
+                backgroundColor:
+                  contextPct >= 85 ? '#8A3B33' : contextPct >= 60 ? '#6E5C33' : '#3A3F4B',
+              },
+            ]}
+          />
+        ) : null}
+      </View>
       <View style={styles.header}>
         <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
@@ -1831,6 +1852,8 @@ function MessageRow({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0B0C0F' },
+  waterline: { height: 2, backgroundColor: '#12141A' },
+  waterlineFill: { height: 2 },
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
