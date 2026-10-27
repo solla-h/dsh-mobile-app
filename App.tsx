@@ -290,7 +290,7 @@ function AppBody() {
           break;
       }
     },
-    [client, startControl],
+    [applyTitle, client, startControl],
   );
 
   useEffect(() => {

@@ -25,7 +25,6 @@ import {
   type ChatMessage,
   type QueuedMessage,
 } from '../protocol/chat';
-import { hrefToPath, isLocalFileHref } from '../protocol/files';
 import {
   filterCommands,
   insertTextOf,
@@ -93,6 +92,8 @@ interface StreamingDraft {
   attemptId: string;
   text: string;
   reasoning: string;
+  /** 这一轮流式输出的开始时间，渲染时不要用 Date.now()（纯函数要求） */
+  startedAt: number;
 }
 
 /** 已经选好、还没发出去的图片。 */
@@ -398,7 +399,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         const inner = streamFrame.frame;
         if (inner.type === 'start') {
           setRunning(true);
-          setStreaming({ attemptId: String(inner.attemptId ?? ''), text: '', reasoning: '' });
+          setStreaming({
+            attemptId: String(inner.attemptId ?? ''),
+            text: '',
+            reasoning: '',
+            startedAt: Date.now(),
+          });
           return;
         }
         if (inner.type === 'chunk') {
@@ -608,7 +614,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [client, session.sessionId],
+    [client, onForked, session.sessionId],
   );
 
   useEffect(() => {
@@ -1183,7 +1189,7 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
           kind: 'assistant',
           text: streaming.text,
           reasoning: streaming.reasoning || undefined,
-          time: Date.now(),
+          time: streaming.startedAt,
           streaming: true,
         },
       ]
