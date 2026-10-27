@@ -49,6 +49,8 @@ export type ChatMessage =
       pending?: boolean;
       /** 断线时写进发件箱、等重连后自动重发 */
       offline?: boolean;
+      /** 服务端明确拒收了这条消息，本地回显要标出来，别一直转圈 */
+      failed?: boolean;
       /** 本地回显用的图片 uri（还没上传，拿不到 attachmentId） */
       localUris?: string[];
     }
