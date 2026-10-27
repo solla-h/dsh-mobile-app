@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -20,6 +22,7 @@ import {
   type PendingQuestion,
   type QuestionAnswer,
 } from '../protocol/interactions';
+import { approvalRisk } from '../protocol/risk';
 
 interface Props {
   approval: PendingApproval | null;
@@ -75,7 +78,12 @@ export function InteractionSheet({
               </Pressable>
             </View>
             {approval ? (
-              <ApprovalBody approval={approval} error={error} onApproval={onApproval} />
+              <ApprovalBody
+                key={approval.rpcId}
+                approval={approval}
+                error={error}
+                onApproval={onApproval}
+              />
             ) : question ? (
               <QuestionBody
                 key={question.rpcId}
@@ -102,18 +110,70 @@ function ApprovalBody({
   onApproval: (outcome: 'allowed-once' | 'rejected') => void;
 }) {
   const reason = pickDisplayReason(approval.displayReason, approval.reason);
+  const risk = useMemo(() => approvalRisk(approval), [approval]);
+  const fill = useRef(new Animated.Value(0)).current;
+  const doneRef = useRef(false);
+  const high = risk.level === 'high';
+
+  const startCharge = () => {
+    if (doneRef.current) return;
+    Animated.timing(fill, {
+      toValue: 1,
+      duration: 550,
+      easing: Easing.linear,
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (!finished || doneRef.current) return;
+      doneRef.current = true;
+      onApproval('allowed-once');
+    });
+  };
+
+  const cancelCharge = () => {
+    if (doneRef.current) return;
+    fill.stopAnimation(() => {
+      // 松手后 120ms 归零：够快，也不会有跳变感。
+      Animated.timing(fill, { toValue: 0, duration: 120, useNativeDriver: false }).start();
+    });
+  };
+
   return (
     <View>
       <Text style={styles.reason}>{reason || '该操作需要你确认后才能继续。'}</Text>
+      {high ? (
+        <View style={styles.riskRow}>
+          <Text style={styles.riskTag}>高危</Text>
+          <Text style={styles.riskText}>{risk.labels.join(' · ')}</Text>
+        </View>
+      ) : null}
       <Text style={styles.note}>这是一次性授权，只对当前这一次操作生效。</Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.buttonRow}>
         <Pressable style={[styles.button, styles.reject]} onPress={() => onApproval('rejected')}>
           <Text style={styles.rejectText}>拒绝</Text>
         </Pressable>
-        <Pressable style={[styles.button, styles.allow]} onPress={() => onApproval('allowed-once')}>
-          <Text style={styles.allowText}>允许一次</Text>
-        </Pressable>
+        {high ? (
+          <Pressable
+            style={[styles.button, styles.allow, styles.holdButton]}
+            onPressIn={startCharge}
+            onPressOut={cancelCharge}
+            accessibilityHint="按住半秒才会放行，防止误触"
+          >
+            <Animated.View
+              style={[
+                styles.holdFill,
+                {
+                  width: fill.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                },
+              ]}
+            />
+            <Text style={styles.allowText}>长按 0.5s 放行</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={[styles.button, styles.allow]} onPress={() => onApproval('allowed-once')}>
+            <Text style={styles.allowText}>允许一次</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -307,6 +367,26 @@ const styles = StyleSheet.create({
   rejectText: { color: '#C9CDD6', fontSize: 15, fontWeight: '600' },
   allow: { backgroundColor: '#F5F6F8' },
   allowText: { color: '#0B0C0F', fontSize: 15, fontWeight: '700' },
+  riskRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  riskTag: {
+    color: '#FF9E7A',
+    fontSize: 10,
+    fontWeight: '700',
+    backgroundColor: '#33201A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  riskText: { color: '#B58C7A', fontSize: 11 },
+  holdButton: { overflow: 'hidden', justifyContent: 'center' },
+  holdFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#E8B75C',
+  },
   questionScroll: { flexGrow: 0, flexShrink: 1 },
   questionContent: { paddingBottom: 6 },
   questionBlock: { marginBottom: 18 },
