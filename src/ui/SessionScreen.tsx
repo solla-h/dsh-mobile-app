@@ -1,4 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
+import { randomUUID } from 'expo-crypto';
+import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
@@ -65,6 +67,7 @@ import {
 import { mapPresetList, presetName, type PresetList } from '../protocol/presets';
 import { goalRef, mapGoal, mapTodos, type GoalInfo, type TodoItem } from '../protocol/tasks';
 import { FileDownloader } from '../transport/file-download';
+import { FileUploader, type UploadState } from '../transport/file-upload';
 import { loadDraft, saveDraft } from '../storage/drafts';
 import { outbox, type OutboxItem } from '../transport/outbox';
 import type { GatewayClient } from '../transport/gateway-client';
@@ -97,6 +100,15 @@ interface StreamingDraft {
   reasoning: string;
   /** 这一轮流式输出的开始时间，渲染时不要用 Date.now()（纯函数要求） */
   startedAt: number;
+}
+
+/** 选好待上传的普通文件。 */
+interface PickedFile {
+  id: string;
+  name: string;
+  size: number;
+  file: File;
+  state: UploadState;
 }
 
 /** 已经选好、还没发出去的图片。 */
@@ -203,6 +215,8 @@ export function SessionScreen({
   const [sendMode, setSendMode] = useState<'queue' | 'steer'>('queue');
   /** 待发送图片 */
   const [picked, setPicked] = useState<PickedImage[]>([]);
+  /** 待发送文件（上传完成后才有 receiptId） */
+  const [pickedFiles, setPickedFiles] = useState<PickedFile[]>([]);
   const [picking, setPicking] = useState(false);
   /** attachmentId → Base64 字节，历史图片按需拉取后缓存在这里 */
   const [attachmentCache, setAttachmentCache] = useState<Record<string, string>>({});
@@ -243,6 +257,7 @@ export function SessionScreen({
   const todosSeqRef = useRef(-1);
   const goalSeqRef = useRef(-1);
   const downloaderRef = useRef<FileDownloader | null>(null);
+  const uploaderRef = useRef<FileUploader | null>(null);
   /** 点了大纲里的某一轮：要先把历史翻到那个 seq，再滚过去。 */
   const jumpTargetRef = useRef<number | null>(null);
   const oldestSeqRef = useRef<number>(Number.POSITIVE_INFINITY);
@@ -298,6 +313,8 @@ export function SessionScreen({
     (frame: ServerFrame) => {
       // 文件传输的帧先交给下载器，它按 requestId / transferId 自己认领。
       if (downloaderRef.current?.handleFrame(frame)) return;
+      // 上传的帧按 requestId/uploadId 认领，认领了就别再进业务分支。
+      if (uploaderRef.current?.handleFrame(frame as unknown as Record<string, unknown>)) return;
       const kind = frame.kind;
       if (kind === 'history') {
         const history = frame as unknown as HistoryFrame;
@@ -678,6 +695,16 @@ export function SessionScreen({
       (path, state) => setFileStates((current) => ({ ...current, [path]: state })),
     );
     downloaderRef.current = downloader;
+    const uploader = new FileUploader(
+      session.sessionId,
+      (frame) => client.send(frame),
+      (localId, state) => {
+        setPickedFiles((current) =>
+          current.map((item) => (item.id === localId ? { ...item, state } : item)),
+        );
+      },
+    );
+    uploaderRef.current = uploader;
     client.send({ type: 'subscribe', sessionId: session.sessionId, assistantStream: true });
     client.send({
       type: 'history',
@@ -697,6 +724,8 @@ export function SessionScreen({
       off();
       downloader.dispose();
       if (downloaderRef.current === downloader) downloaderRef.current = null;
+      uploader.dispose();
+      if (uploaderRef.current === uploader) uploaderRef.current = null;
       client.send({ type: 'unsubscribe' });
     };
   }, [canPickPreset, client, handleFrame, session.sessionId]);
@@ -912,13 +941,44 @@ export function SessionScreen({
     [addPicked],
   );
 
+  /** 选一个普通文件，选中就开始传；传完才允许发送。 */
+  const pickFiles = useCallback(() => {
+    void (async () => {
+      try {
+        const result = await File.pickFileAsync();
+        if (result.canceled || !result.result) return;
+        const file = result.result;
+        const id = randomUUID();
+        setPickedFiles((current) => [
+          ...current,
+          {
+            id,
+            name: file.name || '文件',
+            size: typeof file.size === 'number' ? file.size : 0,
+            file,
+            state: { status: 'hashing', progress: 0 },
+          },
+        ]);
+        void uploaderRef.current?.upload(id, file);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : '选择文件失败');
+      }
+    })();
+  }, []);
+
+  const removePickedFile = useCallback((id: string) => {
+    uploaderRef.current?.cancel(id);
+    setPickedFiles((current) => current.filter((item) => item.id !== id));
+  }, []);
+
   const askImageSource = useCallback(() => {
-    Alert.alert('添加图片', undefined, [
+    Alert.alert('添加附件', undefined, [
       { text: '拍照', onPress: () => pickImage('camera') },
       { text: '从相册选择', onPress: () => pickImage('library') },
+      { text: '文件', onPress: pickFiles },
       { text: '取消', style: 'cancel' },
     ]);
-  }, [pickImage]);
+  }, [pickFiles, pickImage]);
 
   /** 点文件卡片：没下过就下，下过就直接打开。 */
   const openFile = useCallback((path: string) => {
@@ -1090,10 +1150,20 @@ export function SessionScreen({
     setTimeout(() => setCancelling(false), 10000);
   }, [cancelling, client, running, session.sessionId]);
 
+  /** 只有传完拿到 receiptId 的文件才能挂到消息上 */
+  const readyFiles = pickedFiles.filter(
+    (item) => item.state.status === 'done' && item.state.receiptId,
+  );
+  const uploadingFiles = pickedFiles.some(
+    (item) => item.state.status === 'hashing' || item.state.status === 'uploading',
+  );
+  const canSend = !uploadingFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
+
   const send = useCallback(() => {
     const text = [quote ? formatQuote(quote) : '', draft.trim()].filter(Boolean).join('\n\n');
     const images = picked;
-    if (!text && images.length === 0) return;
+    const files = readyFiles;
+    if (!text && images.length === 0 && files.length === 0) return;
     const sent = client.send({
       type: 'message',
       sessionId: session.sessionId,
@@ -1103,11 +1173,15 @@ export function SessionScreen({
       images: images.length
         ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
         : undefined,
+      files: files.length
+        ? files.map((item) => ({ receiptId: item.state.receiptId as string }))
+        : undefined,
     });
     if (sent) {
       tapFeedback();
       setDraft('');
       setPicked([]);
+      setPickedFiles([]);
       setQuote(null);
       setPendingSends((current) => [
         ...current,
@@ -1123,6 +1197,9 @@ export function SessionScreen({
       atBottomRef.current = true;
       setShowJump(false);
       listRef.current?.scrollToEnd({ animated: true });
+    } else if (files.length > 0) {
+      // 收据绑在连接上，离线重发没有意义，直接告诉用户等联网再发。
+      setError('文件需要在线发送，等连接恢复后再试');
     } else {
       // 断线了别把用户打的字扔掉：落进发件箱，重连后自动补发。
       outbox.add({
@@ -1138,7 +1215,7 @@ export function SessionScreen({
       setQuote(null);
       setError(null);
     }
-  }, [client, draft, picked, quote, running, sendMode, session.sessionId]);
+  }, [client, draft, picked, quote, readyFiles, running, sendMode, session.sessionId]);
 
   /** 离线待发的消息：直接删掉，不再重试。 */
   const discardOffline = useCallback((id: string) => {
@@ -1305,7 +1382,6 @@ export function SessionScreen({
     return outbox.subscribe(sync);
   }, [session.sessionId]);
 
-  const canSend = Boolean(draft.trim() || picked.length);
 
   // / 之后还没打空格时才弹目录；打了空格说明在写参数，别挡着输入框。
   const slashQuery = draft.startsWith('/') ? draft.slice(1) : null;
@@ -1628,6 +1704,42 @@ export function SessionScreen({
                   {statsLine}
                 </Text>
               ) : null}
+            </View>
+          ) : null}
+          {pickedFiles.length > 0 ? (
+            <View style={styles.fileChipRow}>
+              {pickedFiles.map((item) => {
+                const state = item.state;
+                const label =
+                  state.status === 'hashing'
+                    ? '校验中'
+                    : state.status === 'uploading'
+                      ? `${Math.round((state.progress ?? 0) * 100)}%`
+                      : state.status === 'done'
+                        ? formatBytes(item.size)
+                        : state.message ?? '上传失败';
+                return (
+                  <View
+                    key={item.id}
+                    style={[styles.fileChip, state.status === 'error' ? styles.fileChipError : null]}
+                  >
+                    <Text style={styles.fileChipName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.fileChipState,
+                        state.status === 'error' ? styles.fileChipStateError : null,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                    <Pressable hitSlop={8} onPress={() => removePickedFile(item.id)}>
+                      <Text style={styles.fileChipClose}>×</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
             </View>
           ) : null}
           {quote ? (
@@ -2144,6 +2256,28 @@ const styles = StyleSheet.create({
   statusChipText: { color: '#8FB6FF', fontSize: 10.5, fontWeight: '600' },
   statusChipTextLocked: { color: '#6E7585' },
   statusMeta: { flex: 1, color: '#4C5261', fontSize: 10.5 },
+  fileChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 6,
+  },
+  fileChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: '100%',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#151B26',
+  },
+  fileChipError: { backgroundColor: '#2A1A1C' },
+  fileChipName: { maxWidth: 160, color: '#D6DAE3', fontSize: 11.5 },
+  fileChipState: { color: '#6E7585', fontSize: 10.5 },
+  fileChipStateError: { color: '#FF7A7A' },
+  fileChipClose: { color: '#6E7585', fontSize: 15, lineHeight: 17 },
   quoteBar: {
     flexDirection: 'row',
     alignItems: 'center',
