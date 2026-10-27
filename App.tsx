@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -431,6 +432,16 @@ function AppBody() {
   const handleReconnect = useCallback(() => {
     if (saved) connectWith(saved);
   }, [connectWith, saved]);
+
+  // 从后台回来时 socket 往往已经被系统掐掉了：立刻重连，别等心跳超时。
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active' || state === 'ready') return;
+      const gateway = savedRef.current;
+      if (gateway?.token) connectWith(gateway);
+    });
+    return () => sub.remove();
+  }, [connectWith, state]);
 
   /** 切到另一台网关：上一个网关的会话/队列都不属于新网关，先清干净再连。 */
   const switchGateway = useCallback(
