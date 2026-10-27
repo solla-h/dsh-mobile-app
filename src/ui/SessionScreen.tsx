@@ -1586,7 +1586,11 @@ export function SessionScreen({
                 ) : null}
               </View>
             }
-            ListEmptyComponent={<Text style={styles.empty}>还没有消息</Text>}
+            ListEmptyComponent={
+              <Text style={styles.empty}>
+                {conn === 'ready' ? '还没有消息' : '连接断开，重连后会自动加载历史'}
+              </Text>
+            }
             renderItem={({ item, index }) => (
               <View>
                 {dayLabel(item.time) && dayLabel(item.time) !== dayLabel(rows[index - 1]?.time ?? 0) ? (
