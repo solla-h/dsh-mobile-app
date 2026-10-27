@@ -1265,7 +1265,8 @@ export function SessionScreen({
       // 断线了别把用户打的字扔掉：落进发件箱，重连后自动补发。
       outbox.add({
         sessionId: session.sessionId,
-        text: text || IMAGE_ONLY_TEXT,
+        // 纯图片消息的正文留空：占位串只用于本地显示，发给服务端会变成真的「［图片］」。
+        text,
         images: images.length
           ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
           : undefined,
@@ -1438,7 +1439,8 @@ export function SessionScreen({
       ...offlineItems.map((item) => ({
         id: `offline-${item.id}`,
         kind: 'queued' as const,
-        text: item.text,
+        // 发件箱里纯图片的正文是空的，气泡上仍要有个占位说明。
+        text: item.text || (item.images?.length ? IMAGE_ONLY_TEXT : ''),
         time: 0,
         queueId: item.id,
         pending: true,

@@ -10,9 +10,16 @@ interface Props {
   onNeed?: (attachmentId: string) => void;
 }
 
+const GAP = 6;
+/** 单图别缩得太小，多图按列数摊平。 */
+const MAX_SINGLE = 220;
+const MAX_CELL = 148;
+
 /** 历史里的图片只有引用，字节要靠 attachment 请求单独取，取到之前先占位。 */
 export function MessageImages({ refs, cache, onNeed }: Props) {
   const [viewing, setViewing] = useState<string | null>(null);
+  /** 气泡可用宽度：按它算列宽，否则固定 148 在窄气泡里只能排一列。 */
+  const [boxWidth, setBoxWidth] = useState(0);
 
   useEffect(() => {
     if (!onNeed) return;
@@ -23,8 +30,21 @@ export function MessageImages({ refs, cache, onNeed }: Props) {
 
   if (refs.length === 0) return null;
 
+  const columns = refs.length === 1 ? 1 : refs.length <= 4 ? 2 : 3;
+  const available = boxWidth > 0 ? boxWidth - GAP * (columns - 1) : MAX_CELL * columns;
+  const cell = Math.min(
+    Math.max(available / columns, 56),
+    refs.length === 1 ? MAX_SINGLE : MAX_CELL,
+  );
+
   return (
-    <View style={styles.row}>
+    <View
+      style={styles.row}
+      onLayout={(event) => {
+        const next = Math.round(event.nativeEvent.layout.width);
+        if (next > 0 && next !== boxWidth) setBoxWidth(next);
+      }}
+    >
       {refs.map((ref) => {
         const data = cache[ref.attachmentId];
         const ratio = ref.width && ref.height ? ref.width / ref.height : 4 / 3;
@@ -32,7 +52,7 @@ export function MessageImages({ refs, cache, onNeed }: Props) {
         return (
           <Pressable
             key={ref.attachmentId}
-            style={[styles.frame, { aspectRatio: ratio }]}
+            style={[styles.frame, { width: cell, aspectRatio: ratio }]}
             onPress={uri ? () => setViewing(uri) : undefined}
             disabled={!uri}
           >
@@ -66,7 +86,6 @@ export function ImageViewer({ uri, onClose }: { uri: string | null; onClose: () 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   frame: {
-    width: 148,
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: '#1B1E25',
