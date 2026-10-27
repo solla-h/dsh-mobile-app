@@ -74,7 +74,7 @@ import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
 import { InteractionSheet } from './InteractionSheet';
 import { MarkdownView } from './Markdown';
-import { MessageImages } from './MessageImages';
+import { ImageViewer, MessageImages } from './MessageImages';
 import { OutlineSheet } from './OutlineSheet';
 import { TasksSheet } from './TasksSheet';
 
@@ -119,6 +119,26 @@ const DEFAULT_IMAGE_LIMITS: ImageLimits = {
 function base64Bytes(data: string): number {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
   return Math.floor((data.length * 3) / 4) - padding;
+}
+
+function startOfDay(ms: number): number {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+/** 日期分隔条：只在跨天的地方显示，queued 消息 time=0 直接跳过。 */
+function dayLabel(ms: number): string | null {
+  if (!ms) return null;
+  const day = startOfDay(ms);
+  const diff = Math.round((startOfDay(Date.now()) - day) / 86400000);
+  if (diff === 0) return '今天';
+  if (diff === 1) return '昨天';
+  const date = new Date(ms);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? `${date.getMonth() + 1}月${date.getDate()}日`
+    : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 /** 长按菜单标题：只给一眼能认出是哪条消息的摘要。 */
@@ -1342,8 +1362,12 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
               </View>
             }
             ListEmptyComponent={<Text style={styles.empty}>还没有消息</Text>}
-            renderItem={({ item }) => (
-              <MessageRow
+            renderItem={({ item, index }) => (
+              <View>
+                {dayLabel(item.time) && dayLabel(item.time) !== dayLabel(rows[index - 1]?.time ?? 0) ? (
+                  <Text style={styles.dayDivider}>{dayLabel(item.time)}</Text>
+                ) : null}
+                <MessageRow
                 message={item}
                 attachmentCache={attachmentCache}
                 onNeedAttachment={requestAttachment}
@@ -1352,9 +1376,10 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
                 fileStates={fileStates}
                 onOpenFile={openFile}
                 canDownloadFiles={canDownloadFiles}
-                onDiscardOffline={discardOffline}
-                onLongPress={setActionMessage}
-              />
+                  onDiscardOffline={discardOffline}
+                  onLongPress={setActionMessage}
+                />
+              </View>
             )}
           />
         )}
@@ -1651,6 +1676,8 @@ function MessageRow({
   onLongPress: (message: ChatMessage) => void;
 }) {
   const [toolOpen, setToolOpen] = useState(false);
+  /** 本地回显图片的全屏预览；历史图片走 MessageImages 自己的查看器。 */
+  const [preview, setPreview] = useState<string | null>(null);
   if (message.kind === 'files') {
     // 网关没开文件下载能力时，卡片只会是个点不动的按钮，直接不画。
     if (!canDownloadFiles) return null;
@@ -1666,11 +1693,16 @@ function MessageRow({
       <View style={[styles.bubbleRow, styles.rowRight]}>
         <View style={[styles.bubble, styles.bubbleUser, styles.bubbleQueued]}>
           {message.localUris?.length ? (
-            <View style={styles.localImages}>
-              {message.localUris.map((uri) => (
-                <Image key={uri} source={{ uri }} style={styles.localImage} resizeMode="cover" />
-              ))}
-            </View>
+            <>
+              <View style={styles.localImages}>
+                {message.localUris.map((uri) => (
+                  <Pressable key={uri} onPress={() => setPreview(uri)}>
+                    <Image source={{ uri }} style={styles.localImage} resizeMode="cover" />
+                  </Pressable>
+                ))}
+              </View>
+              <ImageViewer uri={preview} onClose={() => setPreview(null)} />
+            </>
           ) : null}
           {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
           <View style={styles.queuedFooter}>
@@ -1831,6 +1863,13 @@ const styles = StyleSheet.create({
   olderWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, minHeight: 44 },
   olderAction: { color: '#7E8698', fontSize: 13, fontWeight: '600' },
   olderEnd: { color: '#4A4F5C', fontSize: 12 },
+  dayDivider: {
+    color: '#4C5261',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+  },
   bubbleRow: { flexDirection: 'row', marginBottom: 10 },
   rowRight: { justifyContent: 'flex-end' },
   rowLeft: { justifyContent: 'flex-start' },

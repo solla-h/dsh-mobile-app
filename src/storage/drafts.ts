@@ -39,6 +39,12 @@ export function saveDraft(sessionId: string, text: string): void {
   }, 400);
 }
 
+/** 有草稿的会话 id，列表里用来打标记。 */
+export async function draftSessionIds(): Promise<string[]> {
+  const drafts = await ensure();
+  return Object.keys(drafts).filter((id) => drafts[id]);
+}
+
 export function clearDraft(sessionId: string): void {
   saveDraft(sessionId, '');
 }

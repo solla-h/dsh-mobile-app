@@ -58,6 +58,11 @@ class OutboxStore {
     return this.items.length;
   }
 
+  /** 某个会话还有几条没发出去，列表上打标用。 */
+  countFor(sessionId: string): number {
+    return this.items.reduce((total, item) => (item.sessionId === sessionId ? total + 1 : total), 0);
+  }
+
   add(input: { sessionId: string; text: string; images?: OutgoingImage[]; mode?: 'queue' | 'steer' }): OutboxItem {
     const item: OutboxItem = {
       id: randomUUID(),
