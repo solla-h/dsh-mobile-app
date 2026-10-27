@@ -86,6 +86,8 @@ interface Props {
   onBack: () => void;
   /** fork 出来的新会话，交给上层切过去 */
   onForked: (sessionId: string) => void;
+  /** 跳到另一个会话（比如分叉的来源） */
+  onOpenSession: (sessionId: string) => void;
 }
 
 interface StreamingDraft {
@@ -172,7 +174,15 @@ const TIME_ZONE = (() => {
   }
 })();
 
-export function SessionScreen({ client, session, queued, capabilities, onBack, onForked }: Props) {
+export function SessionScreen({
+  client,
+  session,
+  queued,
+  capabilities,
+  onBack,
+  onForked,
+  onOpenSession,
+}: Props) {
   const canDownloadFiles = capabilities.includes('file-downloads');
   const canPickPreset = capabilities.includes('session-agent-preset');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -227,6 +237,8 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   /** 会话跑过任何一轮就锁死；服务端没回话之前先按 blank 猜。 */
   const [presetLocked, setPresetLocked] = useState(!session.blank);
   const [presetSheet, setPresetSheet] = useState(false);
+  /** 长按标题打开的会话信息菜单 */
+  const [infoSheet, setInfoSheet] = useState(false);
   const todosSeqRef = useRef(-1);
   const goalSeqRef = useRef(-1);
   const downloaderRef = useRef<FileDownloader | null>(null);
@@ -252,6 +264,17 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const composerRef = useRef<ComponentRef<typeof TextInput>>(null);
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2000);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
   const settledRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<ChatMessage>>(null);
   /** 用户往上翻看历史时不要再把他拽回底部。 */
@@ -934,6 +957,39 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
     [presetId, presetList, presetLocked],
   );
 
+  const infoActions = useMemo<SheetAction[]>(() => {
+    const list: SheetAction[] = [{ id: 'copy-id', label: '复制会话 ID', hint: session.sessionId }];
+    if (session.cwd) list.push({ id: 'copy-cwd', label: '复制工作目录', hint: session.cwd });
+    if (session.parentSessionId) {
+      list.push({ id: 'parent', label: '打开来源会话', hint: session.parentSessionId });
+    }
+    list.push({ id: 'archive', label: '归档这个会话', destructive: true });
+    return list;
+  }, [session]);
+
+  const runInfoAction = useCallback(
+    (id: string) => {
+      setInfoSheet(false);
+      if (id === 'copy-id') {
+        void Clipboard.setStringAsync(session.sessionId).then(() => showToast('已复制会话 ID'));
+        return;
+      }
+      if (id === 'copy-cwd' && session.cwd) {
+        void Clipboard.setStringAsync(session.cwd).then(() => showToast('已复制目录'));
+        return;
+      }
+      if (id === 'parent' && session.parentSessionId) {
+        onOpenSession(session.parentSessionId);
+        return;
+      }
+      if (id === 'archive') {
+        client.send({ type: 'session-archive', sessionId: session.sessionId, archived: true });
+        onBack();
+      }
+    },
+    [client, onBack, onOpenSession, session.cwd, session.parentSessionId, session.sessionId, showToast],
+  );
+
   const removePicked = useCallback((id: string) => {
     setPicked((current) => current.filter((item) => item.id !== id));
   }, []);
@@ -1085,16 +1141,6 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
   /** 离线待发的消息：直接删掉，不再重试。 */
   const discardOffline = useCallback((id: string) => {
     outbox.remove(id);
-  }, []);
-
-  const showToast = useCallback((text: string) => {
-    setToast(text);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2000);
-  }, []);
-
-  useEffect(() => () => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
   }, []);
 
   /** 长按菜单里能做什么，取决于这条消息是什么类型。 */
@@ -1308,9 +1354,11 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
         <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
-        <Text style={styles.title} numberOfLines={1}>
-          {session.projections?.values.title ?? '未命名会话'}
-        </Text>
+        <Pressable style={styles.titleWrap} onLongPress={() => setInfoSheet(true)} delayLongPress={320}>
+          <Text style={styles.title} numberOfLines={1}>
+            {session.projections?.values.title ?? '未命名会话'}
+          </Text>
+        </Pressable>
         {todos && todos.length > 0 ? (
           <Pressable style={styles.outlineButton} onPress={() => setTasksOpen(true)}>
             <Text style={styles.outlineText}>
@@ -1438,6 +1486,15 @@ export function SessionScreen({ client, session, queued, capabilities, onBack, o
           onApproval={respondApproval}
           onAnswer={answerQuestion}
           onCancelQuestion={cancelQuestion}
+        />
+
+        <ActionSheet
+          visible={infoSheet}
+          title={session.projections?.values.title ?? '未命名会话'}
+          subtitle={session.cwd ?? undefined}
+          actions={infoActions}
+          onPick={runInfoAction}
+          onClose={() => setInfoSheet(false)}
         />
 
         <ActionSheet
@@ -1901,6 +1958,7 @@ const styles = StyleSheet.create({
   },
   back: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   backText: { color: '#EDEFF3', fontSize: 28, lineHeight: 30 },
+  titleWrap: { flex: 1 },
   title: { flex: 1, color: '#EDEFF3', fontSize: 16, fontWeight: '600' },
   placeholder: { width: 20 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },

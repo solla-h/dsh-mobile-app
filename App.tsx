@@ -642,6 +642,9 @@ function AppBody() {
               setActive(null);
               client.send({ type: 'sessions' });
             }}
+            onOpenSession={(sessionId) => {
+              setActive({ sessionId, updatedAt: Date.now(), running: false, blank: false });
+            }}
             onForked={(sessionId) => {
               // 分叉出来的是个全新会话，列表里还没有它，先塞个占位再让网关补全。
               setActive({
