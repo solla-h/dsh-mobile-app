@@ -65,6 +65,16 @@ export interface SessionsFrame {
   items: SessionItem[];
 }
 
+/** 目录浏览：只列一层子目录，crumbs 是从根到当前的路径。 */
+export interface DirectoriesFrame {
+  kind: 'directories';
+  path: string;
+  home?: string;
+  crumbs?: { name?: string; path?: string; hidden?: boolean }[];
+  entries?: { name?: string; path?: string; hidden?: boolean }[];
+  truncated?: boolean;
+}
+
 export interface EventFrame {
   kind: 'event';
   sessionId: string;
@@ -316,6 +326,7 @@ export type ServerFrame =
   | PairedFrame
   | ErrorFrame
   | SessionsFrame
+  | DirectoriesFrame
   | SessionCreatedFrame
   | EventFrame
   | HistoryFrame
@@ -342,6 +353,8 @@ export type ServerFrame =
 export type ClientFrame =
   | { type: 'ping' }
   | { type: 'sessions' }
+  /** 不带 path 时网关回宿主 home。 */
+  | { type: 'directories'; path?: string }
   | { type: 'session-create'; requestId: string; workspaceId?: string; cwd?: string }
   | { type: 'subscribe'; sessionId: string; assistantStream?: boolean }
   | { type: 'unsubscribe' }

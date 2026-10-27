@@ -40,7 +40,9 @@ import { GatewayClient, type ConnectionState } from './src/transport/gateway-cli
 import { draftSessionIds } from './src/storage/drafts';
 import { readJson, removeJson, writeJson } from './src/storage/persisted-state';
 import { outbox } from './src/transport/outbox';
+import { mapDirectories, type DirectoryListing } from './src/protocol/directories';
 import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
+import { DirectoryPicker } from './src/ui/DirectoryPicker';
 import { ScanScreen } from './src/ui/ScanScreen';
 import { SessionScreen } from './src/ui/SessionScreen';
 
@@ -92,6 +94,12 @@ function AppBody() {
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<SessionItem | null>(null);
   const [creating, setCreating] = useState(false);
+  /** 新建会话：先问「默认目录」还是「挑一个目录」 */
+  const [createSheet, setCreateSheet] = useState(false);
+  const [dirPicker, setDirPicker] = useState(false);
+  const [dirListing, setDirListing] = useState<DirectoryListing | null>(null);
+  const [dirLoading, setDirLoading] = useState(false);
+  const [dirError, setDirError] = useState<string | null>(null);
   const [archived, setArchived] = useState<string[]>([]);
   const [scanning, setScanning] = useState(false);
   const [manual, setManual] = useState(false);
@@ -229,6 +237,14 @@ function AppBody() {
           });
           break;
         }
+        case 'directories': {
+          const listing = mapDirectories(frame);
+          if (!listing) break;
+          setDirListing(listing);
+          setDirLoading(false);
+          setDirError(null);
+          break;
+        }
         case 'session-queues': {
           const queuesFrame = frame as unknown as { queues?: Record<string, unknown> };
           const next: Record<string, QueuedMessage[]> = {};
@@ -296,9 +312,16 @@ function AppBody() {
           break;
         }
         case 'error': {
-          const failure = frame as { code?: string; message?: string };
+          const failure = frame as { code?: string; message?: string; requestType?: string };
           setCreating(false);
-          setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
+          const text = `${failure.code ?? 'error'}：${failure.message ?? ''}`;
+          // 目录读失败就留在选择器里显示，别把用户弹回列表页。
+          if (failure.requestType === 'directories') {
+            setDirLoading(false);
+            setDirError(text);
+            break;
+          }
+          setError(text);
           break;
         }
         default:
@@ -420,8 +443,58 @@ function AppBody() {
     if (!connected) return;
     setCreating(true);
     setError(null);
-    client.send({ type: 'session-create', requestId: randomUUID() } as never);
+    client.send({ type: 'session-create', requestId: randomUUID() });
   }, [client, connected]);
+
+  /** 拉一层目录；不带 path 就是宿主 home。 */
+  const openDirectory = useCallback(
+    (path?: string) => {
+      setDirError(null);
+      setDirLoading(true);
+      if (!client.send({ type: 'directories', path })) {
+        setDirLoading(false);
+        setDirError('连接已断开，无法读取目录');
+      }
+    },
+    [client],
+  );
+
+  /** 在选中的目录里开新会话：session-create 支持直接带 cwd。 */
+  const createInDirectory = useCallback(() => {
+    const cwd = dirListing?.path;
+    if (!cwd) return;
+    if (!connected) {
+      setDirError('连接已断开，重连后再试');
+      return;
+    }
+    setDirPicker(false);
+    setCreating(true);
+    setError(null);
+    client.send({ type: 'session-create', requestId: randomUUID(), cwd });
+  }, [client, connected, dirListing]);
+
+  const createActions = useMemo<SheetAction[]>(
+    () => [
+      { id: 'default', label: '新建会话', hint: '用网关的默认工作目录' },
+      { id: 'pick', label: '选择目录…', hint: '指定一个项目目录再开始' },
+    ],
+    [],
+  );
+
+  const runCreateAction = useCallback(
+    (id: string) => {
+      setCreateSheet(false);
+      if (id === 'pick') {
+        // 每次都从宿主 home 重新开始，别把上次浏览到的目录闪出来。
+        setDirListing(null);
+        setDirPicker(true);
+        openDirectory();
+        return;
+      }
+      handleCreate();
+    },
+    [handleCreate, openDirectory],
+  );
 
   /** 顶部网关菜单：切换、添加、移除。 */
   const gatewayActions = useMemo<SheetAction[]>(() => {
@@ -748,7 +821,7 @@ function AppBody() {
               <Text style={styles.sectionTitle}>会话 · {visibleSessions.length}</Text>
               <Pressable
                 style={[styles.newButton, !connected && styles.newButtonOff]}
-                onPress={handleCreate}
+                onPress={() => setCreateSheet(true)}
                 disabled={creating || !connected}
               >
                 {creating ? (
@@ -889,6 +962,15 @@ function AppBody() {
       />
 
       <ActionSheet
+        visible={createSheet}
+        title="新建会话"
+        subtitle="会话跑起来之后目录就固定了，选错了只能重新建"
+        actions={createActions}
+        onPick={runCreateAction}
+        onClose={() => setCreateSheet(false)}
+      />
+
+      <ActionSheet
         visible={gatewaySheet}
         title="网关"
         subtitle="同一台设备可以记住多台网关，切换时会重新拉取会话列表"
@@ -992,6 +1074,17 @@ function AppBody() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <DirectoryPicker
+        visible={dirPicker}
+        listing={dirListing}
+        loading={dirLoading}
+        error={dirError}
+        onOpen={openDirectory}
+        onRetry={() => openDirectory(dirListing?.path)}
+        onConfirm={createInDirectory}
+        onClose={() => setDirPicker(false)}
+      />
     </SafeAreaView>
   );
 }
