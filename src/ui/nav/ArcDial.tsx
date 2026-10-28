@@ -28,11 +28,12 @@ const CARD_W = 190; // 缩小卡片宽度，防止超出屏幕左侧
 const CARD_H = 52;
 /** 圆弧半径：以「选中项」为弧顶，整串卡片绕着这个半径转。 */
 const ARC_RADIUS = 320;
-const MAX_ITEMS = 5;
+const MAX_ITEMS = 10;
 /** 弧顶卡片左边缘距屏幕左侧的距离。 */
 const ARC_LEFT = 12;
 /** 最大展开角度：左右各 45°，总共 90° */
-const MAX_ANGLE = (40 * Math.PI) / 180;
+/** 相邻两格的夹角：由「卡片高度 ÷ 半径」定，保证弧顶处刚好一格一张卡。 */
+const STEP_RAD = (9.5 * Math.PI) / 180;
 
 /**
  * 右侧拇指弧形焦段转盘（§2.2 Camera-Lens Radial Session Dial）。
@@ -106,8 +107,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       if (list.length < 2) return;
       // 手指位移换算成转角，再折算成格数：视觉和手势用同一套几何。
       const span = Math.max(1, list.length - 1);
-      const stepRad = MAX_ANGLE / span;
-      const turned = (angleAt(gesture.moveY) - angleAt(dragStartYRef.current)) / stepRad;
+      const turned = (angleAt(gesture.moveY) - angleAt(dragStartYRef.current)) / STEP_RAD;
       const next = clamp(dragStartIndexRef.current - turned, 0, span);
       focus.setValue(next);
       focusIndexRef.current = next;
@@ -179,15 +179,16 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
 
   return (
     <>
-      {/* 静止态：右侧边缘 2pt 镜头微刻槽感应条 */}
-      {!open ? (
-        <View
+      {/* 右侧边缘 2pt 微刻槽感应条：展开后仍然挂着（只是隐形），
+          这样「按住边缘往上下拖」是一条连续手势，不会因为组件换掉而断掉。 */}
+      <View
           style={[
             styles.stripWrap,
             {
               top: centerY - STRIP_H / 2,
               backgroundColor: t.bg.surface,
               borderColor: t.border.default,
+              opacity: open ? 0 : 1,
             },
           ]}
           hitSlop={{ left: 24, right: 4, top: 20, bottom: 20 }}
@@ -206,8 +207,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
             ]}
           />
           <View style={[styles.tickTiny, { backgroundColor: t.text.muted }]} />
-        </View>
-      ) : null}
+      </View>
 
       {open ? (
         <View style={styles.overlay} pointerEvents="box-none">
@@ -275,13 +275,15 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
             const isBlocked = blockedIds.includes(item.sessionId);
             const span = Math.max(1, list.length - 1);
             const steps = range(-span, span);
-            // 角度等分：选中项落在 0°，两端各展开 MAX_ANGLE（§2.2）。
-            const stepRad = MAX_ANGLE / span;
+            // 每格固定转角：会话再多也只是往外排，超出屏幕的自然滑出去。
+            const stepRad = STEP_RAD;
             const delta = Animated.subtract(i, focus);
             const dyOf = (d: number) => Math.sin(d * stepRad) * ARC_RADIUS;
             // 越远的卡越往屏幕右侧收，整串像绕着镜头轴转。
             const dxOf = (d: number) => ARC_RADIUS * (1 - Math.cos(d * stepRad));
             const scaleOf = (d: number) => Math.max(0.62, 1 - 0.06 * Math.abs(d));
+            // 排到屏幕外的远端淡出，压缩感更自然，也不会抢视线。
+            const opacityOf = (d: number) => Math.max(0.35, 1 - 0.14 * Math.max(0, Math.abs(d) - 3));
 
             return (
               <Animated.View
@@ -292,6 +294,11 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                     left: ARC_LEFT,
                     top: centerY - CARD_H / 2,
                     zIndex: selected ? 60 : 40 - Math.abs(i - index),
+                    opacity: delta.interpolate({
+                      inputRange: steps,
+                      outputRange: steps.map(opacityOf),
+                      extrapolate: 'clamp',
+                    }),
                     transform: [
                       {
                         translateY: delta.interpolate({
@@ -338,6 +345,8 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                           : isCurrent
                             ? t.text.primary
                             : t.border.default,
+                        // 当前会话额外加粗描边，扫一眼就能认出「松手会切回哪」。
+                        borderWidth: isCurrent && !selected ? 1.5 : StyleSheet.hairlineWidth,
                       },
                     ]}
                   >
@@ -358,15 +367,36 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                       ]}
                     />
                     <View style={styles.cardBody}>
-                      <Text
-                        style={[
-                          styles.cardTitle,
-                          { color: selected ? t.action.primaryText : t.text.primary },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {titleOf(item)}
-                      </Text>
+                      <View style={styles.cardTitleRow}>
+                        <Text
+                          style={[
+                            styles.cardTitle,
+                            { color: selected ? t.action.primaryText : t.text.primary },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {titleOf(item)}
+                        </Text>
+                        {isCurrent ? (
+                          <View
+                            style={[
+                              styles.currentBadge,
+                              {
+                                borderColor: selected ? t.action.primaryText : t.text.primary,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.currentBadgeText,
+                                { color: selected ? t.action.primaryText : t.text.primary },
+                              ]}
+                            >
+                              当前
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <Text
                         style={[
                           styles.cardMeta,
@@ -375,7 +405,6 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                         numberOfLines={1}
                       >
                         {repoOf(item)}
-                        {isCurrent ? ' · 当前' : ''}
                       </Text>
                     </View>
                   </View>
@@ -537,8 +566,16 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   cardDot: { width: 7, height: 7, borderRadius: 3.5 },
-  cardBody: { flex: 1 },
-  cardTitle: { fontSize: 12.5, fontWeight: '600', lineHeight: 16 },
+  cardBody: { flex: 1, minWidth: 0 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardTitle: { fontSize: 12.5, fontWeight: '600', lineHeight: 16, flexShrink: 1 },
+  currentBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  currentBadgeText: { fontSize: 9, fontWeight: '600', lineHeight: 12 },
   cardMeta: { ...TYPE.mono, fontFamily: MONO, fontSize: 10, opacity: 0.78, marginTop: 1 },
   cardIndex: {
     ...TYPE.mono,
