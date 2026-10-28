@@ -24,13 +24,15 @@ interface Props {
 }
 
 const STRIP_H = 104;
-const CARD_W = 240;
+const CARD_W = 190; // 缩小卡片宽度，防止超出屏幕左侧
 const CARD_H = 52;
-/** 相邻会话的纵向节距：略大于卡片高，滑动时留一条缝。 */
-const PITCH = 58;
 /** 圆弧半径：以「选中项」为弧顶，整串卡片绕着这个半径转。 */
-const ARC_RADIUS = 340;
-const MAX_ITEMS = 6;
+const ARC_RADIUS = 320;
+const MAX_ITEMS = 5;
+/** 弧顶卡片左边缘距屏幕左侧的距离。 */
+const ARC_LEFT = 12;
+/** 最大展开角度：左右各 45°，总共 90° */
+const MAX_ANGLE = (40 * Math.PI) / 180;
 
 /**
  * 右侧拇指弧形焦段转盘（§2.2 Camera-Lens Radial Session Dial）。
@@ -41,7 +43,7 @@ const MAX_ITEMS = 6;
  */
 export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props) {
   const t = useTheme();
-  const { width, height } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
   const list = useMemo(() => sessions.slice(0, MAX_ITEMS), [sessions]);
   const initialIndex = Math.max(
@@ -51,22 +53,24 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
   const [index, setIndex] = useState(initialIndex);
   const lastTickIndexRef = useRef(initialIndex);
   const dragStartMsRef = useRef(0);
+  const dragStartYRef = useRef(0);
+  const dragStartIndexRef = useRef(0);
+  const focusIndexRef = useRef(initialIndex);
   const movedRef = useRef(false);
   const focus = useState(() => new Animated.Value(initialIndex))[0];
 
   const centerY = height * 0.48;
-  // 圆心放在屏幕右外侧，卡片的右边缘贴着圆弧走。
-  const pivotX = width + 160;
 
-  /** 连续刻度：手指在哪，胶囊就滑到哪，不做四舍五入。 */
-  const indexAtFloat = useCallback(
+  /**
+   * 手指位置 → 角度的映射，必须和卡片的视觉排布用同一套几何：
+   * 卡片纵向位置是 R·sin(θ)，所以反解 asin(dy / R) 才能做到「手指走多远、列表转多远」。
+   */
+  const angleAt = useCallback(
     (pageY: number) => {
-      const span = Math.max(1, list.length - 1);
-      const arcSpanY = 260;
-      const topY = centerY - arcSpanY / 2;
-      return clamp(((pageY - topY) / arcSpanY) * span, 0, span);
+      const dy = clamp(pageY - centerY, -ARC_RADIUS + 1, ARC_RADIUS - 1);
+      return Math.asin(dy / ARC_RADIUS);
     },
-    [centerY, list.length],
+    [centerY],
   );
 
   const snapTo = useCallback(
@@ -88,22 +92,25 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       movedRef.current = false;
       tapFeedback();
       setOpen(true);
-      const start = list.length > 1 ? indexAtFloat(gesture.y0) : 0;
-      const rounded = Math.round(start);
-      lastTickIndexRef.current = rounded;
-      focus.stopAnimation();
-      focus.setValue(start);
-      setIndex(rounded);
+      // 按下时不跳格：从当前选中项开始，后续位移按角度增量换算。
+      dragStartYRef.current = gesture.y0;
+      dragStartIndexRef.current = focusIndexRef.current;
     },
-    [focus, indexAtFloat, list.length],
+    [list.length],
   );
 
   const handleMove = useCallback(
     (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
-      if (Math.abs(gesture.dy) > 8 || Math.abs(gesture.dx) > 8) movedRef.current = true;
+      // 降低滑动阈值，提高灵敏度
+      if (Math.abs(gesture.dy) > 3 || Math.abs(gesture.dx) > 3) movedRef.current = true;
       if (list.length < 2) return;
-      const next = indexAtFloat(gesture.moveY);
+      // 手指位移换算成转角，再折算成格数：视觉和手势用同一套几何。
+      const span = Math.max(1, list.length - 1);
+      const stepRad = MAX_ANGLE / span;
+      const turned = (angleAt(gesture.moveY) - angleAt(dragStartYRef.current)) / stepRad;
+      const next = clamp(dragStartIndexRef.current - turned, 0, span);
       focus.setValue(next);
+      focusIndexRef.current = next;
       const rounded = Math.round(next);
       if (rounded !== lastTickIndexRef.current) {
         lastTickIndexRef.current = rounded;
@@ -111,7 +118,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
         setIndex(rounded);
       }
     },
-    [focus, indexAtFloat, list.length],
+    [angleAt, focus, list.length],
   );
 
   const handleRelease = useCallback(
@@ -120,18 +127,34 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       // 轻点一下不切换：保持展开，等用户直接点卡片。
       if (!movedRef.current && elapsed < 260) return;
       setOpen(false);
-      const target = list.length > 1 ? Math.round(indexAtFloat(gesture.moveY || gesture.y0)) : 0;
+      const target = list.length > 1 ? Math.round(focusIndexRef.current) : 0;
       snapTo(target);
+      focusIndexRef.current = target;
       const picked = list[target];
       if (picked && picked.sessionId !== activeId) {
         tapFeedback();
         onSelect(picked.sessionId);
       }
     },
-    [activeId, indexAtFloat, list, onSelect, snapTo],
+    [activeId, list, onSelect, snapTo],
   );
 
   const handleTerminate = useCallback(() => setOpen(false), []);
+
+  // 展开后整块区域都能上下滑：只接管真正的拖动，轻点仍旧落到卡片或遮罩上。
+  const dragResponder = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dy) > 6,
+        onPanResponderGrant: handleGrant,
+        onPanResponderMove: handleMove,
+        onPanResponderRelease: handleRelease,
+        onPanResponderTerminate: handleTerminate,
+      }),
+    [handleGrant, handleMove, handleRelease, handleTerminate],
+  );
 
   // PanResponder.create 只是在渲染期注册回调，真正的 ref 读取都发生在触摸回调里；
   // React Compiler 的 refs 规则看不出这层，这一处单独豁免。
@@ -189,10 +212,10 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       {open ? (
         <View style={styles.overlay} pointerEvents="box-none">
           {/* 点击背景遮罩收起转盘 */}
-          <Pressable
-            style={styles.backdrop}
-            onPress={() => setOpen(false)}
-          />
+          <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
+
+          {/* 展开状态下的拖拽层：手指上下滑即可切会话 */}
+          <View style={styles.dragLayer} {...dragResponder.panHandlers} />
 
           {/* 左上角焦段取景框 (Focal Preview HUD) */}
           <View
@@ -252,12 +275,13 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
             const isBlocked = blockedIds.includes(item.sessionId);
             const span = Math.max(1, list.length - 1);
             const steps = range(-span, span);
-            // 以「选中项」为弧顶：离选中越远，越往屏幕右侧收，整串像绕着镜头轴转。
-            const offsetOf = (d: number) => {
-              const dyAbs = Math.min(Math.abs(d) * PITCH, ARC_RADIUS - 16);
-              return ARC_RADIUS - Math.sqrt(Math.max(0, ARC_RADIUS * ARC_RADIUS - dyAbs * dyAbs));
-            };
+            // 角度等分：选中项落在 0°，两端各展开 MAX_ANGLE（§2.2）。
+            const stepRad = MAX_ANGLE / span;
             const delta = Animated.subtract(i, focus);
+            const dyOf = (d: number) => Math.sin(d * stepRad) * ARC_RADIUS;
+            // 越远的卡越往屏幕右侧收，整串像绕着镜头轴转。
+            const dxOf = (d: number) => ARC_RADIUS * (1 - Math.cos(d * stepRad));
+            const scaleOf = (d: number) => Math.max(0.62, 1 - 0.06 * Math.abs(d));
 
             return (
               <Animated.View
@@ -265,21 +289,28 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                 style={[
                   styles.nodeWrap,
                   {
-                    left: pivotX - ARC_RADIUS - CARD_W,
+                    left: ARC_LEFT,
                     top: centerY - CARD_H / 2,
                     zIndex: selected ? 60 : 40 - Math.abs(i - index),
                     transform: [
                       {
-                        translateX: delta.interpolate({
+                        translateY: delta.interpolate({
                           inputRange: steps,
-                          outputRange: steps.map(offsetOf),
+                          outputRange: steps.map(dyOf),
                           extrapolate: 'clamp',
                         }),
                       },
                       {
-                        translateY: delta.interpolate({
+                        translateX: delta.interpolate({
                           inputRange: steps,
-                          outputRange: steps.map((d) => d * PITCH),
+                          outputRange: steps.map(dxOf),
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                      {
+                        scale: delta.interpolate({
+                          inputRange: steps,
+                          outputRange: steps.map(scaleOf),
                           extrapolate: 'clamp',
                         }),
                       },
@@ -297,86 +328,84 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                   }}
                   style={styles.nodeRow}
                 >
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: selected ? t.action.primaryBg : t.bg.surface,
-                      borderColor: selected
-                        ? t.action.primaryBg
-                        : isCurrent
-                          ? t.text.primary
-                          : t.border.default,
-                      transform: [{ scale: selected ? 1.04 : 0.96 }],
-                    },
-                  ]}
-                >
                   <View
                     style={[
-                      styles.cardDot,
+                      styles.card,
                       {
-                        backgroundColor: isBlocked
+                        backgroundColor: selected ? t.action.primaryBg : t.bg.surface,
+                        borderColor: selected
+                          ? t.action.primaryBg
+                          : isCurrent
+                            ? t.text.primary
+                            : t.border.default,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.cardDot,
+                        {
+                          backgroundColor: isBlocked
+                            ? t.semantic.gateAmberText
+                            : item.running
+                              ? selected
+                                ? t.action.primaryText
+                                : t.semantic.diffAddText
+                              : selected
+                                ? t.action.primaryText
+                                : t.text.muted,
+                        },
+                      ]}
+                    />
+                    <View style={styles.cardBody}>
+                      <Text
+                        style={[
+                          styles.cardTitle,
+                          { color: selected ? t.action.primaryText : t.text.primary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {titleOf(item)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.cardMeta,
+                          { color: selected ? t.action.primaryText : t.text.muted },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {repoOf(item)}
+                        {isCurrent ? ' · 当前' : ''}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* 序号放在卡片外侧、贴着弧线 */}
+                  <Text
+                    style={[
+                      styles.cardIndex,
+                      { color: selected ? t.text.primary : t.text.muted },
+                    ]}
+                  >
+                    {codeOf(i)}
+                  </Text>
+
+                  {/* 圆弧轨道上的锚点圆环 */}
+                  <View
+                    style={[
+                      styles.arcAnchorDot,
+                      {
+                        backgroundColor: selected
                           ? t.semantic.gateAmberText
-                          : item.running
-                            ? selected
-                              ? t.action.primaryText
-                              : t.semantic.diffAddText
-                            : selected
-                              ? t.action.primaryText
-                              : t.text.muted,
+                          : t.bg.surface,
+                        borderColor: selected ? t.text.primary : t.border.default,
                       },
                     ]}
                   />
-                  <View style={styles.cardBody}>
-                    <Text
-                      style={[
-                        styles.cardTitle,
-                        { color: selected ? t.action.primaryText : t.text.primary },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {titleOf(item)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.cardMeta,
-                        { color: selected ? t.action.primaryText : t.text.muted },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {repoOf(item)}
-                      {isCurrent ? ' · 当前' : ''}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* 序号放在卡片外侧、贴着弧线，不占卡内空间 */}
-                <Text
-                  style={[
-                    styles.cardIndex,
-                    { color: selected ? t.text.primary : t.text.muted },
-                  ]}
-                >
-                  {codeOf(i)}
-                </Text>
-
-                {/* 圆弧轨道上的锚点圆环 */}
-                <View
-                  style={[
-                    styles.arcAnchorDot,
-                    {
-                      backgroundColor: selected
-                        ? t.semantic.gateAmberText
-                        : t.bg.surface,
-                      borderColor: selected ? t.text.primary : t.border.default,
-                    },
-                  ]}
-                />
                 </Pressable>
               </Animated.View>
             );
           })}
-
           {/* 右侧边缘收起把手 */}
           <Pressable
             onPress={() => setOpen(false)}
@@ -454,6 +483,13 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     backgroundColor: 'rgba(20, 20, 18, 0.42)',
+  },
+  dragLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
   },
   preview: {
     position: 'absolute',
