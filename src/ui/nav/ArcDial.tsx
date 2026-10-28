@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Animated, PanResponder, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { SessionItem } from '../../protocol/types';
-import { TYPE } from '../../theme/tokens';
+import { MOTION, TYPE } from '../../theme/tokens';
 import { MONO, useTheme } from '../theme';
 
 interface Props {
@@ -11,25 +11,45 @@ interface Props {
 }
 
 const STRIP_H = 96;
-const ITEM_H = 52;
-const ARC_R = 175;
-const HALF_SPAN = 48; // -48° ~ +48°
+const CARD_W = 184;
+const CARD_H = 74;
+/** 卡片中心间距：比卡片高 12pt，留一条呼吸缝，8 张也不会叠在一起。 */
+const PITCH = 86;
+/** 抛物线弧度：每远离选中间隔一格，就往屏幕边缘收 0.55 * d²。 */
+const CURVE = 2.1;
+/** 选中卡右边缘距屏幕边缘的基准距离，给外侧卡片留出弧顶空间。 */
+const ANCHOR_RIGHT = 72;
+const MAX_ITEMS = 8;
 
 /**
  * 右侧拇指弧形会话转盘（§2.2）。
  * 静止态只是一条 2pt 感应条；按住后沿右侧展开一道弧形刻度，
- * 上下滑动选会话，松手即刻切换。
+ * 上下滑动选会话，松手即刻切换。选中项用弹簧吸附，切换有惯性。
  */
 export function ArcDial({ sessions, activeId, onSelect }: Props) {
   const t = useTheme();
+  const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
-  const list = useMemo(() => sessions.slice(0, 8), [sessions]);
+  const list = useMemo(() => sessions.slice(0, MAX_ITEMS), [sessions]);
+  // 渲染期不能读 ref，用 useState 拿一个稳定的 Animated.Value。
+  const focus = useState(() => new Animated.Value(0))[0];
+
+  const centerY = height * 0.46 + STRIP_H / 2;
+
+  useEffect(() => {
+    Animated.spring(focus, {
+      toValue: index,
+      useNativeDriver: true,
+      tension: MOTION.collapse.tension,
+      friction: 17,
+    }).start();
+  }, [focus, index]);
 
   const responder = useMemo(() => {
-    /** 手指落在哪个刻度上：纵向按卡片高度等分，中间那格对准圆心。 */
+    /** 手指落在哪个刻度上：纵向按卡片间距等分，中间那格对准圆心。 */
     const indexAt = (pageY: number) =>
-      clamp(Math.round((pageY - centerY()) / ITEM_H + (list.length - 1) / 2), 0, list.length - 1);
+      clamp(Math.round((pageY - centerY) / PITCH + (list.length - 1) / 2), 0, list.length - 1);
 
     return PanResponder.create({
       onStartShouldSetPanResponder: () => list.length > 1,
@@ -37,6 +57,7 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
       onPanResponderGrant: (_event, gesture) => {
         if (list.length < 2) return;
         setOpen(true);
+        focus.setValue(indexAt(gesture.y0));
         setIndex(indexAt(gesture.y0));
       },
       onPanResponderMove: (_event, gesture) => {
@@ -50,7 +71,7 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
       },
       onPanResponderTerminate: () => setOpen(false),
     });
-  }, [list, activeId, onSelect]);
+  }, [activeId, centerY, focus, list, onSelect]);
 
   if (list.length < 2) return null;
 
@@ -58,6 +79,9 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
     <>
       <View
         style={[styles.strip, { backgroundColor: t.border.default }]}
+        // 2pt 只是视觉宽度：手指按不准，而且贴边会被系统返回手势抢走。
+        // 命中区往左扩 22pt、上下各扩 18pt，并从边缘内缩 2pt 让开手势热区。
+        hitSlop={{ left: 22, right: 0, top: 18, bottom: 18 }}
         {...responder.panHandlers}
         accessibilityRole="adjustable"
         accessibilityLabel="按住呼出会话转盘"
@@ -78,21 +102,50 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
           </View>
 
           {list.map((item, i) => {
-            const theta =
-              ((-HALF_SPAN + (HALF_SPAN * 2 * i) / Math.max(1, list.length - 1)) * Math.PI) / 180;
-            const push = ARC_R * (1 - Math.cos(theta));
             const selected = i === index;
+            const delta = Animated.subtract(i, focus);
+            const span = Math.max(1, list.length - 1);
+            const steps = range(-span, span);
             return (
-              <View
+              <Animated.View
                 key={item.sessionId}
                 style={[
                   styles.card,
                   {
-                    right: 14 + push,
-                    top: centerY() - ITEM_H / 2 + (i - (list.length - 1) / 2) * ITEM_H,
+                    right: ANCHOR_RIGHT,
+                    top: centerY - CARD_H / 2,
                     backgroundColor: selected ? t.bg.elevatedAnswer : t.bg.surface,
                     borderColor: selected ? t.text.primary : t.border.default,
-                    opacity: selected ? 1 : 0.85,
+                    zIndex: 40 - Math.abs(i - index),
+                    opacity: delta.interpolate({
+                      inputRange: steps,
+                      outputRange: steps.map((d) => Math.max(0.22, 1 - 0.16 * Math.abs(d))),
+                      extrapolate: 'clamp',
+                    }),
+                    transform: [
+                      {
+                        translateX: delta.interpolate({
+                          inputRange: steps,
+                          // 正号：越远的卡越往屏幕边缘靠，弧顶朝左，像贴在虎口上的刻度盘。
+                          outputRange: steps.map((d) => CURVE * d * d),
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                      {
+                        translateY: delta.interpolate({
+                          inputRange: steps,
+                          outputRange: steps.map((d) => d * PITCH),
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                      {
+                        scale: delta.interpolate({
+                          inputRange: steps,
+                          outputRange: steps.map((d) => Math.max(0.7, 1 - 0.07 * Math.abs(d))),
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                    ],
                   },
                 ]}
               >
@@ -111,7 +164,7 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
                 <Text style={[styles.cardMeta, { color: t.text.muted }]} numberOfLines={1}>
                   {repoOf(item)}
                 </Text>
-              </View>
+              </Animated.View>
             );
           })}
         </View>
@@ -120,9 +173,11 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
   );
 }
 
-/** 转盘圆心固定在屏幕右侧外侧，纵向大致在下半屏。 */
-function centerY(): number {
-  return 380;
+/** [-n..n] 的整数序列，给 interpolate 当 inputRange。 */
+function range(from: number, to: number): number[] {
+  const out: number[] = [];
+  for (let i = from; i <= to; i += 1) out.push(i);
+  return out;
 }
 
 function codeOf(index: number): string {
@@ -146,7 +201,7 @@ function clamp(value: number, min: number, max: number): number {
 const styles = StyleSheet.create({
   strip: {
     position: 'absolute',
-    right: 0,
+    right: 2,
     top: '46%',
     width: 2,
     height: STRIP_H,
@@ -171,17 +226,19 @@ const styles = StyleSheet.create({
   previewMeta: { ...TYPE.caption },
   card: {
     position: 'absolute',
-    width: 208,
-    minHeight: ITEM_H - 8,
+    width: CARD_W,
+    height: CARD_H,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    justifyContent: 'center',
+    gap: 2,
+    overflow: 'hidden',
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardCode: { ...TYPE.mono, fontFamily: MONO },
-  cardDot: { width: 6, height: 6, borderRadius: 3 },
-  cardTitle: { ...TYPE.caption, fontWeight: '600' },
-  cardMeta: { ...TYPE.mono, fontFamily: MONO },
+  cardCode: { ...TYPE.pill, fontFamily: MONO },
+  cardDot: { width: 5, height: 5, borderRadius: 2.5 },
+  cardTitle: { ...TYPE.body, fontWeight: '600' },
+  cardMeta: { ...TYPE.caption, fontFamily: MONO },
 });

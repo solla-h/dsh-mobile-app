@@ -705,6 +705,8 @@ function AppBody() {
       {/* Android 走 edge-to-edge 时窗口不会自己缩，必须让 KAV 补键盘高度。
           这一层包住整屏，frame 底边正好是屏幕底边，算出来的重叠量最准。 */}
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        {/* 会话页自己有一层带返回和状态胶囊的头，全局头再顶一遍会白吃 90dp。 */}
+        {active ? null : (
         <View style={styles.header}>
           <Pressable
             style={styles.headerTitleBlock}
@@ -729,6 +731,7 @@ function AppBody() {
             <Text style={styles.statusText}>{STATE_LABEL[state]}</Text>
           </View>
         </View>
+        )}
 
         {detail && !connected ? (
           <Pressable onPress={saved ? handleReconnect : undefined} hitSlop={6}>

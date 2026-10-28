@@ -346,7 +346,23 @@ export function SessionScreen({
   const listRef = useRef<FlatList<StreamRow>>(null);
   /** 用户往上翻看历史时不要再把他拽回底部。 */
   const atBottomRef = useRef(true);
+  /**
+   * 是否继续贴着底部走。默认 true：进会话、收到新内容都自动到底；
+   * 只有用户真的用手拖列表（onScrollBeginDrag）才关掉，程序滚动不算。
+   */
+  const followRef = useRef(true);
+  /** 首屏历史只自动贴底一次，之后交给 followRef。 */
+  const pinnedOnceRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
+
+  // 首屏历史落地后连滚三枪：大代码块测量得晚，一次 scrollToEnd 常常滚不到位。
+  useEffect(() => {
+    if (pinnedOnceRef.current || messages.length === 0) return;
+    pinnedOnceRef.current = true;
+    [80, 260, 700].forEach((ms) => {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), ms);
+    });
+  }, [messages.length]);
   /** 历史分页：hasOlder 表示服务端还有更早的事件，nextBeforeRef 是往回翻的游标。 */
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -491,6 +507,8 @@ export function SessionScreen({
         const inner = streamFrame.frame;
         if (inner.type === 'start') {
           onRunningChangeRef.current(true);
+          // 新回合开始就是要看最新进展；真翻历史的人会在拖动时把跟随关掉。
+          followRef.current = true;
           setStreaming({
             attemptId: String(inner.attemptId ?? ''),
             text: '',
@@ -514,6 +532,7 @@ export function SessionScreen({
           return;
         }
         if (inner.type === 'end') {
+          followRef.current = false;
           setStreaming(null);
           if (inner.outcome?.kind !== 'committed') onRunningChangeRef.current(false);
           return;
@@ -874,6 +893,7 @@ export function SessionScreen({
 
   const jumpToBottom = useCallback(() => {
     atBottomRef.current = true;
+    followRef.current = true;
     setShowJump(false);
     // 不用动画：长会话里动画要滚很久，中途还会触发一堆 onScroll 把翻页逻辑带起来。
     listRef.current?.scrollToEnd({ animated: false });
@@ -882,7 +902,9 @@ export function SessionScreen({
   // 键盘弹出会把列表可视区压小，滚到最底才能看见自己刚打的字。
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidShow', () => {
+      // MIUI 的输入法动画拖到 ~300ms，60ms 时量到的还是旧视口，补一枪。
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 280);
     });
     return () => sub.remove();
   }, []);
@@ -1350,6 +1372,7 @@ export function SessionScreen({
       onRunningChangeRef.current(true);
       // 自己发消息一定是要看最新进展的。
       atBottomRef.current = true;
+      followRef.current = true;
       setShowJump(false);
       listRef.current?.scrollToEnd({ animated: true });
     } else if (files.length > 0) {
@@ -1724,7 +1747,15 @@ export function SessionScreen({
             contentContainerStyle={styles.list}
             keyboardShouldPersistTaps="handled"
             onScroll={handleScroll}
+            onScrollBeginDrag={() => {
+              // 只有手指真的拖动才停止跟随；setContentOffset 不会触发这个回调。
+              followRef.current = false;
+            }}
             scrollEventThrottle={16}
+            onLayout={() => {
+              // 键盘/横竖屏改了列表高度时，正在跟随就重新贴底。
+              if (followRef.current) listRef.current?.scrollToEnd({ animated: false });
+            }}
             onScrollToIndexFailed={(info) => {
               // 目标行还没渲染出来时 FlatList 会失败，先按平均行高估个位置再重试。
               listRef.current?.scrollToOffset({
@@ -1750,7 +1781,13 @@ export function SessionScreen({
                 }
               }
               metricsRef.current = { height, offset: metricsRef.current.offset };
-              if (atBottomRef.current) listRef.current?.scrollToEnd({ animated: true });
+              if (followRef.current) {
+                // scrollToEnd 在高度是估算值时会算短（大代码块尤其明显），
+                // 直接按这次量到的真实内容高度滚到底。
+                listRef.current?.scrollToOffset({ offset: height, animated: false });
+              } else if (atBottomRef.current) {
+                listRef.current?.scrollToEnd({ animated: true });
+              }
             }}
             ListHeaderComponent={
               <View style={styles.olderWrap}>
