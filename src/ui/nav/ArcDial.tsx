@@ -28,6 +28,10 @@ const CARD_W = 190; // 缩小卡片宽度，防止超出屏幕左侧
 const CARD_H = 52;
 /** 圆弧半径：以「选中项」为弧顶，整串卡片绕着这个半径转。 */
 const ARC_RADIUS = 320;
+/** 超过这个格数就不再走圆弧，改成等距直线，避免端点挤成一团。 */
+const ARC_LINEAR_AFTER = 6;
+/** 直线段的纵向间距。 */
+const TAIL_PITCH = 58;
 const MAX_ITEMS = 10;
 /** 弧顶卡片左边缘距屏幕左侧的距离。 */
 const ARC_LEFT = 12;
@@ -52,6 +56,8 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
     list.findIndex((item) => item.sessionId === activeId),
   );
   const [index, setIndex] = useState(initialIndex);
+  /** 当前所在会话在弧上的位置，用来做归位震动和「当前」标识。 */
+  const currentIndex = list.findIndex((item) => item.sessionId === activeId);
   const lastTickIndexRef = useRef(initialIndex);
   const dragStartMsRef = useRef(0);
   const dragStartYRef = useRef(0);
@@ -114,17 +120,20 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       const rounded = Math.round(next);
       if (rounded !== lastTickIndexRef.current) {
         lastTickIndexRef.current = rounded;
-        tickFeedback();
+        // 滑回「当前所在会话」时给一次更扎实的归位轻击，
+        // 扫过其它会话仍是轻脆的棘轮刻度（§5 Home Detent）。
+        if (rounded === currentIndex) tapFeedback();
+        else tickFeedback();
         setIndex(rounded);
       }
     },
-    [angleAt, focus, list.length],
+    [angleAt, currentIndex, focus, list.length],
   );
 
   const handleRelease = useCallback(
     (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
       const elapsed = Date.now() - dragStartMsRef.current;
-      // 轻点一下不切换：保持展开，等用户直接点卡片。
+      // 轻点不切换，保持展开让用户直接点卡片。
       if (!movedRef.current && elapsed < 260) return;
       setOpen(false);
       const target = list.length > 1 ? Math.round(focusIndexRef.current) : 0;
@@ -287,9 +296,19 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
             // 每格固定转角：会话再多也只是往外排，超出屏幕的自然滑出去。
             const stepRad = STEP_RAD;
             const delta = Animated.subtract(i, focus);
-            const dyOf = (d: number) => Math.sin(d * stepRad) * ARC_RADIUS;
+            // 前 6 格按圆弧走；再往外改成等距直线延伸，
+            // 否则角度一大 sin 变平，十张卡会在屏幕上下两端挤成一坨。
+            const dyOf = (d: number) => {
+              const near = Math.min(Math.abs(d), ARC_LINEAR_AFTER);
+              const base = Math.sin(near * stepRad) * ARC_RADIUS;
+              const extra = Math.max(0, Math.abs(d) - ARC_LINEAR_AFTER) * TAIL_PITCH;
+              return Math.sign(d) * (base + extra);
+            };
             // 越远的卡越往屏幕右侧收，整串像绕着镜头轴转。
-            const dxOf = (d: number) => ARC_RADIUS * (1 - Math.cos(d * stepRad));
+            const dxOf = (d: number) => {
+              const near = Math.min(Math.abs(d), ARC_LINEAR_AFTER);
+              return ARC_RADIUS * (1 - Math.cos(near * stepRad));
+            };
             const scaleOf = (d: number) => Math.max(0.62, 1 - 0.06 * Math.abs(d));
             // 排到屏幕外的远端淡出，压缩感更自然，也不会抢视线。
             const opacityOf = (d: number) => Math.max(0.35, 1 - 0.14 * Math.max(0, Math.abs(d) - 3));
@@ -348,17 +367,30 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                     style={[
                       styles.card,
                       {
-                        backgroundColor: selected ? t.action.primaryBg : t.bg.surface,
+                        // 游标所指 = 实心反色块；当前所在 = 微提亮纸面 + 1.5pt 暖石墨描边。
+                        backgroundColor: selected
+                          ? t.action.primaryBg
+                          : isCurrent
+                            ? t.bg.elevatedAnswer
+                            : t.bg.surface,
                         borderColor: selected
                           ? t.action.primaryBg
                           : isCurrent
-                            ? t.text.primary
+                            ? t.border.activeOrigin
                             : t.border.default,
-                        // 当前会话额外加粗描边，扫一眼就能认出「松手会切回哪」。
                         borderWidth: isCurrent && !selected ? 1.5 : StyleSheet.hairlineWidth,
                       },
                     ]}
                   >
+                    {/* 当前会话左侧的定位脊：拇指挡住右半边也能凭左侧这根短脊找回原位。 */}
+                    {isCurrent ? (
+                      <View
+                        style={[
+                          styles.homeSpine,
+                          { backgroundColor: selected ? t.action.primaryText : t.border.activeOrigin },
+                        ]}
+                      />
+                    ) : null}
                     <View
                       style={[
                         styles.cardDot,
@@ -386,25 +418,6 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                         >
                           {titleOf(item)}
                         </Text>
-                        {isCurrent ? (
-                          <View
-                            style={[
-                              styles.currentBadge,
-                              {
-                                borderColor: selected ? t.action.primaryText : t.text.primary,
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.currentBadgeText,
-                                { color: selected ? t.action.primaryText : t.text.primary },
-                              ]}
-                            >
-                              当前
-                            </Text>
-                          </View>
-                        ) : null}
                       </View>
                       <Text
                         style={[
@@ -414,6 +427,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                         numberOfLines={1}
                       >
                         {repoOf(item)}
+                        {isCurrent ? ' · 当前' : ''}
                       </Text>
                     </View>
                   </View>
@@ -429,17 +443,24 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
                   </Text>
 
                   {/* 圆弧轨道上的锚点圆环 */}
-                  <View
-                    style={[
-                      styles.arcAnchorDot,
-                      {
-                        backgroundColor: selected
-                          ? t.semantic.gateAmberText
-                          : t.bg.surface,
-                        borderColor: selected ? t.text.primary : t.border.default,
-                      },
-                    ]}
-                  />
+                <View
+                  style={[
+                    styles.arcAnchorDot,
+                    {
+                      // 游标所指：实心琥珀点；当前所在：描边 + 内芯的同心靶心；其余：空心灰环。
+                      backgroundColor: selected ? t.semantic.gateAmberText : 'transparent',
+                      borderColor: selected
+                        ? t.semantic.gateAmberText
+                        : isCurrent
+                          ? t.border.activeOrigin
+                          : t.border.default,
+                    },
+                  ]}
+                >
+                  {isCurrent && !selected ? (
+                    <View style={[styles.arcAnchorCore, { backgroundColor: t.border.activeOrigin }]} />
+                  ) : null}
+                </View>
                 </Pressable>
               </Animated.View>
             );
@@ -577,17 +598,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 9,
   },
+  homeSpine: { width: 3, height: 22, borderRadius: 1.5, marginRight: 3 },
   cardDot: { width: 7, height: 7, borderRadius: 3.5 },
   cardBody: { flex: 1, minWidth: 0 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardTitle: { fontSize: 12.5, fontWeight: '600', lineHeight: 16, flexShrink: 1 },
-  currentBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  currentBadgeText: { fontSize: 9, fontWeight: '600', lineHeight: 12 },
   cardMeta: { ...TYPE.mono, fontFamily: MONO, fontSize: 10, opacity: 0.78, marginTop: 1 },
   cardIndex: {
     ...TYPE.mono,
@@ -603,7 +618,11 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  /** 同心靶心的内芯：4pt 实心点。 */
+  arcAnchorCore: { width: 4, height: 4, borderRadius: 2 },
   closeHandle: {
     position: 'absolute',
     right: 0,

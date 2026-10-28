@@ -14,7 +14,7 @@ export type Palette = {
     elevatedAnswer: string;
     dockGlass: string;
   };
-  border: { default: string; subtle: string };
+  border: { default: string; subtle: string; activeOrigin: string };
   text: { primary: string; secondary: string; muted: string };
   action: { primaryBg: string; primaryText: string; secondaryBg: string; secondaryText: string };
   semantic: {
@@ -38,7 +38,7 @@ export const PAPER: Palette = {
     elevatedAnswer: '#FAF8F3',
     dockGlass: 'rgba(230, 227, 220, 0.95)',
   },
-  border: { default: '#D8D5CC', subtle: '#DFDCD3' },
+  border: { default: '#D8D5CC', subtle: '#DFDCD3', activeOrigin: '#5C5A52' },
   text: { primary: '#1C1C1A', secondary: '#5C5B57', muted: '#8C8A84' },
   action: {
     primaryBg: '#2B2B28',
@@ -67,7 +67,7 @@ export const EINK_SLATE: Palette = {
     elevatedAnswer: '#31312C',
     dockGlass: 'rgba(44, 44, 40, 0.95)',
   },
-  border: { default: '#3E3E39', subtle: '#363632' },
+  border: { default: '#3E3E39', subtle: '#363632', activeOrigin: '#8C887D' },
   text: { primary: '#CECBC2', secondary: '#9A978E', muted: '#75736B' },
   action: {
     primaryBg: '#C4C1B6',
