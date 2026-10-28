@@ -1,7 +1,7 @@
 # dsh-mobile-app 交接文档
 
 > 写于 2026-10-28。范围：从 10-25 的真机测试修复，到 10-27/28 的产品 UI 规范落地。
-> 代码在 `master`，已推送到 https://github.com/solla-h/dsh-mobile-app （origin/master = 80852e3）。
+> 代码在 `master`，已推送到 https://github.com/solla-h/dsh-mobile-app （origin/master = 6266796）。
 
 ## 1. 项目是什么
 
