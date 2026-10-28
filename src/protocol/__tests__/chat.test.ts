@@ -73,6 +73,24 @@ describe('mapHistory', () => {
     ]);
     expect(messages[0]).toMatchObject({ kind: 'assistant', text: '半截', failure: 'aborted' });
   });
+
+  it('历史 assistant/message 支持提取内嵌 <think> 标签或 thinking block 到 reasoning', () => {
+    const messages = mapHistory([
+      ev(8, 'assistant/message', {
+        message: {
+          content: [
+            { type: 'thinking', thinking: '先检查连接池句柄' },
+            { type: 'text', text: '<think>补充思考锁机制</think>正式结论：已修复超时。' },
+          ],
+        },
+      }),
+    ]);
+    expect(messages[0]).toMatchObject({
+      kind: 'assistant',
+      text: '正式结论：已修复超时。',
+      reasoning: '先检查连接池句柄\n\n补充思考锁机制',
+    });
+  });
 });
 
 describe('prependHistory', () => {

@@ -93,7 +93,31 @@ export interface HistoryEvent {
   data?: Record<string, unknown>;
 }
 
-type Block = { type?: string; text?: string };
+type Block = { type?: string; text?: string; thinking?: string; reasoning?: string };
+
+/**
+ * 拆分内嵌在正文中的 `<think>...</think>` 标签（DeepSeek-R1 流式或历史常见形态）。
+ * 若还处于未闭合的 `<think>` 流式生成中，则拆为 reasoning + 空正文。
+ */
+export function splitThinkTags(rawText: string): { text: string; reasoning?: string } {
+  if (!rawText.includes('<think>')) return { text: rawText };
+  const thinkBlocks: string[] = [];
+  let cleaned = rawText.replace(/<think>([\s\S]*?)<\/think>/gi, (_match, inner: string) => {
+    if (inner.trim()) thinkBlocks.push(inner.trim());
+    return '';
+  });
+  // 检查是否还有未闭合的 <think>（流式输出 Stage 01 正在打字机展开阶段）
+  const openIdx = cleaned.indexOf('<think>');
+  if (openIdx >= 0) {
+    const partial = cleaned.slice(openIdx + '<think>'.length).trim();
+    if (partial) thinkBlocks.push(partial);
+    cleaned = cleaned.slice(0, openIdx);
+  }
+  return {
+    text: cleaned.trimStart(),
+    reasoning: thinkBlocks.length > 0 ? thinkBlocks.join('\n\n') : undefined,
+  };
+}
 
 function textOfBlocks(blocks: unknown): string {
   if (!Array.isArray(blocks)) return '';
@@ -105,6 +129,23 @@ function textOfBlocks(blocks: unknown): string {
     })
     .filter(Boolean)
     .join('');
+}
+
+function reasoningOfBlocks(blocks: unknown): string {
+  if (!Array.isArray(blocks)) return '';
+  return blocks
+    .map((block) => {
+      const typed = block as Block;
+      if (
+        (typed?.type === 'thinking' || typed?.type === 'reasoning') &&
+        typeof (typed.thinking ?? typed.reasoning ?? typed.text) === 'string'
+      ) {
+        return (typed.thinking ?? typed.reasoning ?? typed.text) as string;
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /** 用户消息里的图片块：{type:"image", attachment:{attachmentId,...}}。 */
@@ -166,14 +207,25 @@ export function mapHistory(events: HistoryEvent[]): ChatMessage[] {
         break;
       }
       case 'assistant/message': {
-        const text = textOfBlocks(data.message?.content);
+        const rawText = textOfBlocks(data.message?.content);
+        const parsed = splitThinkTags(rawText);
+        const blockReasoning = reasoningOfBlocks(data.message?.content);
+        const directReasoning =
+          (typeof data.reasoning === 'string' && data.reasoning) ||
+          (typeof data.message?.reasoning === 'string' && data.message.reasoning) ||
+          undefined;
+        const reasoning =
+          [directReasoning, blockReasoning, parsed.reasoning].filter(Boolean).join('\n\n') ||
+          undefined;
+        const text = parsed.text;
         const finishKind = (data.finish as { kind?: string } | undefined)?.kind;
         const failure = finishKind === 'error' || finishKind === 'aborted' ? finishKind : undefined;
-        if (text || failure) {
+        if (text || reasoning || failure) {
           out.push({
             id: `h${event.seq}`,
             kind: 'assistant',
             text,
+            ...(reasoning ? { reasoning } : {}),
             time: event.time,
             seq: event.seq,
             failure,
@@ -331,8 +383,12 @@ export function applyRealtime(
       ];
     }
     case 'assistant/message': {
-      const text = typeof event.text === 'string' ? event.text : '';
-      const reasoning = typeof event.reasoning === 'string' && event.reasoning ? event.reasoning : undefined;
+      const rawText = typeof event.text === 'string' ? event.text : '';
+      const parsed = splitThinkTags(rawText);
+      const directReasoning =
+        typeof event.reasoning === 'string' && event.reasoning ? event.reasoning : undefined;
+      const reasoning = [directReasoning, parsed.reasoning].filter(Boolean).join('\n\n') || undefined;
+      const text = parsed.text;
       if (!text && !reasoning) return messages;
       return [...messages, { id: `r${seq}`, kind: 'assistant', text, reasoning, time, seq }];
     }
@@ -346,7 +402,7 @@ export function applyRealtime(
           id: `r${seq}`,
           kind: 'files',
           files,
-          turn: typeof event.turn === 'number' ? event.turn : undefined,
+          turn: typeof event.turn === 'number' ? dataTurn(event.turn) : undefined,
           time,
           seq,
         },
@@ -384,4 +440,8 @@ export function applyRealtime(
     default:
       return messages;
   }
+}
+
+function dataTurn(turn: number): number {
+  return turn;
 }

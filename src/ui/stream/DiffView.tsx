@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { TYPE } from '../../theme/tokens';
+import { tapFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
 
 export type DiffKind = 'add' | 'del' | 'ctx' | 'hunk' | 'meta';
@@ -65,7 +66,7 @@ interface Props {
 }
 
 /**
- * 移动端 Diff：默认自动折行，单指轻点任意一行即引用（§3.1）。
+ * 移动端 Diff：默认自动折行，单指轻点任意一行即引用（§3.1 Tap-Line-to-Quote）。
  */
 export function DiffView({ source, file, limit = 120, onQuote }: Props) {
   const t = useTheme();
@@ -74,33 +75,60 @@ export function DiffView({ source, file, limit = 120, onQuote }: Props) {
   const [expanded, setExpanded] = useState(false);
   const lines = useMemo(() => parseUnifiedDiff(source), [source]);
   const name = file ?? diffFile(source);
+  const additions = useMemo(
+    () => lines.filter((l) => l.kind === 'add').length,
+    [lines],
+  );
+  const deletions = useMemo(
+    () => lines.filter((l) => l.kind === 'del').length,
+    [lines],
+  );
   const shown = expanded ? lines : lines.slice(0, limit);
 
   return (
     <View style={[styles.card, { backgroundColor: t.bg.surface, borderColor: t.border.default }]}>
       <View style={[styles.head, { borderBottomColor: t.border.subtle }]}>
-        <Text style={[styles.file, { color: t.text.secondary }]} numberOfLines={1}>
-          {name ?? '补丁'}
+        <Text style={[styles.file, { color: t.text.primary }]} numberOfLines={1}>
+          {name ?? '补丁预览'}
         </Text>
+        {additions > 0 || deletions > 0 ? (
+          <Text style={[styles.stats, { color: t.text.muted }]}>
+            +{additions}/-{deletions}
+          </Text>
+        ) : null}
         <Pressable hitSlop={8} onPress={() => setWrap((value) => !value)}>
-          <Text style={[styles.toggle, { color: t.text.muted }]}>{wrap ? '折行' : '滚动'}</Text>
+          <Text style={[styles.toggle, { color: t.text.secondary }]}>
+            {wrap ? '自动折行' : '横向滚动'}
+          </Text>
         </Pressable>
       </View>
+      {onQuote ? (
+        <View style={[styles.hintRow, { borderBottomColor: t.border.subtle }]}>
+          <Text style={[styles.hintText, { color: t.text.muted }]}>
+            点按任意代码行可直接引用到输入框追问
+          </Text>
+        </View>
+      ) : null}
       <ScrollView horizontal={!wrap} style={styles.body} contentContainerStyle={styles.bodyInner}>
         <View style={wrap ? styles.wrapCol : undefined}>
           {shown.map((line, index) => {
             const tone =
               line.kind === 'add'
-                ? { bg: t.semantic.diffAddBg, fg: t.semantic.diffAddText }
+                ? { bg: t.semantic.diffAddBg, fg: t.semantic.diffAddText, sign: '+' }
                 : line.kind === 'del'
-                  ? { bg: t.semantic.diffDelBg, fg: t.semantic.diffDelText }
-                  : { bg: 'transparent', fg: line.kind === 'hunk' || line.kind === 'meta' ? t.text.muted : t.text.secondary };
+                  ? { bg: t.semantic.diffDelBg, fg: t.semantic.diffDelText, sign: '-' }
+                  : {
+                      bg: 'transparent',
+                      fg: line.kind === 'hunk' || line.kind === 'meta' ? t.text.muted : t.text.secondary,
+                      sign: ' ',
+                    };
             const isPicked = picked === index;
             return (
               <Pressable
                 key={index}
                 onPress={() => {
                   if (!onQuote || line.kind === 'meta' || line.kind === 'hunk') return;
+                  tapFeedback();
                   setPicked(index);
                   onQuote({ file: name, lineNo: line.no, text: line.text });
                 }}
@@ -111,6 +139,7 @@ export function DiffView({ source, file, limit = 120, onQuote }: Props) {
                 ]}
               >
                 <Text style={[styles.no, { color: t.text.muted }]}>{line.no ?? ''}</Text>
+                <Text style={[styles.sign, { color: tone.fg }]}>{tone.sign}</Text>
                 <Text
                   style={[styles.code, { color: tone.fg }, wrap ? styles.wrapText : null]}
                   numberOfLines={wrap ? undefined : 1}
@@ -147,13 +176,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 8,
   },
-  file: { ...TYPE.mono, fontFamily: MONO, flex: 1 },
-  toggle: { ...TYPE.mono, fontFamily: MONO },
+  file: { ...TYPE.mono, fontFamily: MONO, fontWeight: '600', flex: 1 },
+  stats: { ...TYPE.mono, fontFamily: MONO, fontVariant: ['tabular-nums'] },
+  toggle: { ...TYPE.mono, fontFamily: MONO, textDecorationLine: 'underline' },
+  hintRow: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  hintText: { ...TYPE.mono, fontFamily: MONO, fontSize: 9.5 },
   body: { maxHeight: 320 },
-  bodyInner: { paddingVertical: 4 },
+  bodyInner: { paddingVertical: 4, paddingHorizontal: 4 },
   wrapCol: { flex: 1 },
-  line: { flexDirection: 'row', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 3 },
-  no: { ...TYPE.mono, fontFamily: MONO, width: 30, textAlign: 'right', marginRight: 6, opacity: 0.7 },
+  line: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginVertical: 0.5,
+  },
+  no: {
+    ...TYPE.mono,
+    fontFamily: MONO,
+    fontVariant: ['tabular-nums'],
+    width: 26,
+    textAlign: 'right',
+    marginRight: 5,
+    opacity: 0.65,
+  },
+  sign: {
+    ...TYPE.mono,
+    fontFamily: MONO,
+    width: 10,
+    opacity: 0.75,
+  },
   code: { ...TYPE.mono, fontFamily: MONO, flexShrink: 1 },
   wrapText: { flex: 1, flexWrap: 'wrap' },
   more: { paddingVertical: 8, alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth },

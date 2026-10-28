@@ -23,6 +23,7 @@ export function groupMessages(messages: ChatMessage[]): StreamRow[] {
     if (message.kind === 'tool') {
       buffer.push({
         id: message.id,
+        callId: message.callId,
         name: message.name,
         time: message.time,
         args: message.args,
