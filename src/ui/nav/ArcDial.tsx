@@ -198,7 +198,9 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
               opacity: open ? 0 : 1,
             },
           ]}
-          hitSlop={{ left: 24, right: 4, top: 20, bottom: 20 }}
+          // 命中区比视觉条宽得多：手指落在右缘附近就开始接管，
+          // 不然偶尔会被下面的 FlatList 先接住、转盘呼不出来。
+          hitSlop={{ left: 32, right: 8, top: 56, bottom: 56 }}
           {...responder.panHandlers}
           accessibilityRole="adjustable"
           accessibilityLabel="按住或轻点呼出拇指弧形会话转盘"
