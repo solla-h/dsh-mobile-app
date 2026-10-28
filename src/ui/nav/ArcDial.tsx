@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Animated, PanResponder, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { SessionItem } from '../../protocol/types';
 import { MOTION, TYPE } from '../../theme/tokens';
@@ -12,14 +12,14 @@ interface Props {
 
 const STRIP_H = 96;
 const CARD_W = 184;
-const CARD_H = 74;
-/** 卡片中心间距：比卡片高 12pt，留一条呼吸缝，8 张也不会叠在一起。 */
-const PITCH = 86;
+const CARD_H = 46;
+/** 卡片中心间距：比卡片高 8pt，够一条缝但不铺满屏幕。 */
+const PITCH = 56;
 /** 抛物线弧度：每远离选中间隔一格，就往屏幕边缘收 0.55 * d²。 */
 const CURVE = 2.1;
 /** 选中卡右边缘距屏幕边缘的基准距离，给外侧卡片留出弧顶空间。 */
 const ANCHOR_RIGHT = 72;
-const MAX_ITEMS = 8;
+const MAX_ITEMS = 6;
 
 /**
  * 右侧拇指弧形会话转盘（§2.2）。
@@ -37,19 +37,21 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
 
   const centerY = height * 0.46 + STRIP_H / 2;
 
-  useEffect(() => {
-    Animated.spring(focus, {
-      toValue: index,
-      useNativeDriver: true,
-      tension: MOTION.collapse.tension,
-      friction: 17,
-    }).start();
-  }, [focus, index]);
-
   const responder = useMemo(() => {
-    /** 手指落在哪个刻度上：纵向按卡片间距等分，中间那格对准圆心。 */
-    const indexAt = (pageY: number) =>
-      clamp(Math.round((pageY - centerY) / PITCH + (list.length - 1) / 2), 0, list.length - 1);
+    /** 松手后吸附到最近的刻度：短促、轻微回弹，不要拖泥带水。 */
+    const snapTo = (target: number) => {
+      Animated.spring(focus, {
+        toValue: target,
+        useNativeDriver: true,
+        tension: MOTION.collapse.tension * 1.6,
+        friction: 20,
+      }).start();
+    };
+
+    /** 连续刻度：手指在哪，卡片就滑到哪，不做四舍五入，滑动才跟手。 */
+    const indexAtFloat = (pageY: number) =>
+      clamp((pageY - centerY) / PITCH + (list.length - 1) / 2, 0, list.length - 1);
+    const indexAt = (pageY: number) => Math.round(indexAtFloat(pageY));
 
     return PanResponder.create({
       onStartShouldSetPanResponder: () => list.length > 1,
@@ -57,16 +59,21 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
       onPanResponderGrant: (_event, gesture) => {
         if (list.length < 2) return;
         setOpen(true);
-        focus.setValue(indexAt(gesture.y0));
-        setIndex(indexAt(gesture.y0));
+        const start = indexAtFloat(gesture.y0);
+        focus.stopAnimation();
+        focus.setValue(start);
+        setIndex(Math.round(start));
       },
       onPanResponderMove: (_event, gesture) => {
-        const next = indexAt(gesture.moveY);
-        setIndex((current) => (current === next ? current : next));
+        const next = indexAtFloat(gesture.moveY);
+        focus.setValue(next);
+        setIndex((current) => (current === Math.round(next) ? current : Math.round(next)));
       },
       onPanResponderRelease: (_event, gesture) => {
         setOpen(false);
-        const picked = list[indexAt(gesture.moveY || gesture.y0)];
+        const target = indexAt(gesture.moveY || gesture.y0);
+        snapTo(target);
+        const picked = list[target];
         if (picked && picked.sessionId !== activeId) onSelect(picked.sessionId);
       },
       onPanResponderTerminate: () => setOpen(false),
@@ -91,7 +98,7 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
 
       {open ? (
         <View style={styles.overlay} pointerEvents="none">
-          <View style={styles.preview}>
+          <View style={[styles.preview, { backgroundColor: t.bg.surface, borderColor: t.border.default }]}>
             <Text style={[styles.previewCode, { color: t.text.muted }]}>{codeOf(index)}</Text>
             <Text style={[styles.previewTitle, { color: t.text.primary }]} numberOfLines={2}>
               {titleOf(list[index])}
@@ -117,11 +124,6 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
                     backgroundColor: selected ? t.bg.elevatedAnswer : t.bg.surface,
                     borderColor: selected ? t.text.primary : t.border.default,
                     zIndex: 40 - Math.abs(i - index),
-                    opacity: delta.interpolate({
-                      inputRange: steps,
-                      outputRange: steps.map((d) => Math.max(0.22, 1 - 0.16 * Math.abs(d))),
-                      extrapolate: 'clamp',
-                    }),
                     transform: [
                       {
                         translateX: delta.interpolate({
@@ -141,7 +143,7 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
                       {
                         scale: delta.interpolate({
                           inputRange: steps,
-                          outputRange: steps.map((d) => Math.max(0.7, 1 - 0.07 * Math.abs(d))),
+                          outputRange: steps.map((d) => Math.max(0.78, 1 - 0.055 * Math.abs(d))),
                           extrapolate: 'clamp',
                         }),
                       },
@@ -160,9 +162,6 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
                 </View>
                 <Text style={[styles.cardTitle, { color: t.text.primary }]} numberOfLines={1}>
                   {titleOf(item)}
-                </Text>
-                <Text style={[styles.cardMeta, { color: t.text.muted }]} numberOfLines={1}>
-                  {repoOf(item)}
                 </Text>
               </Animated.View>
             );
@@ -217,10 +216,19 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.28)',
+    backgroundColor: 'rgba(0,0,0,0.38)',
     zIndex: 30,
   },
-  preview: { position: 'absolute', left: 16, top: 72, width: 200, gap: 4 },
+  preview: {
+    position: 'absolute',
+    left: 16,
+    top: 72,
+    width: 208,
+    gap: 4,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   previewCode: { ...TYPE.mono, fontFamily: MONO },
   previewTitle: { ...TYPE.title, fontWeight: '600' },
   previewMeta: { ...TYPE.caption },
@@ -231,14 +239,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
     justifyContent: 'center',
-    gap: 2,
+    gap: 1,
     overflow: 'hidden',
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardCode: { ...TYPE.pill, fontFamily: MONO },
   cardDot: { width: 5, height: 5, borderRadius: 2.5 },
   cardTitle: { ...TYPE.body, fontWeight: '600' },
-  cardMeta: { ...TYPE.caption, fontFamily: MONO },
 });
