@@ -359,6 +359,13 @@ export function SessionScreen({
   const pinnedOnceRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
 
+  // 流式每来一段就补一次贴底：只靠 onContentSizeChange 时，
+  // 高度没变（同一行在长高）不会回调，回答就会被顶到屏幕外。
+  useEffect(() => {
+    if (!followRef.current) return;
+    listRef.current?.scrollToEnd({ animated: false });
+  }, [streaming?.text.length, streaming?.reasoning?.length]);
+
   // 首屏历史落地后连滚三枪：大代码块测量得晚，一次 scrollToEnd 常常滚不到位。
   useEffect(() => {
     if (pinnedOnceRef.current || messages.length === 0) return;
