@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MOTION, TYPE } from '../../theme/tokens';
+import { chargeStartFeedback, successFeedback, tickFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
-import { chargeStartFeedback, successFeedback } from '../haptics';
 
 interface Props {
   /** 待批复的目标，比如 src/mcp/pool.rs */
@@ -24,7 +24,7 @@ interface Props {
 /**
  * 折叠态拇指坞（§2.3 / §3.2）：
  * 上面一行待批复状态条 + 信任目录胶囊，下面 2:3 双按钮。
- * 高危操作把「快速批准」换成按住 0.5s 充能放行。
+ * 高危操作把「快速批准」换成按住 0.5s 充能放行，带实时百分比进度与渐强脉冲震动。
  */
 export function ApprovalDock({
   target,
@@ -41,29 +41,54 @@ export function ApprovalDock({
   onExpand,
 }: Props) {
   const t = useTheme();
-  // 用 state 装 Animated.Value：渲染期读 ref.current 会被 react-hooks/refs 拦。
   const [fill] = useState(() => new Animated.Value(0));
+  const [pct, setPct] = useState(0);
   const firedRef = useRef(false);
+  const pulseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const id = fill.addListener(({ value }) => {
+      setPct(Math.round(value * 100));
+    });
+    return () => {
+      fill.removeListener(id);
+      if (pulseTimerRef.current) clearInterval(pulseTimerRef.current);
+    };
+  }, [fill]);
+
+  const clearPulse = () => {
+    if (pulseTimerRef.current) {
+      clearInterval(pulseTimerRef.current);
+      pulseTimerRef.current = null;
+    }
+  };
 
   const startHold = () => {
     if (busy) return;
     firedRef.current = false;
     chargeStartFeedback();
+    clearPulse();
+    pulseTimerRef.current = setInterval(() => {
+      tickFeedback();
+    }, 100);
     Animated.timing(fill, {
       toValue: 1,
       duration: MOTION.holdMs,
       easing: Easing.linear,
       useNativeDriver: false,
     }).start(({ finished }) => {
+      clearPulse();
       if (!finished || firedRef.current) return;
       firedRef.current = true;
       successFeedback();
       fill.setValue(0);
+      setPct(0);
       onApprove();
     });
   };
 
   const cancelHold = () => {
+    clearPulse();
     if (firedRef.current) return;
     Animated.timing(fill, {
       toValue: 0,
@@ -98,8 +123,9 @@ export function ApprovalDock({
           <Text style={[styles.gateText, { color: t.text.primary }]} numberOfLines={1}>
             {highRisk ? '高危命令: ' : '待批复: '}
             {target}
+            {additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}
           </Text>
-          <Text style={[styles.gateMore, { color: t.text.muted }]}>放大 ↗</Text>
+          <Text style={[styles.gateMore, { color: t.text.secondary }]}>点开放大 ↗</Text>
         </Pressable>
         <Pressable
           style={[
@@ -119,13 +145,13 @@ export function ApprovalDock({
               { color: trusted ? t.action.primaryText : t.text.secondary },
             ]}
           >
-            信任目录
+            {trusted ? '✓ 信任目录' : '信任目录'}
           </Text>
         </Pressable>
       </View>
 
       {detail ? (
-        <Text style={[styles.detail, { color: t.text.muted }]} numberOfLines={2}>
+        <Text style={[styles.detail, { color: t.text.secondary }]} numberOfLines={2}>
           {detail}
         </Text>
       ) : null}
@@ -140,7 +166,7 @@ export function ApprovalDock({
           onPress={onReject}
           disabled={busy}
         >
-          <Text style={[styles.rejectText, { color: t.text.secondary }]}>拦截</Text>
+          <Text style={[styles.rejectText, { color: t.text.primary }]}>× 拦截</Text>
         </Pressable>
 
         {highRisk ? (
@@ -152,9 +178,18 @@ export function ApprovalDock({
             accessibilityRole="button"
             accessibilityLabel="长按半秒放行高危命令"
           >
-            <Animated.View style={[styles.holdFill, { width, backgroundColor: t.semantic.gateAmberBg }]} />
+            <Animated.View
+              style={[
+                styles.holdFill,
+                { width, backgroundColor: t.semantic.gateAmberText, opacity: 0.45 },
+              ]}
+            />
             <Text style={[styles.approveText, { color: t.action.primaryText }]}>
-              {busy ? '处理中…' : `长按 0.5s 放行${riskLabels?.length ? ' · ' + riskLabels[0] : ''}`}
+              {busy
+                ? '处理中…'
+                : pct > 0
+                  ? `长按确认中 ${pct}%`
+                  : `长按 0.5s 放行${riskLabels?.length ? ' · ' + riskLabels[0] : '高危命令'}`}
             </Text>
           </Pressable>
         ) : (
@@ -170,7 +205,7 @@ export function ApprovalDock({
             <Text style={[styles.approveText, { color: t.action.primaryText }]}>
               {busy
                 ? '处理中…'
-                : `快速批准${additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}`}
+                : `✓ 快速批准${additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}`}
             </Text>
           </Pressable>
         )}
@@ -199,7 +234,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   gateDot: { width: 8, height: 8, borderRadius: 4 },
-  gateText: { ...TYPE.pill, fontFamily: MONO, flex: 1 },
+  gateText: { ...TYPE.pill, fontFamily: MONO, fontWeight: '600', flex: 1 },
   gateMore: { ...TYPE.pill, fontFamily: MONO },
   trust: {
     minHeight: 34,
@@ -209,27 +244,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  trustText: { ...TYPE.pill, fontFamily: MONO },
+  trustText: { ...TYPE.pill, fontFamily: MONO, fontWeight: '600' },
   detail: { ...TYPE.caption, paddingHorizontal: 2 },
   actions: { flexDirection: 'row', gap: 8 },
   reject: {
     flex: 2,
-    minHeight: 46,
+    minHeight: 44,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rejectText: { ...TYPE.body, fontWeight: '500' },
+  rejectText: { ...TYPE.body, fontWeight: '600' },
   approve: {
     flex: 3,
-    minHeight: 46,
+    minHeight: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   holdFill: { position: 'absolute', left: 0, top: 0, bottom: 0 },
-  approveText: { ...TYPE.body, fontWeight: '600' },
+  approveText: { ...TYPE.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   pressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
 });

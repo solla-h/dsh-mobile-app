@@ -24,6 +24,7 @@ import {
   applyRealtime,
   mergeSnapshot,
   prependHistory,
+  splitThinkTags,
   type ChatMessage,
   type QueuedMessage,
 } from '../protocol/chat';
@@ -36,7 +37,7 @@ import { AnswerCard } from './stream/AnswerCard';
 import { groupMessages, type StreamRow } from './stream/group';
 import { ThinkPill } from './stream/ThinkPill';
 import { ToolGroup } from './stream/ToolGroup';
-import { parseArgs } from './tool-format';
+import { extractToolDiff, parseArgs, toolCommand } from './tool-format';
 import {
   filterCommands,
   insertTextOf,
@@ -87,7 +88,7 @@ import type { GatewayClient } from '../transport/gateway-client';
 import { ActionSheet, type SheetAction } from './ActionSheet';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
-import type { Palette } from '../theme/tokens';
+import { MOTION, type Palette } from '../theme/tokens';
 import { useTheme, useThemedStyles } from './theme';
 import { tapFeedback } from './haptics';
 import { InteractionSheet } from './InteractionSheet';
@@ -109,6 +110,8 @@ interface Props {
   running: boolean;
   /** 会话列表，右侧弧形转盘用 */
   sessions: SessionItem[];
+  /** 全局正在等待审批或回答的会话 ID 列表（用于自动跳栈 Auto-Hop 与弧形转盘状态灯） */
+  blockedSessionIds?: string[];
   onRunningChange: (next: boolean) => void;
   /** fork 出来的新会话，交给上层切过去 */
   onForked: (sessionId: string) => void;
@@ -218,6 +221,7 @@ export function SessionScreen({
   onBack,
   running,
   sessions,
+  blockedSessionIds = [],
   onRunningChange,
   onForked,
   onOpenSession,
@@ -964,8 +968,17 @@ export function SessionScreen({
     const pending = graceRef.current;
     graceRef.current = null;
     setGraceLabel(null);
-    if (pending) sendApproval(pending.approval, pending.outcome);
-  }, [sendApproval]);
+    if (pending) {
+      sendApproval(pending.approval, pending.outcome);
+      const nextBlocked = blockedSessionIds.find((id) => id !== session.sessionId);
+      if (nextBlocked) {
+        setTimeout(() => {
+          showToast('已自动跳至下一个待审批会话');
+          onOpenSession(nextBlocked);
+        }, MOTION.autoHopMs);
+      }
+    }
+  }, [blockedSessionIds, onOpenSession, sendApproval, session.sessionId, showToast]);
 
   /** 会话页被卸载时别再等倒计时，直接把还没发的决定发出去。 */
   useEffect(
@@ -1517,38 +1530,38 @@ export function SessionScreen({
     });
   }, [messages, pendingSends.length, queued]);
 
-  /** 审批面板要展示的东西：目标文件、diff、风险等级。 */
+  /** 审批面板要展示的东西：目标文件、diff（含 edit 工具合成 diff）、推理动机、后续命令、风险等级。 */
   const approvalInfo = useMemo(() => {
     if (!approval) return null;
     const call = approval.callId
       ? messages.find((message) => message.kind === 'tool' && message.callId === approval.callId)
-      : undefined;
+      : [...messages].reverse().find((message) => message.kind === 'tool');
     const args = call && call.kind === 'tool' ? parseArgs(call.args) : null;
+    const diffData =
+      call && call.kind === 'tool'
+        ? extractToolDiff(call.name, call.args, call.output)
+        : null;
     const filePath =
-      args && typeof args.file_path === 'string'
+      diffData?.file ??
+      (args && typeof args.file_path === 'string'
         ? args.file_path
         : args && typeof args.path === 'string'
           ? args.path
-          : undefined;
-    const rawDiff =
-      args && typeof args.patch === 'string'
-        ? args.patch
-        : args && typeof args.diff === 'string'
-          ? args.diff
-          : undefined;
-    const diff = rawDiff && /^(\+\+\+|---|@@|diff --git)/m.test(rawDiff) ? rawDiff : undefined;
-    const diffLines = diff ? diff.split('\n') : [];
+          : undefined);
+    const cmd =
+      call && call.kind === 'tool' ? toolCommand(call.name, call.args) : undefined;
+    const lastAssistant = [...messages].reverse().find((m) => m.kind === 'assistant');
+    const lastReasoning =
+      lastAssistant && lastAssistant.kind === 'assistant' ? lastAssistant.reasoning : undefined;
+    const displayReason = pickDisplayReason(approval.displayReason, approval.reason);
     return {
       target: filePath ?? approval.toolName ?? '工具调用',
       dir: filePath ? filePath.replace(/\/[^/]*$/, '') : undefined,
-      detail: pickDisplayReason(approval.displayReason, approval.reason) || undefined,
-      diff,
-      additions: diff
-        ? diffLines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length
-        : undefined,
-      deletions: diff
-        ? diffLines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length
-        : undefined,
+      detail: displayReason || (lastReasoning ? lastReasoning.split('\n')[0] : undefined),
+      diff: diffData?.diff,
+      additions: diffData?.additions,
+      deletions: diffData?.deletions,
+      nextCommand: cmd,
       risk: approvalRisk(approval),
     };
   }, [approval, messages]);
@@ -1566,19 +1579,23 @@ export function SessionScreen({
   }, [approval, approvalInfo, trustedDirs, respondApproval, showToast]);
 
 
-  const baseRows: ChatMessage[] = useMemo(() => (streaming
-    ? [
-        ...messages,
-        {
-          id: `stream-${streaming.attemptId}`,
-          kind: 'assistant',
-          text: streaming.text,
-          reasoning: streaming.reasoning || undefined,
-          time: streaming.startedAt,
-          streaming: true,
-        },
-      ]
-    : messages), [messages, streaming]);
+  const baseRows: ChatMessage[] = useMemo(() => {
+    if (!streaming) return messages;
+    const split = splitThinkTags(streaming.text);
+    const combinedReasoning =
+      [streaming.reasoning, split.reasoning].filter(Boolean).join('\n\n') || undefined;
+    return [
+      ...messages,
+      {
+        id: `stream-${streaming.attemptId}`,
+        kind: 'assistant',
+        text: split.text,
+        reasoning: combinedReasoning,
+        time: streaming.startedAt,
+        streaming: true,
+      },
+    ];
+  }, [messages, streaming]);
 
   const rows: StreamRow[] = useMemo(() => {
     const extras: ChatMessage[] = [
@@ -1678,8 +1695,13 @@ export function SessionScreen({
     <View style={styles.root}>
       {/* 2px 上下文水位线：不占排版高度，扫一眼就知道还剩多少上下文。 */}
       <ContextHairline ratio={contextPct / 100} />
-      {/* 右侧弧形会话转盘：按住感应条上下滑，松手切换会话。 */}
-      <ArcDial sessions={sessions} activeId={session.sessionId} onSelect={onOpenSession} />
+      {/* 右侧弧形会话转盘：按住感应条上下滑或轻点呼出，松手切换会话。 */}
+      <ArcDial
+        sessions={sessions}
+        activeId={session.sessionId}
+        blockedIds={blockedSessionIds}
+        onSelect={onOpenSession}
+      />
       <View style={styles.header}>
         <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
@@ -1822,7 +1844,18 @@ export function SessionScreen({
                   ) : null}
                   {item.kind === 'tools' ? (
                     <View style={styles.toolGroupWrap}>
-                      <ToolGroup tools={item.tools} />
+                      <ToolGroup
+                        tools={item.tools}
+                        pendingCallId={approval?.callId}
+                        onOpenGate={() => setTriageOpen(true)}
+                        onQuoteLine={(line) =>
+                          setQuote({
+                            lang: 'diff',
+                            label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+                            code: line.text,
+                          })
+                        }
+                      />
                     </View>
                   ) : (
                     <MessageRow
@@ -1852,8 +1885,12 @@ export function SessionScreen({
           target={approvalInfo?.target ?? ''}
           reason={approvalInfo?.detail}
           diff={approvalInfo?.diff}
+          nextCommand={approvalInfo?.nextCommand}
           highRisk={approvalInfo?.risk.level === 'high'}
           busy={Boolean(approval && decidedId === approval.approvalId)}
+          trusted={Boolean(approvalInfo?.dir && trustedDirs.includes(approvalInfo.dir))}
+          dir={approvalInfo?.dir}
+          onToggleTrust={() => toggleTrustedDir(approvalInfo?.dir)}
           onClose={() => setTriageOpen(false)}
           onApprove={() => decideApproval('allowed-once')}
           onReject={() => decideApproval('rejected')}
@@ -1953,7 +1990,12 @@ export function SessionScreen({
         />
 
         {graceLabel ? (
-          <GraceUndo label={graceLabel} onUndo={undoDecision} onExpire={expireGrace} />
+          <GraceUndo
+            label={graceLabel}
+            checkpointId={`cp-${session.sessionId.slice(0, 5)}`}
+            onUndo={undoDecision}
+            onExpire={expireGrace}
+          />
         ) : null}
 
         {approval && approvalInfo && !graceLabel ? (
@@ -2282,9 +2324,14 @@ function MessageRow({
     return (
       <View style={styles.assistantWrap}>
         {message.reasoning ? (
-          <ThinkPill text={message.reasoning} streaming={message.streaming} />
+          <ThinkPill
+            text={message.reasoning}
+            streaming={message.streaming}
+            answerStarted={Boolean(message.text && message.text.trim().length > 0)}
+            startedAt={message.time}
+          />
         ) : null}
-        {message.text || message.streaming || message.failure ? (
+        {message.text || (!message.reasoning && message.streaming) || message.failure ? (
           <AnswerCard failed={Boolean(message.failure)}>
             <Pressable onLongPress={() => onLongPress(message)} delayLongPress={320}>
               {message.text ? (
@@ -2292,6 +2339,12 @@ function MessageRow({
                   text={message.text}
                   onFileLink={canDownloadFiles ? onOpenFile : undefined}
                   onQuoteCode={onQuoteCode}
+                  onQuoteLine={(line) =>
+                    onQuoteCode(
+                      [line.file, line.lineNo].filter(Boolean).join(':') || 'code',
+                      line.text,
+                    )
+                  }
                 />
               ) : (
                 <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>

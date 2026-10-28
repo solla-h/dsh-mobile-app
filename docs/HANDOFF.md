@@ -186,3 +186,32 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 2. 会话页的滚动逻辑集中在 `followRef` / `atBottomRef` / `onContentSizeChange`，
    改之前先读那几条注释，别再用 `scrollToEnd` 追流式内容（会算短）。
 3. 审批 UI 在真机上一定弹不出来（原因见 §3.2），要验证就起 mock，别怀疑是代码坏了。
+
+## 11. v4.0 规范与 polished 代码导入（2026-10-28）
+
+`docs/dsh_mobile_app_product_ui_spec_v_4_0.md` 是设计方（Gemini）对上一版的审查意见；
+`D:\workspace\open_source\dsh-mobile-app-polished` 是他直接改好的源码树。
+
+**已合并进本仓库**（一次性覆盖 17 个文件）：
+
+- `chat.ts` 新增 `splitThinkTags()` / `reasoningOfBlocks()`：历史与流式都能提取 `thinking` 块和内嵌 `<think>`；
+- `ThinkPill` 增加 `answerStarted`：正文一开始吐字就折叠；
+- `ToolGroup` 内嵌 `extractToolDiff()` 的 Diff、待审批 callId 琥珀色高亮；
+- `AnswerCard` 补 `DEEPSEEK 正式回答 · FORMAL RESPONSE [主视窗聚焦]` 题头；
+- `Markdown` 代码块行号 + 单指点行引用、diff 围栏路由到 `DiffView`；
+- `ApprovalDock` 高危长按显示百分比、`GraceUndo` 移到输入框上方、`SessionScreen` 加自动跳栈；
+- `App.tsx` 列表卡片改成 `bg.surface` + hairline 描边。
+
+**导入后由本仓库补的修复**：
+
+- `ArcDial` 的 `StyleSheet.absoluteFillObject` 在本版 RN 类型里不存在 → 改成手写绝对定位；
+- `SessionScreen` 里 `messages.find(...).reasoning` 的联合类型窄化报错 → 先取出 assistant 再读；
+- `TriageSheet` 的 `({dir}/*)` 被 JSX 当成注释开始 → 改成字符串拼接；
+- `ArcDial` 的 PanResponder 拆成 `useCallback` 处理器，规避 React Compiler 的 refs/purity 规则
+  （`PanResponder.create` 一处保留 eslint-disable 并注明原因）；
+- **转盘几何重做**：原实现按 ±44° 三角函数放卡片，卡片比弧长高，6 张会互相压；
+  改为「以选中项为弧顶 + 纵向等距 PITCH=58 + 横向按 R=340 圆方程收」，
+  序号移到卡片外侧、锚点圆环贴在弧上，并去掉了和弧对不齐的 17 道静态刻度。
+
+**尚未人工确认**：转盘展开后的整体观感（卡片左侧会被屏幕裁掉一部分，与设计稿一致）、
+轻点感应条展开后点选的落点、以及自动跳栈是否真的切到下一个待审批会话。

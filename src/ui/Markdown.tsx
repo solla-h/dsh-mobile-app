@@ -15,6 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import MarkdownIt from 'markdown-it';
 
 import { hrefToPath, isLocalFileHref } from '../protocol/files';
+import { DiffView, type QuoteLine } from './stream/DiffView';
 
 /**
  * 只依赖 markdown-it 的 token 流，自己映射到 RN 组件。
@@ -45,17 +46,24 @@ export function MarkdownView({
   text,
   onFileLink,
   onQuoteCode,
+  onQuoteLine,
 }: {
   text: string;
   /** 本地文件链接交给调用方打开；网页链接仍然走系统浏览器。 */
   onFileLink?: (path: string) => void;
   /** 代码块「引用」：手机上没有好用的拖选，整块塞进输入框更实际。 */
   onQuoteCode?: (lang: string, code: string) => void;
+  /** Diff 块单指轻点任意一行即引用（§3.1 Tap-Line-to-Quote） */
+  onQuoteLine?: (line: QuoteLine) => void;
 }) {
   const styles = useThemedStyles(makeStyles);
   const tokens = useMemo(() => md.parse(text, {}) as unknown as MdToken[], [text]);
   if (!text.trim()) return null;
-  return <View>{renderBlocks(tokens, 0, tokens.length, 'md', styles, onFileLink, onQuoteCode)}</View>;
+  return (
+    <View>
+      {renderBlocks(tokens, 0, tokens.length, 'md', styles, onFileLink, onQuoteCode, onQuoteLine)}
+    </View>
+  );
 }
 
 function findClose(tokens: MdToken[], from: number, open: string, close: string): number {
@@ -78,6 +86,7 @@ function renderBlocks(
   styles: MarkdownStyles,
   onFileLink?: (path: string) => void,
   onQuoteCode?: (lang: string, code: string) => void,
+  onQuoteLine?: (line: QuoteLine) => void,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let i = from;
@@ -110,14 +119,36 @@ function renderBlocks(
       case 'fence':
       case 'code_block': {
         const lang = (token.info || '').trim().split(/\s+/)[0] ?? '';
-        out.push(
-          <CodeBlock
-            key={keyBase + '-c' + i}
-            code={token.content.replace(/\n$/, '')}
-            lang={lang}
-            onQuote={onQuoteCode}
-          />,
-        );
+        const rawCode = token.content.replace(/\n$/, '');
+        const isDiffFence =
+          lang.toLowerCase() === 'diff' ||
+          lang.toLowerCase() === 'patch' ||
+          /^(\+\+\+|---|@@|diff --git)/m.test(rawCode);
+        if (isDiffFence) {
+          out.push(
+            <View key={keyBase + '-diff' + i} style={styles.diffBlockWrap}>
+              <DiffView
+                source={rawCode}
+                onQuote={
+                  onQuoteLine ??
+                  (onQuoteCode
+                    ? (line) => onQuoteCode('diff', line.text)
+                    : undefined)
+                }
+              />
+            </View>,
+          );
+        } else {
+          out.push(
+            <CodeBlock
+              key={keyBase + '-c' + i}
+              code={rawCode}
+              lang={lang}
+              onQuote={onQuoteCode}
+              onQuoteLine={onQuoteLine}
+            />,
+          );
+        }
         i += 1;
         break;
       }
@@ -126,7 +157,7 @@ function renderBlocks(
         const key = keyBase + '-q' + i;
         out.push(
           <View key={key} style={styles.quote}>
-            {renderBlocks(tokens, i + 1, end, key, styles, onFileLink, onQuoteCode)}
+            {renderBlocks(tokens, i + 1, end, key, styles, onFileLink, onQuoteCode, onQuoteLine)}
           </View>,
         );
         i = end + 1;
@@ -152,7 +183,7 @@ function renderBlocks(
             <View key={key} style={styles.listRow}>
               <Text style={styles.listMarker}>{ordered ? start + index + '.' : '•'}</Text>
               <View style={styles.listBody}>
-                {renderBlocks(tokens, cursor + 1, itemEnd, key, styles, onFileLink, onQuoteCode)}
+                {renderBlocks(tokens, cursor + 1, itemEnd, key, styles, onFileLink, onQuoteCode, onQuoteLine)}
               </View>
             </View>,
           );
@@ -237,7 +268,6 @@ function Table({
 }) {
   const styles = useThemedStyles(makeStyles);
   const { width: windowWidth } = useWindowDimensions();
-  // 列表左右各 14、气泡左右各 14，再留一点余量。
   const available = Math.max(200, windowWidth - 60);
 
   const rows: { header: boolean; cells: MdToken[][] }[] = [];
@@ -265,7 +295,6 @@ function Table({
   }
   if (rows.length === 0) return null;
 
-  // 每一列按「最宽的单元格」定宽，再夹到可读区间。
   const columns = Math.max(...rows.map((item) => item.cells.length));
   const widths: number[] = [];
   for (let index = 0; index < columns; index += 1) {
@@ -280,7 +309,6 @@ function Table({
   }
 
   const total = widths.reduce((sum, value) => sum + value, 0);
-  // 一屏放得下就按比例铺满，放不下就横向滚动，绝不再把列压成一条竖线。
   const scrollable = total > available;
 
   const table = (
@@ -332,13 +360,11 @@ function renderInline(
   const stack: unknown[] = [];
   let href: string | null = null;
   let index = 0;
-  // 工作区文件交给调用方下载预览，网页和未知 scheme 仍然交给系统。
   const openHref = (target: string) => {
     if (onFileLink && isLocalFileHref(target)) {
       onFileLink(hrefToPath(target));
       return;
     }
-    // 打不开的 scheme（比如没注册的自定义协议）会 reject，别让它变成未捕获异常。
     Linking.openURL(target).catch(() => undefined);
   };
   for (const token of tokens) {
@@ -540,23 +566,31 @@ function CodeBlock({
   code,
   lang,
   onQuote,
+  onQuoteLine,
 }: {
   code: string;
   lang: string;
   onQuote?: (lang: string, code: string) => void;
+  onQuoteLine?: (line: QuoteLine) => void;
 }) {
   const t = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [copied, setCopied] = useState(false);
-  const spans = useMemo(() => highlight(code, lang), [code, lang]);
+  const [wrap, setWrap] = useState(true);
+  const [pickedLine, setPickedLine] = useState<number | null>(null);
+  const lines = useMemo(() => code.split('\n'), [code]);
+
   return (
     <View style={styles.codeBlock}>
       <View style={styles.codeHeader}>
-        <Text style={styles.codeLang}>{lang || 'text'}</Text>
+        <Text style={styles.codeLang}>{lang || 'code'} · 点按行可引用</Text>
         <View style={styles.codeActions}>
+          <Pressable hitSlop={8} onPress={() => setWrap((v) => !v)}>
+            <Text style={styles.copy}>{wrap ? '自动折行' : '横向滚动'}</Text>
+          </Pressable>
           {onQuote ? (
             <Pressable hitSlop={8} onPress={() => onQuote(lang, code)}>
-              <Text style={styles.copy}>引用</Text>
+              <Text style={styles.copy}>整块引用</Text>
             </Pressable>
           ) : null}
           <Pressable
@@ -571,14 +605,44 @@ function CodeBlock({
           </Pressable>
         </View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.codeScroll}>
-        <Text style={styles.codeText}>
-          {spans.map((span, index) => (
-            <Text key={index} style={spanColor(t)[span.kind]}>
-              {span.text}
-            </Text>
-          ))}
-        </Text>
+      <ScrollView
+        horizontal={!wrap}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.codeScroll}
+      >
+        <View style={wrap ? styles.wrapCol : undefined}>
+          {lines.map((lineText, idx) => {
+            const spans = highlight(lineText, lang);
+            const selected = pickedLine === idx;
+            return (
+              <Pressable
+                key={idx}
+                onPress={() => {
+                  if (!lineText.trim()) return;
+                  setPickedLine(idx);
+                  if (onQuoteLine) {
+                    onQuoteLine({ file: lang || 'code', lineNo: idx + 1, text: lineText });
+                  } else if (onQuote) {
+                    onQuote(lang, lineText);
+                  }
+                }}
+                style={[
+                  styles.codeLineRow,
+                  selected ? { borderColor: t.text.primary, borderWidth: 1, backgroundColor: t.bg.surface } : null,
+                ]}
+              >
+                <Text style={styles.codeLineNo}>{idx + 1}</Text>
+                <Text style={[styles.codeText, wrap ? styles.wrapText : null]}>
+                  {spans.map((span, sIdx) => (
+                    <Text key={sIdx} style={spanColor(t)[span.kind]}>
+                      {span.text}
+                    </Text>
+                  ))}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </ScrollView>
     </View>
   );
@@ -635,6 +699,7 @@ const makeStyles = (t: Palette) =>
   tableScrollContent: { paddingRight: 2 },
   th: { color: t.text.secondary, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   td: { color: t.text.primary, fontSize: 13, lineHeight: 18 },
+  diffBlockWrap: { marginVertical: 6 },
   codeBlock: {
     backgroundColor: t.bg.canvas,
     borderWidth: StyleSheet.hairlineWidth,
@@ -652,9 +717,28 @@ const makeStyles = (t: Palette) =>
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: t.border.subtle,
   },
-  codeLang: { color: t.text.muted, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase' },
-  codeActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  codeLang: { color: t.text.muted, fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase' },
+  codeActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   copy: { color: t.text.muted, fontSize: 11 },
-  codeScroll: { paddingHorizontal: 10, paddingVertical: 8 },
-  codeText: { fontFamily: MONO, fontSize: 12.5, lineHeight: 18 },
+  codeScroll: { paddingHorizontal: 6, paddingVertical: 6 },
+  wrapCol: { flex: 1 },
+  codeLineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 4,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  codeLineNo: {
+    fontFamily: MONO,
+    fontSize: 10.5,
+    lineHeight: 18,
+    color: t.text.muted,
+    width: 24,
+    textAlign: 'right',
+    marginRight: 8,
+    opacity: 0.65,
+  },
+  codeText: { fontFamily: MONO, fontSize: 12.5, lineHeight: 18, flexShrink: 1 },
+  wrapText: { flex: 1, flexWrap: 'wrap' },
 });

@@ -1,135 +1,278 @@
-import { useMemo, useState } from 'react';
-import { Animated, PanResponder, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type GestureResponderEvent,
+  type PanResponderGestureState,
+} from 'react-native';
 import type { SessionItem } from '../../protocol/types';
 import { MOTION, TYPE } from '../../theme/tokens';
+import { tapFeedback, tickFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
 
 interface Props {
   sessions: SessionItem[];
   activeId?: string;
+  /** 正在等待审批或回答的会话 ID 列表，用来在弧形节点上亮起暖琥珀色呼吸灯 */
+  blockedIds?: string[];
   onSelect: (sessionId: string) => void;
 }
 
-const STRIP_H = 96;
-const CARD_W = 184;
-const CARD_H = 46;
-/** 卡片中心间距：比卡片高 8pt，够一条缝但不铺满屏幕。 */
-const PITCH = 56;
-/** 抛物线弧度：每远离选中间隔一格，就往屏幕边缘收 0.55 * d²。 */
-const CURVE = 2.1;
-/** 选中卡右边缘距屏幕边缘的基准距离，给外侧卡片留出弧顶空间。 */
-const ANCHOR_RIGHT = 72;
+const STRIP_H = 104;
+const CARD_W = 240;
+const CARD_H = 52;
+/** 相邻会话的纵向节距：略大于卡片高，滑动时留一条缝。 */
+const PITCH = 58;
+/** 圆弧半径：以「选中项」为弧顶，整串卡片绕着这个半径转。 */
+const ARC_RADIUS = 340;
 const MAX_ITEMS = 6;
 
 /**
- * 右侧拇指弧形会话转盘（§2.2）。
- * 静止态只是一条 2pt 感应条；按住后沿右侧展开一道弧形刻度，
- * 上下滑动选会话，松手即刻切换。选中项用弹簧吸附，切换有惯性。
+ * 右侧拇指弧形焦段转盘（§2.2 Camera-Lens Radial Session Dial）。
+ * - 平时隐藏于右侧边缘 2pt 微刻槽感应条内（带 3 枚镜头刻度点）；
+ * - 右手拇指按住滑动或轻点即呼出 R=175pt (-48°~+48°) 相机焦段圆弧；
+ * - 拇指上下滑动时每扫过一个会话触发一次机械棘轮震动 (tickFeedback)，松手即刻切换；
+ * - 同样支持轻点呼出后直接点按任意会话胶囊切换。
  */
-export function ArcDial({ sessions, activeId, onSelect }: Props) {
+export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props) {
   const t = useTheme();
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
-  const [index, setIndex] = useState(0);
   const list = useMemo(() => sessions.slice(0, MAX_ITEMS), [sessions]);
-  // 渲染期不能读 ref，用 useState 拿一个稳定的 Animated.Value。
-  const focus = useState(() => new Animated.Value(0))[0];
+  const initialIndex = Math.max(
+    0,
+    list.findIndex((item) => item.sessionId === activeId),
+  );
+  const [index, setIndex] = useState(initialIndex);
+  const lastTickIndexRef = useRef(initialIndex);
+  const dragStartMsRef = useRef(0);
+  const movedRef = useRef(false);
+  const focus = useState(() => new Animated.Value(initialIndex))[0];
 
-  const centerY = height * 0.46 + STRIP_H / 2;
+  const centerY = height * 0.48;
+  // 圆心放在屏幕右外侧，卡片的右边缘贴着圆弧走。
+  const pivotX = width + 160;
 
-  const responder = useMemo(() => {
-    /** 松手后吸附到最近的刻度：短促、轻微回弹，不要拖泥带水。 */
-    const snapTo = (target: number) => {
+  /** 连续刻度：手指在哪，胶囊就滑到哪，不做四舍五入。 */
+  const indexAtFloat = useCallback(
+    (pageY: number) => {
+      const span = Math.max(1, list.length - 1);
+      const arcSpanY = 260;
+      const topY = centerY - arcSpanY / 2;
+      return clamp(((pageY - topY) / arcSpanY) * span, 0, span);
+    },
+    [centerY, list.length],
+  );
+
+  const snapTo = useCallback(
+    (target: number) => {
       Animated.spring(focus, {
         toValue: target,
         useNativeDriver: true,
-        tension: MOTION.collapse.tension * 1.6,
-        friction: 20,
+        tension: MOTION.collapse.tension * 1.5,
+        friction: 22,
       }).start();
-    };
+    },
+    [focus],
+  );
 
-    /** 连续刻度：手指在哪，卡片就滑到哪，不做四舍五入，滑动才跟手。 */
-    const indexAtFloat = (pageY: number) =>
-      clamp((pageY - centerY) / PITCH + (list.length - 1) / 2, 0, list.length - 1);
-    const indexAt = (pageY: number) => Math.round(indexAtFloat(pageY));
+  const handleGrant = useCallback(
+    (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
+      if (list.length === 0) return;
+      dragStartMsRef.current = Date.now();
+      movedRef.current = false;
+      tapFeedback();
+      setOpen(true);
+      const start = list.length > 1 ? indexAtFloat(gesture.y0) : 0;
+      const rounded = Math.round(start);
+      lastTickIndexRef.current = rounded;
+      focus.stopAnimation();
+      focus.setValue(start);
+      setIndex(rounded);
+    },
+    [focus, indexAtFloat, list.length],
+  );
 
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => list.length > 1,
-      onMoveShouldSetPanResponder: () => list.length > 1,
-      onPanResponderGrant: (_event, gesture) => {
-        if (list.length < 2) return;
-        setOpen(true);
-        const start = indexAtFloat(gesture.y0);
-        focus.stopAnimation();
-        focus.setValue(start);
-        setIndex(Math.round(start));
-      },
-      onPanResponderMove: (_event, gesture) => {
-        const next = indexAtFloat(gesture.moveY);
-        focus.setValue(next);
-        setIndex((current) => (current === Math.round(next) ? current : Math.round(next)));
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        setOpen(false);
-        const target = indexAt(gesture.moveY || gesture.y0);
-        snapTo(target);
-        const picked = list[target];
-        if (picked && picked.sessionId !== activeId) onSelect(picked.sessionId);
-      },
-      onPanResponderTerminate: () => setOpen(false),
-    });
-  }, [activeId, centerY, focus, list, onSelect]);
+  const handleMove = useCallback(
+    (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
+      if (Math.abs(gesture.dy) > 8 || Math.abs(gesture.dx) > 8) movedRef.current = true;
+      if (list.length < 2) return;
+      const next = indexAtFloat(gesture.moveY);
+      focus.setValue(next);
+      const rounded = Math.round(next);
+      if (rounded !== lastTickIndexRef.current) {
+        lastTickIndexRef.current = rounded;
+        tickFeedback();
+        setIndex(rounded);
+      }
+    },
+    [focus, indexAtFloat, list.length],
+  );
 
-  if (list.length < 2) return null;
+  const handleRelease = useCallback(
+    (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
+      const elapsed = Date.now() - dragStartMsRef.current;
+      // 轻点一下不切换：保持展开，等用户直接点卡片。
+      if (!movedRef.current && elapsed < 260) return;
+      setOpen(false);
+      const target = list.length > 1 ? Math.round(indexAtFloat(gesture.moveY || gesture.y0)) : 0;
+      snapTo(target);
+      const picked = list[target];
+      if (picked && picked.sessionId !== activeId) {
+        tapFeedback();
+        onSelect(picked.sessionId);
+      }
+    },
+    [activeId, indexAtFloat, list, onSelect, snapTo],
+  );
+
+  const handleTerminate = useCallback(() => setOpen(false), []);
+
+  // PanResponder.create 只是在渲染期注册回调，真正的 ref 读取都发生在触摸回调里；
+  // React Compiler 的 refs 规则看不出这层，这一处单独豁免。
+  const responder = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => list.length > 0,
+        onMoveShouldSetPanResponder: () => list.length > 0,
+        onPanResponderGrant: handleGrant,
+        onPanResponderMove: handleMove,
+        onPanResponderRelease: handleRelease,
+        onPanResponderTerminate: handleTerminate,
+      }),
+    [handleGrant, handleMove, handleRelease, handleTerminate, list.length],
+  );
+
+  if (list.length === 0) return null;
+
+  const previewItem = list[index] ?? list[0];
+  const previewBlocked = previewItem && blockedIds.includes(previewItem.sessionId);
 
   return (
     <>
-      <View
-        style={[styles.strip, { backgroundColor: t.border.default }]}
-        // 2pt 只是视觉宽度：手指按不准，而且贴边会被系统返回手势抢走。
-        // 命中区往左扩 22pt、上下各扩 18pt，并从边缘内缩 2pt 让开手势热区。
-        hitSlop={{ left: 22, right: 0, top: 18, bottom: 18 }}
-        {...responder.panHandlers}
-        accessibilityRole="adjustable"
-        accessibilityLabel="按住呼出会话转盘"
-      >
-        <View style={[styles.stripDot, { backgroundColor: t.text.muted }]} />
-      </View>
+      {/* 静止态：右侧边缘 2pt 镜头微刻槽感应条 */}
+      {!open ? (
+        <View
+          style={[
+            styles.stripWrap,
+            {
+              top: centerY - STRIP_H / 2,
+              backgroundColor: t.bg.surface,
+              borderColor: t.border.default,
+            },
+          ]}
+          hitSlop={{ left: 24, right: 4, top: 20, bottom: 20 }}
+          {...responder.panHandlers}
+          accessibilityRole="adjustable"
+          accessibilityLabel="按住或轻点呼出拇指弧形会话转盘"
+        >
+          <View style={[styles.tickTiny, { backgroundColor: t.text.muted }]} />
+          <View
+            style={[
+              styles.tickCenter,
+              {
+                backgroundColor:
+                  blockedIds.length > 0 ? t.semantic.gateAmberText : t.text.primary,
+              },
+            ]}
+          />
+          <View style={[styles.tickTiny, { backgroundColor: t.text.muted }]} />
+        </View>
+      ) : null}
 
       {open ? (
-        <View style={styles.overlay} pointerEvents="none">
-          <View style={[styles.preview, { backgroundColor: t.bg.surface, borderColor: t.border.default }]}>
-            <Text style={[styles.previewCode, { color: t.text.muted }]}>{codeOf(index)}</Text>
-            <Text style={[styles.previewTitle, { color: t.text.primary }]} numberOfLines={2}>
-              {titleOf(list[index])}
+        <View style={styles.overlay} pointerEvents="box-none">
+          {/* 点击背景遮罩收起转盘 */}
+          <Pressable
+            style={styles.backdrop}
+            onPress={() => setOpen(false)}
+          />
+
+          {/* 左上角焦段取景框 (Focal Preview HUD) */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.preview,
+              { backgroundColor: t.bg.elevatedAnswer, borderColor: t.border.default },
+            ]}
+          >
+            <View style={styles.previewHeader}>
+              <Text style={[styles.previewKicker, { color: t.text.muted }]}>
+                THUMB ARC DIAL · {codeOf(index)}/{String(list.length).padStart(2, '0')}
+              </Text>
+              <View
+                style={[
+                  styles.previewBadge,
+                  {
+                    backgroundColor: previewBlocked
+                      ? t.semantic.gateAmberBg
+                      : t.bg.subtle,
+                    borderColor: previewBlocked
+                      ? t.semantic.gateAmberText
+                      : t.border.subtle,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.previewBadgeText,
+                    {
+                      color: previewBlocked
+                        ? t.semantic.gateAmberText
+                        : t.text.secondary,
+                    },
+                  ]}
+                >
+                  {previewBlocked
+                    ? '待审批 GATE'
+                    : previewItem?.running
+                      ? '运行中 RUN'
+                      : '已就绪 IDLE'}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.previewRepo, { color: t.text.secondary }]} numberOfLines={1}>
+              {repoOf(previewItem)}
             </Text>
-            <Text style={[styles.previewMeta, { color: t.text.secondary }]} numberOfLines={1}>
-              {repoOf(list[index])} · {list[index]?.running ? '运行中' : '空闲'}
+            <Text style={[styles.previewTitle, { color: t.text.primary }]} numberOfLines={2}>
+              {titleOf(previewItem)}
             </Text>
           </View>
 
+          {/* 沿着 R=175pt 圆弧排布的会话胶囊节点 */}
           {list.map((item, i) => {
             const selected = i === index;
-            const delta = Animated.subtract(i, focus);
+            const isCurrent = item.sessionId === activeId;
+            const isBlocked = blockedIds.includes(item.sessionId);
             const span = Math.max(1, list.length - 1);
             const steps = range(-span, span);
+            // 以「选中项」为弧顶：离选中越远，越往屏幕右侧收，整串像绕着镜头轴转。
+            const offsetOf = (d: number) => {
+              const dyAbs = Math.min(Math.abs(d) * PITCH, ARC_RADIUS - 16);
+              return ARC_RADIUS - Math.sqrt(Math.max(0, ARC_RADIUS * ARC_RADIUS - dyAbs * dyAbs));
+            };
+            const delta = Animated.subtract(i, focus);
+
             return (
               <Animated.View
                 key={item.sessionId}
                 style={[
-                  styles.card,
+                  styles.nodeWrap,
                   {
-                    right: ANCHOR_RIGHT,
+                    left: pivotX - ARC_RADIUS - CARD_W,
                     top: centerY - CARD_H / 2,
-                    backgroundColor: selected ? t.bg.elevatedAnswer : t.bg.surface,
-                    borderColor: selected ? t.text.primary : t.border.default,
-                    zIndex: 40 - Math.abs(i - index),
+                    zIndex: selected ? 60 : 40 - Math.abs(i - index),
                     transform: [
                       {
                         translateX: delta.interpolate({
                           inputRange: steps,
-                          // 正号：越远的卡越往屏幕边缘靠，弧顶朝左，像贴在虎口上的刻度盘。
-                          outputRange: steps.map((d) => CURVE * d * d),
+                          outputRange: steps.map(offsetOf),
                           extrapolate: 'clamp',
                         }),
                       },
@@ -140,39 +283,120 @@ export function ArcDial({ sessions, activeId, onSelect }: Props) {
                           extrapolate: 'clamp',
                         }),
                       },
-                      {
-                        scale: delta.interpolate({
-                          inputRange: steps,
-                          outputRange: steps.map((d) => Math.max(0.78, 1 - 0.055 * Math.abs(d))),
-                          extrapolate: 'clamp',
-                        }),
-                      },
                     ],
                   },
                 ]}
               >
-                <View style={styles.cardHead}>
-                  <Text style={[styles.cardCode, { color: t.text.muted }]}>{codeOf(i)}</Text>
+                <Pressable
+                  onPress={() => {
+                    tapFeedback();
+                    setOpen(false);
+                    if (item.sessionId !== activeId) {
+                      onSelect(item.sessionId);
+                    }
+                  }}
+                  style={styles.nodeRow}
+                >
+                <View
+                  style={[
+                    styles.card,
+                    {
+                      backgroundColor: selected ? t.action.primaryBg : t.bg.surface,
+                      borderColor: selected
+                        ? t.action.primaryBg
+                        : isCurrent
+                          ? t.text.primary
+                          : t.border.default,
+                      transform: [{ scale: selected ? 1.04 : 0.96 }],
+                    },
+                  ]}
+                >
                   <View
                     style={[
                       styles.cardDot,
-                      { backgroundColor: item.running ? t.semantic.gateAmberText : t.text.muted },
+                      {
+                        backgroundColor: isBlocked
+                          ? t.semantic.gateAmberText
+                          : item.running
+                            ? selected
+                              ? t.action.primaryText
+                              : t.semantic.diffAddText
+                            : selected
+                              ? t.action.primaryText
+                              : t.text.muted,
+                      },
                     ]}
                   />
+                  <View style={styles.cardBody}>
+                    <Text
+                      style={[
+                        styles.cardTitle,
+                        { color: selected ? t.action.primaryText : t.text.primary },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {titleOf(item)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.cardMeta,
+                        { color: selected ? t.action.primaryText : t.text.muted },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {repoOf(item)}
+                      {isCurrent ? ' · 当前' : ''}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={[styles.cardTitle, { color: t.text.primary }]} numberOfLines={1}>
-                  {titleOf(item)}
+
+                {/* 序号放在卡片外侧、贴着弧线，不占卡内空间 */}
+                <Text
+                  style={[
+                    styles.cardIndex,
+                    { color: selected ? t.text.primary : t.text.muted },
+                  ]}
+                >
+                  {codeOf(i)}
                 </Text>
+
+                {/* 圆弧轨道上的锚点圆环 */}
+                <View
+                  style={[
+                    styles.arcAnchorDot,
+                    {
+                      backgroundColor: selected
+                        ? t.semantic.gateAmberText
+                        : t.bg.surface,
+                      borderColor: selected ? t.text.primary : t.border.default,
+                    },
+                  ]}
+                />
+                </Pressable>
               </Animated.View>
             );
           })}
+
+          {/* 右侧边缘收起把手 */}
+          <Pressable
+            onPress={() => setOpen(false)}
+            style={[
+              styles.closeHandle,
+              {
+                top: centerY - 46,
+                backgroundColor: t.bg.surface,
+                borderColor: t.border.default,
+              },
+            ]}
+          >
+            <Text style={[styles.closeHandleText, { color: t.text.secondary }]}>收起</Text>
+          </Pressable>
         </View>
       ) : null}
     </>
   );
 }
 
-/** [-n..n] 的整数序列，给 interpolate 当 inputRange。 */
 function range(from: number, to: number): number[] {
   const out: number[] = [];
   for (let i = from; i <= to; i += 1) out.push(i);
@@ -189,8 +413,8 @@ function titleOf(item: SessionItem | undefined): string {
 
 function repoOf(item: SessionItem | undefined): string {
   const cwd = item?.cwd ?? '';
-  const parts = cwd.split('/').filter(Boolean);
-  return parts.slice(-2).join('/') || '—';
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  return parts.slice(-2).join('/') || '默认工作区';
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -198,54 +422,113 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 const styles = StyleSheet.create({
-  strip: {
+  stripWrap: {
     position: 'absolute',
-    right: 2,
-    top: '46%',
-    width: 2,
+    right: 0,
+    width: 9,
     height: STRIP_H,
-    borderRadius: 1,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 20,
+    gap: 6,
+    zIndex: 25,
   },
-  stripDot: { width: 4, height: 4, borderRadius: 2, position: 'absolute', right: -1 },
+  tickTiny: { width: 2, height: 8, borderRadius: 1, opacity: 0.45 },
+  tickCenter: { width: 3.5, height: 18, borderRadius: 2 },
   overlay: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.38)',
-    zIndex: 30,
+    zIndex: 40,
+  },
+  backdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(20, 20, 18, 0.42)',
   },
   preview: {
     position: 'absolute',
-    left: 16,
-    top: 72,
-    width: 208,
+    left: 14,
+    right: 54,
+    top: 54,
     gap: 4,
-    padding: 12,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  previewCode: { ...TYPE.mono, fontFamily: MONO },
-  previewTitle: { ...TYPE.title, fontWeight: '600' },
-  previewMeta: { ...TYPE.caption },
-  card: {
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  previewKicker: { ...TYPE.mono, fontFamily: MONO, fontSize: 10 },
+  previewBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  previewBadgeText: { ...TYPE.mono, fontFamily: MONO, fontSize: 9.5, fontWeight: '600' },
+  previewRepo: { ...TYPE.mono, fontFamily: MONO, marginTop: 2 },
+  previewTitle: { ...TYPE.title, fontWeight: '700' },
+  nodeWrap: {
     position: 'absolute',
+  },
+  nodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  card: {
     width: CARD_W,
     height: CARD_H,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    justifyContent: 'center',
-    gap: 1,
-    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
   },
-  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardCode: { ...TYPE.pill, fontFamily: MONO },
-  cardDot: { width: 5, height: 5, borderRadius: 2.5 },
-  cardTitle: { ...TYPE.body, fontWeight: '600' },
+  cardDot: { width: 7, height: 7, borderRadius: 3.5 },
+  cardBody: { flex: 1 },
+  cardTitle: { fontSize: 12.5, fontWeight: '600', lineHeight: 16 },
+  cardMeta: { ...TYPE.mono, fontFamily: MONO, fontSize: 10, opacity: 0.78, marginTop: 1 },
+  cardIndex: {
+    ...TYPE.mono,
+    fontFamily: MONO,
+    fontSize: 10,
+    marginLeft: 8,
+    marginRight: 6,
+    opacity: 0.8,
+  },
+  arcAnchorDot: {
+    marginLeft: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+  },
+  closeHandle: {
+    position: 'absolute',
+    right: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 14,
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  closeHandleText: { ...TYPE.mono, fontFamily: MONO, fontSize: 10, width: 12, textAlign: 'center' },
 });

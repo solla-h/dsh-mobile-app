@@ -757,6 +757,9 @@ function AppBody() {
             capabilities={hello?.capabilities ?? []}
             running={Boolean(active.running)}
             sessions={visibleSessions}
+            blockedSessionIds={sessions
+              .filter((item) => pendingItems(pending, item.sessionId).length > 0)
+              .map((item) => item.sessionId)}
             onRunningChange={(next) => {
               // 运行状态放这里存：重连后 sessions 帧会把它刷成服务端的真实值，
               // 会话页只负责读，不会再各存一份各跑各的。
@@ -1255,7 +1258,9 @@ const makeStyles = (t: Palette) =>
   },
   listContent: { paddingHorizontal: 20, paddingBottom: 12 },
   card: {
-    backgroundColor: t.bg.canvas,
+    backgroundColor: t.bg.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.border.default,
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
@@ -1294,7 +1299,9 @@ const makeStyles = (t: Palette) =>
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: t.bg.canvas,
+    backgroundColor: t.bg.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.border.subtle,
   },
   footerActionText: { color: t.text.muted, fontSize: 13 },
   linkButton: { alignItems: 'center', paddingVertical: 12 },
