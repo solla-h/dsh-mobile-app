@@ -139,7 +139,8 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
     [activeId, list, onSelect, snapTo],
   );
 
-  const handleTerminate = useCallback(() => setOpen(false), []);
+  // 手势被系统打断（来电、系统手势）时保持展开，不要「闪退」。
+  const handleTerminate = useCallback(() => undefined, []);
 
   // 展开后整块区域都能上下滑：只接管真正的拖动，轻点仍旧落到卡片或遮罩上。
   const dragResponder = useMemo(
@@ -148,6 +149,8 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dy) > 6,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: handleGrant,
         onPanResponderMove: handleMove,
         onPanResponderRelease: handleRelease,
@@ -164,6 +167,10 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props
       PanResponder.create({
         onStartShouldSetPanResponder: () => list.length > 0,
         onMoveShouldSetPanResponder: () => list.length > 0,
+        // 一旦接管就不许旁边的 FlatList 抢走手势：默认允许终止，
+        // 于是按住右缘往上拖时列表会先滚一下再让转盘闪退。
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: handleGrant,
         onPanResponderMove: handleMove,
         onPanResponderRelease: handleRelease,
@@ -504,6 +511,9 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     zIndex: 40,
+    // Android 上 zIndex 只管绘制顺序，触摸还是按 view 顺序；
+    // 抬 elevation 保证展开后整层盖在会话列表之上。
+    elevation: 40,
   },
   backdrop: {
     position: 'absolute',
