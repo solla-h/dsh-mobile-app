@@ -47,7 +47,19 @@ export function ThinkPill({ text, streaming, answerStarted, startedAt, elapsed }
   // 当从 Stage 01 (正在思考) 切换到 Stage 03 (正式回答开始) 时，主动触发过阻尼无回弹折叠与柔触反馈
   useEffect(() => {
     if (prevThinkingRef.current && !activelyThinking) {
-      LayoutAnimation.configureNext( LayoutAnimation.Presets.easeInEaseOut );
+      // 过阻尼（springDamping 1）无回弹：锚定在回答卡顶部收成 34pt，不让整页跟着弹。
+      LayoutAnimation.configureNext({
+        duration: 240,
+        update: { type: LayoutAnimation.Types.spring, springDamping: 1 },
+        create: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+        delete: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+      });
       softFeedback();
       setManual(null);
     }
