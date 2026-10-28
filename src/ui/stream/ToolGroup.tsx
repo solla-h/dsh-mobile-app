@@ -139,7 +139,8 @@ const styles = StyleSheet.create({
   },
   spinner: { transform: [{ scale: 0.7 }], width: 14 },
   dot: { width: 4, height: 4, borderRadius: 2 },
-  label: { ...TYPE.pill, fontFamily: MONO, fontWeight: '500', flexShrink: 1 },
+  // 标题不许截断，宽度不够时先牺牲后面的工具种类。
+  label: { ...TYPE.pill, fontFamily: MONO, fontWeight: '500', flexShrink: 0 },
   meta: { ...TYPE.pill, fontFamily: MONO, flexShrink: 1 },
   tail: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' },
   chevron: { ...TYPE.pill, fontFamily: MONO },

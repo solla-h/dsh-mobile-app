@@ -56,5 +56,7 @@ export function toolKinds(names: string[]): string {
     const label = name.toUpperCase();
     if (!seen.includes(label)) seen.push(label);
   }
-  return seen.slice(0, 4).join(' · ');
+  // 胶囊只有一行：只报第一个名字，其余折成 +N，别让长名字把计数挤掉。
+  if (seen.length <= 1) return seen.join('');
+  return `${seen[0]} +${seen.length - 1}`;
 }
