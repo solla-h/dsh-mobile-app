@@ -1,6 +1,6 @@
 # 宠物素材（大肥鱼）
 
-这里的 5 个 WebP 不是本项目原创，来自开源桌宠项目 **dsh-pet**：
+这里的 10 个 WebP 不是本项目原创，来自开源桌宠项目 **dsh-pet**：
 
 - 仓库：https://github.com/PC2005-cloud/dsh-pet
 - 形象：「大肥鱼」（鲸鱼娘 / DeepSeek 社区二创形象）
@@ -21,7 +21,10 @@
 | `fish-listen.webp` | 点击回应-害羞惊讶 | 24 | 按住说话 / 录音中 |
 | `fish-think.webp` | 工作状态-思考冒泡 | 24 | 服务端识别中 |
 | `fish-happy.webp` | 点击回应-开心跃动 | 26 | 点击回应、松手发送成功 |
-| `fish-startle.webp` | 被吓一跳 | 18 | 上滑取消 |
+| `fish-startle.webp` | 被吓一跳 | 18 | 上滑取消、撞墙 |
+| `fish-run.webp` | 原地左转奔跑 | 22 | 自播跑动（往右跑时镜像） |
+| `fish-drag.webp` | 被鼠标拖拽悬空反馈 | 19 | 被踢飞时在空中 |
+| `fish-look.webp` | 东张西望 | 31 | 自播时偶尔站定张望 |
 | `fish-work.webp` | 工作状态-忙碌点按 | 24 | 有任务在跑时的常态 |
 | `fish-angry.webp` | 点击回应-傲娇生气 | 17 | 戳尾巴 |
 
