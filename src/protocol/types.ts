@@ -65,6 +65,53 @@ export interface SessionsFrame {
   items: SessionItem[];
 }
 
+/**
+ * 一个工作区（项目）。
+ *
+ * 和 sessions 不一样，这里的 createdAt / updatedAt 是 ISO-8601 字符串，
+ * 不是毫秒时间戳；sessionIds 只包含「显式归到这个工作区」的会话，且是手动排序的。
+ * 真网关实测：工作区覆盖率很低（30 个会话里只有 3 个归了组），
+ * 没归组的会话不会出现在任何 workspace.sessionIds 里，只能靠 cwd 兜底。
+ */
+export interface WorkspaceItem {
+  workspaceId: string;
+  /** 宿主上的目录绝对路径 */
+  path: string;
+  title: string;
+  sessionIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * 工作区列表。网关是拿 workspace/follow 的开场 baseline 直接摊平返回的，
+ * 所以 items / archivedSessionIds / pinnedSessionIds 全在顶层，没有嵌套。
+ */
+export interface WorkspacesFrame {
+  kind: 'workspaces';
+  items: WorkspaceItem[];
+  /** 完整归档集合，每次都要整体替换本地集合，不是增量 */
+  archivedSessionIds: string[];
+  /** 全局置顶集合，最近置顶的排在最前 */
+  pinnedSessionIds: string[];
+}
+
+/**
+ * 全文搜索命中项：只有会话 id 和片段。
+ * 标题、时间要拿 sessionId 自己去 sessions 里 join，而且搜到的可能是已归档会话。
+ */
+export interface SearchHitFrame {
+  sessionId: string;
+  snippet: string;
+}
+
+/** 单次搜索上限 20 条、片段最多 240 个码点；没有翻页参数，hasMore 只是「还有更多」。 */
+export interface SearchFrame {
+  kind: 'search';
+  items: SearchHitFrame[];
+  hasMore?: boolean;
+}
+
 /** 目录浏览：只列一层子目录，crumbs 是从根到当前的路径。 */
 export interface DirectoriesFrame {
   kind: 'directories';
@@ -326,6 +373,8 @@ export type ServerFrame =
   | PairedFrame
   | ErrorFrame
   | SessionsFrame
+  | WorkspacesFrame
+  | SearchFrame
   | DirectoriesFrame
   | SessionCreatedFrame
   | EventFrame
@@ -353,6 +402,10 @@ export type ServerFrame =
 export type ClientFrame =
   | { type: 'ping' }
   | { type: 'sessions' }
+  /** 全部工作区 + 归档集合 + 置顶集合，一次拿全 */
+  | { type: 'workspaces' }
+  /** query 网关会自己 trim；空白会被回 bad-request，别发空串 */
+  | { type: 'search'; query: string }
   /** 不带 path 时网关回宿主 home。 */
   | { type: 'directories'; path?: string }
   | { type: 'session-create'; requestId: string; workspaceId?: string; cwd?: string }

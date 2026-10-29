@@ -224,3 +224,31 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 
 **尚未人工确认**：转盘展开后的整体观感、按住拖动时的棘轮震动与吸附手感、
 以及自动跳栈（`approval-resolved` 后 360ms 切下一个待审批会话）——后者要等审批链路能触发才测得了。
+
+## 12. 协议层：workspaces 与 search（2026-10-29）
+
+首页看板的 UI 在等设计稿，但这两个协议的**数据形状不依赖设计**，所以先落地了纯协议层，
+一行 UI 都没写。
+
+新增：
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/protocol/types.ts` | `WorkspaceItem` / `WorkspacesFrame` / `SearchHitFrame` / `SearchFrame`，及 `ClientFrame` 里的 `workspaces` / `search` 两个请求帧 |
+| `src/protocol/projects.ts` | `deriveProjects(sessions, workspaces?)`：把两帧拼成「项目 → 会话」树，返回 `ProjectBoard` |
+| `src/protocol/search.ts` | `normalizeQuery` / `mapSearchResult` / `resolveSearchHits`（把命中项 join 回标题并标归档） |
+| `src/protocol/__tests__/projects.test.ts`、`search.test.ts` | 8 + 8 条单测 |
+
+真网关实测（详见 `docs/protocol-coverage.md` §1.1）跑出来的三个结论，直接决定了 `deriveProjects` 的写法：
+
+1. **工作区覆盖率极低**：30 个会话只有 3 个落在工作区里，其余 27 个没人认领。
+   所以分组必须是「工作区优先 + cwd 兜底」，只按 `workspaces` 分会丢掉大半会话。
+2. **归档会话仍在 `sessions` 里**（18/30），要自己剔掉；归档集合原样带回给 UI 显示计数。
+3. **搜索命中没有标题**，且大量命中是归档会话，所以 `resolveSearchHits` 要做 join + 归档标记。
+
+刻意**没有**做：App.tsx 里的请求与状态、折叠/置顶的本地持久化、任何看板组件。
+这些都要等首页设计定稿，现在写就是白写。下一步接之前，先把 `client.send({type:'workspaces'})`
+和 `client.send({type:'search', query})` 挂到合适的时机（连接就绪 / 搜索框提交）即可。
+
+注意 `workspaces` 不是廉价查询：网关每次都会开一条 `workspace/follow` 流取首帧再断开，
+别拿它轮询；成员和置顶变化也没有推送帧，只能重查。
