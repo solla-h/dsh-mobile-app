@@ -408,6 +408,10 @@ export type ClientFrame =
   | { type: 'search'; query: string }
   /** 问一下服务器到底有没有启用官方语音输入；available:false 就别展示语音入口 */
   | { type: 'speech-catalog'; requestId?: string }
+  /** 在已存在的父目录下建一个子目录；name 只传叶子名，不能带斜杠 */
+  | { type: 'directory-create'; path: string; name: string }
+  /** 拿一个已存在的目录注册成工作区；已归属时返回 created:false */
+  | { type: 'workspace-create'; path: string }
   /** 不带 path 时网关回宿主 home。 */
   | { type: 'directories'; path?: string }
   | { type: 'session-create'; requestId: string; workspaceId?: string; cwd?: string }
