@@ -408,6 +408,18 @@ export type ClientFrame =
   | { type: 'search'; query: string }
   /** 问一下服务器到底有没有启用官方语音输入；available:false 就别展示语音入口 */
   | { type: 'speech-catalog'; requestId?: string }
+  /** 订阅语音状态：speech-state 会持续推完整目录快照 */
+  | { type: 'speech-subscribe'; requestId?: string }
+  /** 整段录音转写；audioBase64 是完整 WAV（含 44 字节头）的标准 Base64 */
+  | {
+      type: 'speech-transcribe';
+      requestId: string;
+      providerId?: string;
+      language?: string;
+      audioBase64: string;
+    }
+  /** 撤回一条还没回来的转写 */
+  | { type: 'speech-cancel'; requestId: string; targetRequestId: string }
   /** 在已存在的父目录下建一个子目录；name 只传叶子名，不能带斜杠 */
   | { type: 'directory-create'; path: string; name: string }
   /** 拿一个已存在的目录注册成工作区；已归属时返回 created:false */
@@ -506,4 +518,7 @@ export type ClientFrame =
       images?: OutgoingImage[];
       /** 已上传文件的收据，来自 file-upload-completed.receiptId */
       files?: { receiptId: string }[];
+      /** 不带 sessionId 时新建会话；workspaceId 决定开在哪个工作区 */
+      workspaceId?: string;
+      cwd?: string;
     };

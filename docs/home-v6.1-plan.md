@@ -173,7 +173,7 @@ Tab 1「聚焦」                      Tab 2「全部会话」
 
 | 项 | 状态 | 处理 |
 | --- | --- | --- |
-| 官方语音包 | **版本对不上，已证实装不上**：npm 最新是 `0.1.7-alpha.1`，它要求 dsh `^0.1.7-alpha.1`，而线上跑的是 `0.2.1-rc.3`。装上后 dsh 直接把 4 个相关插件行禁用（日志原文「incompatible with dsh 0.2.1-rc.3」），语音能力仍然不可用 | 已回滚到安装前状态。只能等官方出 0.2.x 版本；`dsh plugin allow-version` 可以强开，但日志明确警告「may cause crashes or data loss」，不建议 |
+| 官方语音包 | **已用版本豁免强开成功**：`dsh plugin allow-version <pkg>@0.1.7-alpha.1 --dsh-version 0.2.1-rc.3 --accept-risk` 逐条登记 4 个包后，插件行不再被禁用；`speech-catalog` 返回 `available:true`，SenseVoice INT8 模型已下载到 `ready`。实测 1 秒音频推理 12ms | 开发期可用。**风险**：这是跨 rc 强开，后续 DSH 若改 `dsh-settings` 接口可能出问题；升级 DSH 前先去 Web 插件管理里确认状态 |
 | **服务器是 aarch64（2 核 12G）** | 该包「首次使用时下载运行时」，**需先确认有 ARM64 运行时** | 装之前先验证，没有就得换方案（远端 ASR） |
 | 录音格式 | 网关只收 **16kHz 单声道 PCM16 WAV** 的 base64 | `expo-audio` 走 `useAudioStream` + `startFileRecordingAsync({format:'wav'})`，必须显式设 `encoding:'int16'`、`sampleRate:16000`、`channels:1`；`useAudioRecorder` 的 Android 枚举里没有 WAV，用不了 |
 | 采样率可能不达标 | 文档写明「实际采样率可能和请求不同」 | 录完要断言 `result.sampleRate === 16000 && channels === 1`，不满足就报错，不能静默发出去 |
@@ -204,8 +204,8 @@ Tab 1「聚焦」                      Tab 2「全部会话」
 | P0 | **已完成** | `approvalId` 已进 `PendingMap`；接上 `projection-baseline` / `turn-outline-updated` / `session-status` / `workspaces`；连接就绪时并发拉 sessions + workspaces + speech-catalog |
 | P1 | **已完成** | 底部两 Tab；全部会话页改成组头 + 缩进无框行（`src/ui/home/rows.ts` + 单测） |
 | P2 | **已完成** | `selectFocusSessions` 纯函数 + `FocusHome`（响应式卡、空态、断线态、时间文案） |
-| P3 | **部分完成** | 语音球（点按新建 + 呼吸动画）、当前工作区选择与按网关持久化已完成；**语音链路被上游版本卡住**（见 §5，已实测并回滚） |
-| P4 | **未开始** | `voice-decision.ts` 与 20 条用例已就绪，等 P3 的转写链路 |
+| P3 | **已完成（未真机验证）** | 语音球、当前工作区与本机持久化、新建 mobile 工作区、`expo-audio` 录音（16k/单声道/int16 WAV）+ `speech-transcribe` 全链路 |
+| P4 | **已完成（未真机验证）** | 600ms 长按 → 录音 → 转写 → 关键词判定 → `approval-response`；匹配不上不发任何帧 |
 
 验收记录：`npx jest` 132 条全绿（新增 49 条），`npx tsc --noEmit` 干净，
 `npx expo lint` 仍是基线 5 条，`npx expo export -p android` 能出包。

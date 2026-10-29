@@ -41,7 +41,8 @@
           "cameraPermission": "拍摄照片，随消息一起发送给 agent。"
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-audio"
     ]
   }
 }
