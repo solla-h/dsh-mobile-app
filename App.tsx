@@ -153,6 +153,17 @@ function AppBody() {
   const voiceCreatePendingRef = useRef(false);
   /** 已知会话 id：收到未知会话的状态推送时要补一次列表 */
   const knownSessionsRef = useRef<Set<string>>(new Set());
+  /** 未读会话：比上次看到的 updatedAt 更新，且不是当前打开的 */
+  const [unreadIds, setUnreadIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** 每个会话上次被看到时的 updatedAt；null 表示还没建立基线（首次拉取） */
+  const seenAtRef = useRef<Map<string, number> | null>(null);
+  /** handleFrame 里要知道当前打开的是哪个会话，但又不想为它重建回调 */
+  const activeIdRef = useRef<string | null>(null);
+  /** 宠物气泡的外部队列：识别失败、录音太短都从这里冒出来，不弹窗 */
+  const [petNotice, setPetNotice] = useState<{ text: string; token: number } | null>(null);
+  const notifyPet = useCallback((text: string) => {
+    setPetNotice({ text, token: Date.now() });
+  }, []);
   const voiceReady = hasReadyProvider(speechCatalog);
   /** 工作区快照：分组、置顶、归档都在这条帧里。null 表示还没拿到。 */
   const [workspaceFrame, setWorkspaceFrame] = useState<WorkspacesFrame | null>(null);
@@ -230,6 +241,16 @@ function AppBody() {
     [pending],
   );
 
+  /** 有任务在跑（排除归档）——宠物据此进入「工作」状态。 */
+  const runningCount = useMemo(() => {
+    const archivedSet = new Set(archived);
+    return sessions.filter((item) => item.running === true && !archivedSet.has(item.sessionId)).length;
+  }, [archived, sessions]);
+
+  /** 宠物状态：先看有没有人等，再看有没有活干。 */
+  const petMood: 'alert' | 'working' | 'idle' =
+    pendingCount > 0 ? 'alert' : runningCount > 0 ? 'working' : 'idle';
+
   const visibleSessions = useMemo(() => {
     const hidden = new Set(archived);
     const query = search.trim().toLowerCase();
@@ -263,6 +284,10 @@ function AppBody() {
   useEffect(() => {
     pendingRef.current = pending;
   }, [pending]);
+
+  useEffect(() => {
+    activeIdRef.current = active?.sessionId ?? null;
+  }, [active?.sessionId]);
 
   useEffect(() => {
     knownSessionsRef.current = new Set(sessions.map((item) => item.sessionId));
@@ -306,6 +331,17 @@ function AppBody() {
         : item;
     setSessions((current) => current.map(patch));
     setActive((current) => (current ? patch(current) : current));
+  }, []);
+
+  /** 打开一个会话：顺手清掉它的未读标记。 */
+  const openSession = useCallback((session: SessionItem) => {
+    setActive(session);
+    setUnreadIds((current) => {
+      if (!current.has(session.sessionId)) return current;
+      const next = new Set(current);
+      next.delete(session.sessionId);
+      return next;
+    });
   }, []);
 
   const handleFrame = useCallback(
@@ -355,6 +391,30 @@ function AppBody() {
         case 'sessions': {
           const list = (frame as { items?: SessionItem[] }).items ?? [];
           setSessions(list);
+          // 未读：比上次看到的 updatedAt 更新、且不是当前打开的那个会话。
+          // 第一次拿列表只建立基线——否则冷启动会把所有会话都标成未读。
+          const seen = seenAtRef.current;
+          if (!seen) {
+            seenAtRef.current = new Map(list.map((item) => [item.sessionId, item.updatedAt ?? 0]));
+          } else {
+            const openId = activeIdRef.current;
+            const fresh: string[] = [];
+            for (const item of list) {
+              const prev = seen.get(item.sessionId);
+              const at = item.updatedAt ?? 0;
+              if (prev !== undefined && at > prev && item.sessionId !== openId) {
+                fresh.push(item.sessionId);
+              }
+              seen.set(item.sessionId, Math.max(prev ?? 0, at));
+            }
+            if (fresh.length > 0) {
+              setUnreadIds((current) => {
+                const next = new Set(current);
+                fresh.forEach((id) => next.add(id));
+                return next;
+              });
+            }
+          }
           // 顺手存一份：断网冷启动时先摆出上次的列表，总比一张配对二维码有用。
           const gateway = savedRef.current;
           if (gateway) void writeJson(sessionsCacheKey(gateway.id), list.slice(0, 30));
@@ -458,9 +518,23 @@ function AppBody() {
           );
           break;
         }
-        case 'projection-baseline':
+        case 'projection-baseline': {
+          // 基线是所有已附着会话的快照，不能拿它判断未读。
+          setOutlines((current) => applyOutlineFrame(current, frame) ?? current);
+          break;
+        }
         case 'turn-outline-updated': {
           setOutlines((current) => applyOutlineFrame(current, frame) ?? current);
+          // 一轮结束才会推 outline；不是当前打开的会话，就算一条新消息。
+          const updatedId = (frame as unknown as { sessionId?: string }).sessionId;
+          if (updatedId && updatedId !== activeIdRef.current) {
+            setUnreadIds((current) => {
+              if (current.has(updatedId)) return current;
+              const next = new Set(current);
+              next.add(updatedId);
+              return next;
+            });
+          }
           break;
         }
         case 'speech-catalog':
@@ -478,7 +552,7 @@ function AppBody() {
           setTranscribing(false);
           const text = transcriptText(frame) ?? '';
           if (!text) {
-            Alert.alert('没听清', '再说一次试试');
+            notifyPet('没听清，再说一次试试');
             break;
           }
           if (job.target.kind === 'session') {
@@ -486,11 +560,11 @@ function AppBody() {
             if (approval) {
               const decision = matchDecision(text);
               if (!decision) {
-                Alert.alert('没听清', `听到的是「${text}」，没有匹配到同意或拒绝`);
+                notifyPet(`听到「${text}」，没匹配到同意或拒绝`);
                 break;
               }
               if (!approval.approvalId) {
-                Alert.alert('无法语音审批', '这条审批没有带 approvalId，请进会话处理');
+                notifyPet('这条审批没法语音批，请进会话处理');
                 break;
               }
               client.send({
@@ -614,7 +688,7 @@ function AppBody() {
           break;
       }
     },
-    [applyTitle, client, currentWorkspaceId, startControl],
+    [applyTitle, client, currentWorkspaceId, notifyPet, startControl],
   );
 
   useEffect(() => {
@@ -748,8 +822,8 @@ function AppBody() {
   const beginVoice = useCallback(
     async (target: { kind: 'new' } | { kind: 'session'; sessionId: string }) => {
       if (!voiceReady) {
-        Alert.alert('语音还没就绪', '服务器语音模型还在准备，稍后再试。');
-        return;
+            notifyPet('语音还在准备，稍等一下');
+            return;
       }
       if (recording || transcribing) return;
       try {
@@ -757,10 +831,10 @@ function AppBody() {
         voiceJobRef.current = target === null ? null : { requestId: '', target };
         setRecording(true);
       } catch (failure) {
-        Alert.alert('录音失败', failure instanceof Error ? failure.message : '无法开始录音');
+        notifyPet(failure instanceof Error ? failure.message : '没法开始录音');
       }
     },
-    [recording, transcribing, voice, voiceReady],
+    [notifyPet, recording, transcribing, voice, voiceReady],
   );
 
   /** 松手：结束录音并发起转写。 */
@@ -776,8 +850,11 @@ function AppBody() {
     try {
       const clip = await voice.stop();
       if (!clip) return;
-      // 太短的多半是误触，别浪费一次往返。
-      if (clip.duration < 0.4) return;
+      // 太短的多半是误触，别浪费一次往返；用气泡说一声，不弹窗打断。
+      if (clip.duration < 0.4) {
+        notifyPet('太短啦，按住多说完再松手');
+        return;
+      }
       const requestId = randomUUID();
       voiceJobRef.current = { requestId, target: job.target };
       setTranscribing(true);
@@ -790,9 +867,9 @@ function AppBody() {
       });
     } catch (failure) {
       setTranscribing(false);
-      Alert.alert('录音失败', failure instanceof Error ? failure.message : '无法读取录音');
+      notifyPet(failure instanceof Error ? failure.message : '读不到这段录音');
     }
-  }, [client, recording, speechCatalog, voice]);
+  }, [client, notifyPet, recording, speechCatalog, voice]);
 
   /** 换当前工作区：只影响之后新建的会话，历史会话一个都不动。 */
   const pickWorkspace = useCallback((id: string) => {
@@ -1151,7 +1228,7 @@ function AppBody() {
               client.send({ type: 'sessions' });
             }}
             onOpenSession={(sessionId) => {
-              setActive({ sessionId, updatedAt: Date.now(), running: false, blank: false });
+              openSession({ sessionId, updatedAt: Date.now(), running: false, blank: false });
               // 新 active 只有 id，标题/目录要等列表回来补。
               client.send({ type: 'sessions' });
             }}
@@ -1177,7 +1254,7 @@ function AppBody() {
               return (
                 <Pressable
                   style={styles.gatePill}
-                  onPress={() => setActive(blocked[0])}
+                  onPress={() => openSession(blocked[0])}
                   accessibilityHint="跳到第一个等待审批或回答的会话"
                 >
                   <View style={styles.pendingDot} />
@@ -1196,11 +1273,14 @@ function AppBody() {
                 connected={connected}
                 pendingTotal={pendingCount}
                 voiceReady={voiceReady}
+                mood={petMood}
+                unreadIds={unreadIds}
+                notice={petNotice}
                 workspaceLabel={workspaceLabel}
                 onPickWorkspace={() => setWorkspaceSheet(true)}
                 onOpen={(sessionId) => {
                   const target = sessions.find((item) => item.sessionId === sessionId);
-                  if (target) setActive(target);
+                  if (target) openSession(target);
                 }}
                 onCreate={handleCreate}
                 onHoldOrb={() => void beginVoice({ kind: 'new' })}
@@ -1322,7 +1402,7 @@ function AppBody() {
                 return (
                   <Pressable
                     style={[styles.card, row.indent && styles.cardIndent]}
-                    onPress={() => setActive(item)}
+                    onPress={() => openSession(item)}
                     onLongPress={() => openSessionMenu(item)}
                     delayLongPress={320}
                   >
