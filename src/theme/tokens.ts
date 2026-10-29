@@ -20,6 +20,8 @@ export type Palette = {
   semantic: {
     diffAddBg: string;
     diffAddText: string;
+    /** 在线/进行中的状态点：比 diffAddText 亮一档，6dp 的点也能看出是绿的 */
+    live: string;
     diffDelBg: string;
     diffDelText: string;
     gateAmberBg: string;
@@ -49,6 +51,7 @@ export const PAPER: Palette = {
   semantic: {
     diffAddBg: '#E1EBE4',
     diffAddText: '#284B34',
+    live: '#3F7A52',
     diffDelBg: '#EFE2E2',
     diffDelText: '#693034',
     gateAmberBg: '#E6E0D0',
@@ -78,6 +81,7 @@ export const EINK_SLATE: Palette = {
   semantic: {
     diffAddBg: '#28332B',
     diffAddText: '#A3BDA9',
+    live: '#9CC4A7',
     diffDelBg: '#36292A',
     diffDelText: '#C29B9E',
     gateAmberBg: '#363228',

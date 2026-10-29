@@ -26,7 +26,7 @@ import type { Palette } from '../../theme/tokens';
  * 区别是它只在首页这块舞台上活动，不会像桌面端那样满屏爬。
  */
 
-type Sprite = 'idle' | 'listen' | 'think' | 'happy' | 'startle';
+type Sprite = 'idle' | 'listen' | 'think' | 'happy' | 'startle' | 'work' | 'angry';
 
 // Metro 需要静态 require，不能拼字符串。
 const FISH: Record<Sprite, number> = {
@@ -35,17 +35,26 @@ const FISH: Record<Sprite, number> = {
   think: require('../../../assets/pet/fish-think.webp'),
   happy: require('../../../assets/pet/fish-happy.webp'),
   startle: require('../../../assets/pet/fish-startle.webp'),
+  work: require('../../../assets/pet/fish-work.webp'),
+  angry: require('../../../assets/pet/fish-angry.webp'),
 };
+
+/** 拍打的部位：头 / 身体 / 尾巴。 */
+type Zone = 'head' | 'body' | 'tail';
 
 /** 按住多久才真正开麦。轻点/双击都在这之前结束。 */
 const HOLD_MS = 220;
-/** 两次轻点间隔小于这个值算双击。 */
-const DOUBLE_TAP_MS = 320;
+/** 两次轻点间隔小于这个值算双击。人手的双击通常在 250~400ms，320 太紧。 */
+const DOUBLE_TAP_MS = 460;
+/** 第一次轻点后等这么久再给反应：给第二下留出窗口，双击就不会先冒一句「别戳啦」。 */
+const TAP_DELAY_MS = 260;
 /** 上滑多少 dp 算取消。 */
 const CANCEL_DY = -60;
 
-/** 点一下时的回应文案，按 dsh-pet 的语气，不带 emoji。 */
-const TAP_LINES = ['别戳啦，按住和我说~', '在呢在呢', '摸鱼中，别戳', '叫我干嘛'];
+/** 不同部位被拍时的回应，按 dsh-pet 的语气，不带 emoji。 */
+const HEAD_LINES = ['别摸头啦，头发会乱', '唔…在听呢', '帽子要掉了'];
+const BODY_LINES = ['在呢在呢', '摸鱼中，别戳', '叫我干嘛'];
+const TAIL_LINES = ['痒！别碰尾巴', '再戳就生气了', '尾巴不能摸'];
 const LAUNCH_LINES = ['收到！', '这就去', '好嘞'];
 
 interface Props {
@@ -53,6 +62,10 @@ interface Props {
   voiceReady: boolean;
   recording: boolean;
   transcribing: boolean;
+  /** 首页整体的状态：有人等着 / 有任务在跑 / 都闲着 */
+  mood: 'alert' | 'working' | 'idle';
+  /** 外部提示（识别失败、录音太短…）：token 变了就冒一次气泡，不弹窗 */
+  notice?: { text: string; token: number } | null;
   onVoiceStart: () => void;
   onVoiceLaunch: () => void;
   onVoiceCancel: () => void;
@@ -64,6 +77,8 @@ export function PetStage({
   voiceReady,
   recording,
   transcribing,
+  mood,
+  notice,
   onVoiceStart,
   onVoiceLaunch,
   onVoiceCancel,
@@ -81,8 +96,8 @@ export function PetStage({
   const [tilt] = useState(() => new Animated.Value(0));
   const [bubbleAnim] = useState(() => new Animated.Value(0));
 
-  /** 一次性的表情动作，播完自动回到 idle */
-  const [react, setReact] = useState<'happy' | 'startle' | null>(null);
+  /** 一次性的表情动作，播完自动回到常态 */
+  const [react, setReact] = useState<'happy' | 'startle' | 'shy' | 'angry' | null>(null);
   /** 朝向：往右走时镜像 */
   const [facing, setFacing] = useState(1);
   const [bubble, setBubble] = useState<string | null>(null);
@@ -94,6 +109,12 @@ export function PetStage({
   const startAtRef = useRef(0);
   const lastTapRef = useRef(0);
   const pickRef = useRef(0);
+  /** 按下时的 y（相对舞台），用来判断拍的是头 / 身体 / 尾巴 */
+  const startYRef = useRef(0);
+  /** 第一次轻点后延迟给反应的计时器 */
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 已经弹过的外部提示 token，避免重复弹 */
+  const lastNoticeRef = useRef(0);
 
   const busy = recording || transcribing || react !== null;
 
@@ -105,7 +126,15 @@ export function PetStage({
         ? 'startle'
         : react === 'happy'
           ? 'happy'
-          : 'idle';
+          : react === 'angry'
+            ? 'angry'
+            : react === 'shy'
+              ? 'listen'
+              : mood === 'alert'
+                ? 'think'
+                : mood === 'working'
+                  ? 'work'
+                  : 'idle';
 
   const later = (fn: () => void, ms: number) => {
     const id = setTimeout(() => {
@@ -233,10 +262,59 @@ export function PetStage({
     later(() => setHint(null), ms);
   };
 
-  const reactWith = (kind: 'happy' | 'startle', ms: number) => {
+  const reactWith = (kind: 'happy' | 'startle' | 'shy' | 'angry', ms: number) => {
     setReact(kind);
     later(() => setReact(null), ms);
   };
+
+  /** 尾巴被戳：不只是换表情，整只往两边抖一下。 */
+  const shake = () => {
+    Animated.sequence([
+      Animated.timing(swim, { toValue: 7, duration: 60, useNativeDriver: true }),
+      Animated.timing(swim, { toValue: -7, duration: 90, useNativeDriver: true }),
+      Animated.timing(swim, { toValue: 4, duration: 80, useNativeDriver: true }),
+      Animated.timing(swim, { toValue: 0, duration: 90, useNativeDriver: true }),
+    ]).start();
+  };
+
+  /** 拍的是哪一块：上半是头、中间是身体、下面连着尾巴。 */
+  const zoneAt = (y: number): Zone => {
+    if (y < fishH * 0.46) return 'head';
+    if (y < fishH * 0.84) return 'body';
+    return 'tail';
+  };
+
+  const tapReaction = (zone: Zone) => {
+    pickRef.current += 1;
+    if (!voiceReady) {
+      showBubble('语音还没就绪，双击新建会话', 2400);
+      return;
+    }
+    if (zone === 'head') {
+      reactWith('shy', 1500);
+      showBubble(HEAD_LINES[pickRef.current % HEAD_LINES.length], 2200);
+      return;
+    }
+    if (zone === 'tail') {
+      reactWith('angry', 1600);
+      shake();
+      showBubble(TAIL_LINES[pickRef.current % TAIL_LINES.length], 2200);
+      return;
+    }
+    reactWith('happy', 1500);
+    showBubble(BODY_LINES[pickRef.current % BODY_LINES.length], 2200);
+  };
+
+  // 外部提示走气泡，不弹窗；token 变了才算一条新提示。
+  const showBubbleRef = useRef(showBubble);
+  showBubbleRef.current = showBubble;
+  useEffect(() => {
+    if (!notice || notice.token === lastNoticeRef.current) return;
+    lastNoticeRef.current = notice.token;
+    // 发送失败时不要把「开心」留在脸上，先收起表情再说话。
+    setReact(null);
+    showBubbleRef.current(notice.text, 3800);
+  }, [notice]);
 
   const cancelHold = () => {
     if (holdTimerRef.current) {
@@ -256,6 +334,8 @@ export function PetStage({
     reactWith,
     showBubble,
     flash,
+    tapReaction,
+    zoneAt,
   });
   useEffect(() => {
     apiRef.current = {
@@ -267,6 +347,8 @@ export function PetStage({
       reactWith,
       showBubble,
       flash,
+      tapReaction,
+      zoneAt,
     };
   });
 
@@ -277,17 +359,19 @@ export function PetStage({
       // 从 FlatList / ScrollView 手里抢过来，不然手指一动就被列表接管。
       onPanResponderTerminationRequest: () => false,
 
-      onPanResponderGrant: () => {
+      onPanResponderGrant: (event) => {
         const api = apiRef.current;
         startAtRef.current = Date.now();
+        // locationY 相对的就是这张图（手势挂在图上），直接拿来分区。
+        startYRef.current = event.nativeEvent.locationY;
         armedRef.current = false;
-        if (!api.voiceReady) {
-          api.showBubble('语音还没就绪');
-          return;
-        }
+        if (!api.voiceReady) return;
         holdTimerRef.current = setTimeout(() => {
           holdTimerRef.current = null;
           armedRef.current = true;
+          // 开麦前把上一句话收掉，否则「别摸头啦」会挂在聆听态上面。
+          setBubble(null);
+          bubbleAnim.setValue(0);
           api.onVoiceStart();
         }, HOLD_MS);
       },
@@ -323,18 +407,23 @@ export function PetStage({
 
         const now = Date.now();
         if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+          // 第二下：取消第一下排队的反应，直接新建会话。
           lastTapRef.current = 0;
+          if (tapTimerRef.current) {
+            clearTimeout(tapTimerRef.current);
+            tapTimerRef.current = null;
+          }
           api.onCreate();
           return;
         }
         lastTapRef.current = now;
-        if (!api.voiceReady) {
-          api.showBubble('语音还没就绪，双击新建会话');
-          return;
-        }
-        pickRef.current = (pickRef.current + 1) % TAP_LINES.length;
-        api.showBubble(TAP_LINES[pickRef.current]);
-        api.reactWith('happy', 1400);
+        // 先别急着反应：等一个双击窗口，没等到第二下才按部位回应。
+        const zone = apiRef.current.zoneAt(startYRef.current);
+        if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = setTimeout(() => {
+          tapTimerRef.current = null;
+          apiRef.current.tapReaction(zone);
+        }, TAP_DELAY_MS);
       },
 
       onPanResponderTerminate: () => {
@@ -373,23 +462,16 @@ export function PetStage({
   return (
     <View
       style={styles.stage}
-      {...panRef.current.panHandlers}
       accessible
       accessibilityRole="button"
       accessibilityHint="按住说话，松手发送；上滑取消；双击新建会话"
     >
-      <View style={{ width: fishW, height: fishH }}>
-        {bubble ? (
-          <Animated.View style={[styles.bubble, bubbleStyle]} pointerEvents="none">
-            <Text style={styles.bubbleText} maxFontSizeMultiplier={1.3}>
-              {bubble}
-            </Text>
-            <View style={styles.bubbleTail} />
-          </Animated.View>
-        ) : null}
-
+      {/* 手势挂在图上而不是舞台上：locationY 才会相对这张图，
+          头/身/尾按 fishH 一算就准，不用去猜 stage 在窗口里的位置。 */}
+      <View style={{ width: fishW, height: fishH }} {...panRef.current.panHandlers}>
         {/* 录音时从脚下荡开的一圈 */}
         <Animated.View
+          pointerEvents="none"
           style={[
             styles.ripple,
             {
@@ -404,6 +486,7 @@ export function PetStage({
         />
 
         <Animated.View
+          pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
             { transform: [{ translateX: swim }, { translateY: bob }, { rotate }, { scaleX: facing }] },
@@ -415,6 +498,7 @@ export function PetStage({
         {/* 地平线：一根发丝线，跟着宠物横向走（只跟 X，不跟上下浮动），
             兼作「呼吸」的载体——明暗随呼吸起伏 */}
         <Animated.View
+          pointerEvents="none"
           style={[
             styles.ground,
             {
@@ -426,8 +510,24 @@ export function PetStage({
             recording && styles.groundLive,
           ]}
         />
+
+        {/* 气泡放在最后一个兄弟节点：Android 上 zIndex 对同为 absolute 的兄弟不总生效，
+            靠绘制顺序最稳。它不跟 swim 走，说话时宠物动、气泡不动，像旁白。 */}
+        {bubble ? (
+          <Animated.View style={[styles.bubble, bubbleStyle]} pointerEvents="none">
+            <Text style={styles.bubbleText} maxFontSizeMultiplier={1.3}>
+              {bubble}
+            </Text>
+            <View style={styles.bubbleTail} />
+          </Animated.View>
+        ) : null}
       </View>
-      <Text style={styles.caption} maxFontSizeMultiplier={1.3} numberOfLines={1}>
+      <Text
+        style={styles.caption}
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={1}
+        pointerEvents="none"
+      >
         {caption}
       </Text>
     </View>
@@ -457,9 +557,9 @@ const makeStyles = (t: Palette) =>
     // 对话气泡：纸面填充 + 发丝边，和卡片同一种语言，不做阴影。
     bubble: {
       position: 'absolute',
-      top: -6,
-      left: '38%',
-      maxWidth: 160,
+      top: -44,
+      left: '44%',
+      maxWidth: 172,
       paddingHorizontal: 10,
       paddingVertical: 6,
       borderRadius: 10,

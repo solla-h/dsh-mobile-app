@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useThemedStyles } from '../theme';
 import { PetStage } from './PetStage';
 import type { Palette } from '../../theme/tokens';
@@ -34,6 +35,12 @@ interface Props {
   onCancelVoice: () => void;
   recording: boolean;
   transcribing: boolean;
+  /** 首页整体状态：有人等着 / 有任务在跑 / 都闲着——宠物跟着变 */
+  mood: 'alert' | 'working' | 'idle';
+  /** 未读会话（有新消息但还没点进去） */
+  unreadIds: ReadonlySet<string>;
+  /** 外部提示（识别失败、录音太短），走宠物气泡 */
+  notice?: { text: string; token: number } | null;
 }
 
 export function FocusHome({
@@ -51,6 +58,9 @@ export function FocusHome({
   onCancelVoice,
   recording,
   transcribing,
+  mood,
+  unreadIds,
+  notice,
 }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
@@ -93,6 +103,7 @@ export function FocusHome({
               onHold={onHoldCard}
               onRelease={onRelease}
               voiceReady={voiceReady}
+              unread={unreadIds.has(item.sessionId)}
             />
           ))}
         </View>
@@ -103,6 +114,8 @@ export function FocusHome({
           voiceReady={voiceReady}
           recording={recording}
           transcribing={transcribing}
+          mood={mood}
+          notice={notice}
           onVoiceStart={onHoldOrb}
           onVoiceLaunch={onRelease}
           onVoiceCancel={onCancelVoice}
@@ -121,6 +134,7 @@ function FocusCard({
   onHold,
   onRelease,
   voiceReady,
+  unread,
 }: {
   item: FocusItem;
   index: number;
@@ -128,6 +142,7 @@ function FocusCard({
   onHold: (sessionId: string) => void;
   onRelease: () => void;
   voiceReady: boolean;
+  unread: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
   const waiting = item.pendingCount > 0;
@@ -142,7 +157,7 @@ function FocusCard({
       accessibilityHint={waiting ? '长按可以直接语音回复' : '正在进行中'}
     >
       <View style={styles.cardTop}>
-        <View style={[styles.dot, waiting ? styles.dotWaiting : styles.dotRunning]} />
+        <StatusDot waiting={waiting} running={item.running} unread={unread} />
         <Text style={styles.cardDir} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {dir}
         </Text>
@@ -174,6 +189,54 @@ function FocusCard({
         ) : null}
       </View>
     </Pressable>
+  );
+}
+
+/**
+ * 卡片左上角的状态点：
+ * 待审批 = 暖砂；进行中 = 绿点 + 呼吸圈；有未读 = 绿点；其余 = 灰点。
+ */
+function StatusDot({
+  waiting,
+  running,
+  unread,
+}: {
+  waiting: boolean;
+  running: boolean;
+  unread: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const [pulse] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!running) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(pulse, { toValue: 1, duration: 1400, useNativeDriver: true }),
+    );
+    pulse.setValue(0);
+    loop.start();
+    return () => loop.stop();
+  }, [pulse, running]);
+
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] });
+  const live = running || unread;
+
+  return (
+    <View style={styles.dotWrap}>
+      {running ? (
+        <Animated.View
+          style={[styles.dotHalo, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+        />
+      ) : null}
+      <View
+        style={[styles.dot, waiting ? styles.dotWaiting : live ? styles.dotLive : styles.dotIdle]}
+      />
+    </View>
   );
 }
 
@@ -234,9 +297,19 @@ const makeStyles = (t: Palette) =>
       borderColor: t.border.default,
     },
     cardTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    dotWrap: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3 },
     dotWaiting: { backgroundColor: t.semantic.gateAmberText },
-    dotRunning: { backgroundColor: t.text.muted },
+    dotLive: { backgroundColor: t.semantic.live },
+    dotIdle: { backgroundColor: t.text.muted },
+    // 进行中的绿点会向外扩一圈淡绿，静止时不占视觉
+    dotHalo: {
+      position: 'absolute',
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: t.semantic.live,
+    },
     cardDir: { flex: 1, color: t.text.muted, fontSize: 10 },
     cardTag: { fontSize: 10, fontWeight: '700' },
     tagWaiting: { color: t.semantic.gateAmberText },
