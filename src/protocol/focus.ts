@@ -1,8 +1,9 @@
 /**
- * 首页 2x2 聚焦网格的选片：挑出最该让人看一眼的会话。
+ * 首页 2x2 聚焦网格的选片。
  *
- * 值得打扰人的信号只有两个：有待办（审批 / 提问，agent 真的停住了等人）、
- * 正在跑（还能看出活儿没死）。其余会话再新也只是「回头再看」，不该占格子。
+ * 最初只收「待审批 / 进行中」，结果 agent 一答完卡片就消失，用户反而找不到入口——
+ * 这个网格的本意是「快速回到刚才那几个会话」，所以现在**常驻最近 4 个会话**，
+ * 只是把需要你出手的排在前面：待审批 > 进行中 > 刚聊过的。
  *
  * 子会话（带 parentSessionId）一律剔除：那是 agent 自己派出去干活的，
  * 跟父会话并排出现会让网格凭空翻倍，而且点进去也没有人在等。
@@ -43,10 +44,14 @@ function clampLimit(limit?: number): number {
  * 有待办的排前面（条数多的更靠前），同一档内按最近活动倒序。
  * 最后用 sessionId 兜底，避免同一毫秒的会话在两次渲染里互换位置。
  */
+function rank(entry: FocusEntry): number {
+  if (entry.pendingCount > 0) return 0;
+  return entry.running ? 1 : 2;
+}
+
 function compare(a: FocusEntry, b: FocusEntry): number {
-  const aWaiting = a.pendingCount > 0 ? 1 : 0;
-  const bWaiting = b.pendingCount > 0 ? 1 : 0;
-  if (aWaiting !== bWaiting) return bWaiting - aWaiting;
+  const byRank = rank(a) - rank(b);
+  if (byRank !== 0) return byRank;
   if (a.pendingCount !== b.pendingCount) return b.pendingCount - a.pendingCount;
   if (a.updatedAt !== b.updatedAt) return b.updatedAt - a.updatedAt;
   if (a.sessionId === b.sessionId) return 0;
@@ -81,9 +86,9 @@ export function selectFocusSessions(
     if (item.blank === true) continue;
     if (item.parentSessionId) continue;
 
+    // 全部可见会话都进候选：网格常驻最近 4 个，排序决定谁优先。
     const pendingCount = pendingItems(options.pending, item.sessionId).length;
     const running = item.running === true;
-    if (pendingCount === 0 && !running) continue;
 
     entries.push({
       sessionId: item.sessionId,
