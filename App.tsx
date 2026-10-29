@@ -146,6 +146,13 @@ function AppBody() {
   const pairingRef = useRef(false);
   /** 用户是否亲手选过工作区；选过之后就不再自动切到 mobile。 */
   const workspaceTouchedRef = useRef(false);
+  /**
+   * 正在创建 mobile 工作区的中间态：目录要先查 home、再建、再注册，三步不能省。
+   * 为空表示没在创建。
+   */
+  const creatingWorkspaceRef = useRef<{ stage: 'probe' } | { stage: 'mkdir'; home: string } | null>(
+    null,
+  );
 
   const connected = state === 'ready' && hello?.authenticated === true;
 
@@ -308,6 +315,37 @@ function AppBody() {
           setDirListing(listing);
           setDirLoading(false);
           setDirError(null);
+          // 建 mobile 工作区的第一步：拿到 home 之后建子目录。
+          const job = creatingWorkspaceRef.current;
+          if (job && job.stage === 'probe' && listing.path) {
+            creatingWorkspaceRef.current = { stage: 'mkdir', home: listing.path };
+            client.send({ type: 'directory-create', path: listing.path, name: 'mobile' });
+          }
+          break;
+        }
+        case 'directory-create': {
+          const job = creatingWorkspaceRef.current;
+          if (!job || job.stage !== 'mkdir') break;
+          const created = frame as unknown as { path?: string };
+          const target = created.path ?? job.home + '/mobile';
+          creatingWorkspaceRef.current = null;
+          client.send({ type: 'workspace-create', path: target });
+          break;
+        }
+        case 'workspace-create': {
+          const created = frame as unknown as {
+            workspace?: { workspaceId?: string; title?: string };
+            created?: boolean;
+          };
+          const workspaceId = created.workspace?.workspaceId;
+          if (workspaceId) {
+            workspaceTouchedRef.current = true;
+            setCurrentWorkspaceId(workspaceId);
+            const gateway = savedRef.current;
+            if (gateway) void writeJson('workspace-' + gateway.id, { workspaceId });
+          }
+          // 重新拉一次，让分组和选择器都看到新工作区。
+          client.send({ type: 'workspaces' });
           break;
         }
         case 'session-queues': {
@@ -439,6 +477,15 @@ function AppBody() {
             setDirLoading(false);
             setDirError(text);
             break;
+          }
+          // 建 mobile 工作区时目录已经存在不算失败，接着去注册就行。
+          if (failure.requestType === 'directory-create' && failure.code === 'directory-exists') {
+            const job = creatingWorkspaceRef.current;
+            if (job && job.stage === 'mkdir') {
+              creatingWorkspaceRef.current = null;
+              client.send({ type: 'workspace-create', path: job.home + '/mobile' });
+              break;
+            }
           }
           setError(text);
           break;
@@ -580,12 +627,18 @@ function AppBody() {
   /** 换当前工作区：只影响之后新建的会话，历史会话一个都不动。 */
   const pickWorkspace = useCallback((id: string) => {
     setWorkspaceSheet(false);
+    if (id === 'create-mobile') {
+      // 先从 home 开始探路，拿到路径后由 directories 分支接着建。
+      creatingWorkspaceRef.current = { stage: 'probe' };
+      client.send({ type: 'directories' });
+      return;
+    }
     const next = id === 'default' ? null : id;
     workspaceTouchedRef.current = true;
     setCurrentWorkspaceId(next);
     const gateway = savedRef.current;
     if (gateway) void writeJson('workspace-' + gateway.id, { workspaceId: next });
-  }, []);
+  }, [client]);
 
   const workspaceActions = useMemo<SheetAction[]>(() => {
     const items = workspaceFrame?.items ?? [];
@@ -596,6 +649,7 @@ function AppBody() {
         hint: item.path,
       })),
       { id: 'default', label: '默认目录', hint: '用网关自己的默认工作目录' },
+      { id: 'create-mobile', label: '新建 mobile 工作区', hint: '在宿主 home 下建 mobile 目录并注册' },
     ];
   }, [workspaceFrame]);
 
