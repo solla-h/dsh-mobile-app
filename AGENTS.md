@@ -56,8 +56,15 @@ src/ui/                  屏幕与组件
 ## 协议
 
 服务端是第三方插件 `dsh-plugin-mobile-gateway`（protocol `dsh-mobile-v1`）。
-不确定帧名/字段时，先 `npm pack dsh-plugin-mobile-gateway@<版本>` 解开读 `lib/index.mjs`，
-不要靠猜。
+不确定帧名/字段时，读源码里的 `PROTOCOL.md` 和 `lib/index.mjs`，不要靠猜。
+
+**源码位置**：`D:\workspace\open_source\dsh-plugin-mobile-gateway`（没 clone 就用
+`git clone https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway.git` 拉一份）。
+
+**注意源码版本可能领先 npm 发布版**。仓库 `main` 的 `package.json` 版本号不随每次提交更新，
+所以「源码里有」不等于「线上网关跑着」。发版前两者会分叉：线上装的是 npm 包，
+要确认某个能力真的落到线上了，还得 `npm pack dsh-plugin-mobile-gateway@<线上版本>` 对一遍。
+两边冲突时以 npm 包为准。
 
 几个已经踩过的坑：
 
