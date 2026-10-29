@@ -22,6 +22,11 @@ export type HomeRow =
     }
   | { kind: 'session'; item: SessionItem; indent: boolean };
 
+function lastTwoSegments(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join('/') : parts[0] ?? path;
+}
+
 export function buildHomeRows(
   sessions: readonly SessionItem[],
   workspaces: WorkspacesFrame | null,
@@ -57,7 +62,10 @@ export function buildHomeRows(
   };
 
   for (const group of board.groups) {
-    pushGroup(group.id, group.title, group.sessions.map((s) => s.sessionId), group.path);
+    // cwd 兜底分组的 title 只有最后一段，单看「workspace」没信息量，补上前一层目录。
+    const title =
+      group.source === 'cwd' && group.path ? lastTwoSegments(group.path) : group.title;
+    pushGroup(group.id, title, group.sessions.map((s) => s.sessionId), group.path);
   }
   if (board.loose.length > 0) {
     pushGroup('loose', '未归组', board.loose.map((s) => s.sessionId));

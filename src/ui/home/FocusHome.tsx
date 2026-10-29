@@ -56,11 +56,11 @@ export function FocusHome({
   return (
     <View style={styles.root}>
       <View style={styles.head}>
-        <Text style={styles.headTitle} maxFontSizeMultiplier={1.3}>
-          现在有谁在等我
+        <Text style={styles.headTitle} maxFontSizeMultiplier={1.2} numberOfLines={1}>
+          ACTIVE FOCUS · 待审批与进行中{items.length > 0 ? `（${items.length}）` : ''}
         </Text>
-        <Text style={styles.headCount} maxFontSizeMultiplier={1.3}>
-          {pendingTotal > 0 ? pendingTotal + ' 条待办' : items.length > 0 ? '进行中' : ''}
+        <Text style={styles.headHint} maxFontSizeMultiplier={1.2} numberOfLines={1}>
+          点按进入 · 按住直接语音回
         </Text>
       </View>
 
@@ -84,19 +84,24 @@ export function FocusHome({
         </View>
       ) : (
         <View style={styles.grid}>
-          {items.map((item) => (
+          {items.map((item, index) => (
             <FocusCard
               key={item.sessionId}
               item={item}
+              index={index}
               onOpen={onOpen}
               onHold={onHoldCard}
               onRelease={onRelease}
+              voiceReady={voiceReady}
             />
           ))}
         </View>
       )}
 
       <View style={styles.orbStage}>
+        <Text style={styles.orbCaption} maxFontSizeMultiplier={1.2}>
+          默认归属工作区：{workspaceLabel}
+        </Text>
         <VoiceOrb
           onTap={onCreate}
           onHold={onHoldOrb}
@@ -110,7 +115,7 @@ export function FocusHome({
             : transcribing
               ? '正在识别…'
               : voiceReady
-                ? '按住说话 · 轻点用文字'
+                ? `按住说话 · 在 ${workspaceLabel} 新建会话`
                 : '轻点新建会话 · 语音未启用'}
         </Text>
       </View>
@@ -121,14 +126,18 @@ export function FocusHome({
 /** 2x2 卡片：宽度按容器百分比，高度由内容撑开，字号有上限倍率。 */
 function FocusCard({
   item,
+  index,
   onOpen,
   onHold,
   onRelease,
+  voiceReady,
 }: {
   item: FocusItem;
+  index: number;
   onOpen: (sessionId: string) => void;
   onHold: (sessionId: string) => void;
   onRelease: () => void;
+  voiceReady: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
   const waiting = item.pendingCount > 0;
@@ -159,9 +168,9 @@ function FocusCard({
       </Text>
       <View style={styles.cardBottom}>
         <Text style={styles.cardTime} maxFontSizeMultiplier={1.2}>
-          {relativeTime(item.updatedAt)}
+          {`#${String(index + 1).padStart(2, '0')} · ${relativeTime(item.updatedAt)}`}
         </Text>
-        {waiting ? (
+        {voiceReady ? (
           <Text style={styles.cardHold} maxFontSizeMultiplier={1.2}>
             🎤 按住直回
           </Text>
@@ -218,7 +227,11 @@ function VoiceOrb({
       <Animated.View
         style={[styles.orbRing, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
       />
-      <View style={[styles.orb, recording && styles.orbLive]} />
+      <View style={[styles.orb, recording && styles.orbLive]}>
+        <View style={[styles.micCapsule, recording && styles.micOn]} />
+        <View style={[styles.micCradle, recording && styles.micCradleOn]} />
+        <View style={[styles.micStem, recording && styles.micOn]} />
+      </View>
     </Pressable>
   );
 }
@@ -241,15 +254,9 @@ function relativeTime(at: number): string {
 const makeStyles = (t: Palette) =>
   StyleSheet.create({
     root: { flex: 1, paddingHorizontal: 16 },
-    head: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      justifyContent: 'space-between',
-      paddingTop: 4,
-      paddingBottom: 10,
-    },
-    headTitle: { color: t.text.primary, fontSize: 15, fontWeight: '700' },
-    headCount: { color: t.text.muted, fontSize: 12 },
+    head: { paddingTop: 4, paddingBottom: 8, gap: 2 },
+    headTitle: { color: t.text.primary, fontSize: 13, fontWeight: '700', letterSpacing: 0.6 },
+    headHint: { color: t.text.muted, fontSize: 11 },
     wsRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -306,10 +313,33 @@ const makeStyles = (t: Palette) =>
       width: 80,
       height: 80,
       borderRadius: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: t.bg.elevatedAnswer,
       borderWidth: 1.5,
       borderColor: t.border.activeOrigin,
     },
+    orbCaption: { color: t.text.muted, fontSize: 11, letterSpacing: 0.3 },
+    // 麦克风用三个 View 拼，避免 emoji 破坏单色调
+    micCapsule: {
+      width: 10,
+      height: 16,
+      borderRadius: 5,
+      backgroundColor: t.text.secondary,
+    },
+    micCradle: {
+      width: 18,
+      height: 8,
+      borderWidth: 1.4,
+      borderTopWidth: 0,
+      borderColor: t.text.secondary,
+      borderBottomLeftRadius: 9,
+      borderBottomRightRadius: 9,
+      marginTop: -1,
+    },
+    micStem: { width: 1.4, height: 3, backgroundColor: t.text.secondary },
+    micOn: { backgroundColor: t.action.primaryText },
+    micCradleOn: { borderColor: t.action.primaryText },
     orbLive: { backgroundColor: t.action.primaryBg, borderColor: t.action.primaryBg },
     orbHint: { color: t.text.muted, fontSize: 12 },
   });

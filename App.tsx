@@ -38,6 +38,8 @@ import { soleApproval } from './src/protocol/pending';
 import { matchDecision } from './src/protocol/voice-decision';
 import { useVoiceCapture } from './src/ui/voice/useVoiceCapture';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
+import { CapabilitiesView } from './src/ui/home/CapabilitiesView';
+import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
 import {
@@ -65,6 +67,16 @@ import type { Palette } from './src/theme/tokens';
 
 /** 会话列表按网关分开缓存，切换网关时不会串味。 */
 const sessionsCacheKey = (gatewayId: string) => `sessions-${gatewayId}`;
+
+/** 列表上的相对时间：比绝对时间戳好读，也不用为「耗时」去拉 session-stats。 */
+function ago(at: number): string {
+  if (!at) return '';
+  const diff = Date.now() - at;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' 分钟前';
+  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' 小时前';
+  return Math.floor(diff / 86_400_000) + ' 天前';
+}
 
 function hostOf(url: string): string {
   try {
@@ -137,11 +149,17 @@ function AppBody() {
   } | null>(null);
   /** handleFrame 里要读最新的待办，但不想因为待办变化重建回调 */
   const pendingRef = useRef<PendingMap>({});
+  /** 刚用语音发了一条「新会话」消息，等 sent 回来就跳进去 */
+  const voiceCreatePendingRef = useRef(false);
+  /** 已知会话 id：收到未知会话的状态推送时要补一次列表 */
+  const knownSessionsRef = useRef<Set<string>>(new Set());
   const voiceReady = hasReadyProvider(speechCatalog);
   /** 工作区快照：分组、置顶、归档都在这条帧里。null 表示还没拿到。 */
   const [workspaceFrame, setWorkspaceFrame] = useState<WorkspacesFrame | null>(null);
-  /** 首页当前 Tab：聚焦 / 全部会话。只在这两页之间切，会话页不挂 Tab。 */
-  const [tab, setTab] = useState<'focus' | 'all'>('focus');
+  /** 首页当前 Tab。只在首页四个页之间切，会话页不挂 Tab。 */
+  const [tab, setTab] = useState<'focus' | 'all' | 'schedules' | 'plugins'>('focus');
+  /** 定时任务目录；null 表示还没拿到（不是「没有任务」） */
+  const [schedules, setSchedules] = useState<unknown[] | null>(null);
   /** 全部会话页里折叠起来的工作区分组 */
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   /** 当前工作区：只影响「之后新建的会话」，不移动任何历史会话。 */
@@ -246,12 +264,27 @@ function AppBody() {
     pendingRef.current = pending;
   }, [pending]);
 
+  useEffect(() => {
+    knownSessionsRef.current = new Set(sessions.map((item) => item.sessionId));
+  }, [sessions]);
+
   // control 通道只关心审批/提问；hello 表示重连成功，先清空再让服务端回放，
   // 否则断线期间处理掉的待办会一直挂在列表上。
   useEffect(() => {
     const off = control.onFrame((frame) => {
       if (frame.kind === 'hello') {
         setPending({});
+        // 定时任务目录只在 control 通道上给；连上就问一次。
+        control.send({ type: 'schedule-catalog' });
+        return;
+      }
+      if (frame.kind === 'schedule-catalog') {
+        const items = (frame as unknown as { items?: unknown[] }).items;
+        setSchedules(Array.isArray(items) ? items : []);
+        return;
+      }
+      if (frame.kind === 'schedule-changed') {
+        control.send({ type: 'schedule-catalog' });
         return;
       }
       setPending((current) => applyPendingFrame(current, frame) ?? current);
@@ -473,6 +506,7 @@ function AppBody() {
             break;
           }
           // 新会话：一条 message 就够，网关会先建会话再发。
+          voiceCreatePendingRef.current = true;
           client.send({
             type: 'message',
             text,
@@ -480,10 +514,26 @@ function AppBody() {
           });
           break;
         }
+        case 'sent': {
+          // 语音新建的会话：网关会先建再发，sent 里带着新 sessionId。
+          // 不跳过去的话，用户说完话看不到任何反应。
+          if (!voiceCreatePendingRef.current) break;
+          voiceCreatePendingRef.current = false;
+          const sent = frame as unknown as { sessionId?: string };
+          if (sent.sessionId) {
+            setActive({ sessionId: sent.sessionId, updatedAt: Date.now(), running: false, blank: false });
+            client.send({ type: 'sessions' });
+          }
+          break;
+        }
         case 'session-status': {
           const status = frame as unknown as { sessionId?: string; running?: boolean };
           if (!status.sessionId) break;
           const running = status.running === true;
+          // 列表里没有这个会话（别处新建的）就补拉一次，否则首页根本看不到它。
+          if (!knownSessionsRef.current.has(status.sessionId)) {
+            client.send({ type: 'sessions' });
+          }
           setSessions((current) =>
             current.map((item) =>
               item.sessionId === status.sessionId && item.running !== running
@@ -1160,6 +1210,16 @@ function AppBody() {
                 transcribing={transcribing}
                 maxRecordSeconds={maxRecordSeconds(speechCatalog?.maxAudioBytes ?? 4194304)}
               />
+            ) : tab === 'schedules' ? (
+              <SchedulesView rows={mapSchedules(schedules)} catalogReady={schedules !== null} />
+            ) : tab === 'plugins' ? (
+              <CapabilitiesView
+                capabilities={hello?.capabilities ?? []}
+                gatewayName={hello?.gatewayName}
+                protocol={hello?.protocol}
+                deviceName={hello?.device?.name}
+                speechReady={voiceReady}
+              />
             ) : (
             <>
             <View style={styles.metaRow}>
@@ -1187,8 +1247,11 @@ function AppBody() {
                 ) : null}
               </View>
             ) : null}
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>会话 · {visibleSessions.length}</Text>
+            <View style={styles.dirHead}>
+              <Text style={styles.dirTitle} maxFontSizeMultiplier={1.3}>
+                全部工作区与会话目录
+              </Text>
+              <Text style={styles.dirCount}>{visibleSessions.length} 个</Text>
               <Pressable
                 style={[styles.newButton, !connected && styles.newButtonOff]}
                 onPress={() => setCreateSheet(true)}
@@ -1201,6 +1264,9 @@ function AppBody() {
                 )}
               </Pressable>
             </View>
+            <Text style={styles.dirSub} maxFontSizeMultiplier={1.3}>
+              按工作区分组 · 无框排版 · 长按一行有更多操作
+            </Text>
             <FlatList
               data={rows}
               keyExtractor={(row) => (row.kind === 'group' ? 'g:' + row.id : row.item.sessionId)}
@@ -1263,7 +1329,7 @@ function AppBody() {
                       {item.running ? <View style={styles.runningDot} /> : null}
                     </View>
                     <Text style={styles.cardMeta} numberOfLines={1}>
-                      {item.cwd ?? ''}
+                      {`${ago(item.updatedAt)} · ${item.cwd ?? ''}`}
                     </Text>
                     {waiting.length > 0 ? (
                       <View style={styles.pendingPill}>
@@ -1290,23 +1356,21 @@ function AppBody() {
                 );
               }}
             />
-            <View style={styles.footerRow}>
-              <Pressable style={styles.footerAction} onPress={() => setScanning(true)}>
-                <Text style={styles.footerActionText}>扫码配对</Text>
-              </Pressable>
-              <Pressable style={styles.footerAction} onPress={handleForget}>
-                <Text style={styles.footerActionText}>断开并清除</Text>
-              </Pressable>
-            </View>
             </>
             )}
             <BottomTabBar
               tabs={[
                 { key: 'focus', label: '聚焦', badge: pendingCount },
                 { key: 'all', label: '全部会话' },
+                { key: 'schedules', label: '定时任务' },
+                { key: 'plugins', label: '插件' },
               ]}
               active={tab}
-              onChange={(key) => setTab(key === 'all' ? 'all' : 'focus')}
+              onChange={(key) =>
+                setTab(
+                  key === 'all' || key === 'schedules' || key === 'plugins' ? key : 'focus',
+                )
+              }
             />
           </View>
         ) : (
@@ -1646,7 +1710,8 @@ const makeStyles = (t: Palette) =>
     paddingHorizontal: 20,
     paddingBottom: 8,
   },
-  listContent: { paddingHorizontal: 20, paddingBottom: 12 },
+  // 底部 Tab 栏是兄弟节点，列表自己留出 72 的内边距，最后一行才不会被压住
+  listContent: { paddingHorizontal: 20, paddingBottom: 72 },
   // 无框行：不要背景、圆角和阴影，只留一条底部分割线。
   card: {
     paddingVertical: 10,
@@ -1667,6 +1732,16 @@ const makeStyles = (t: Palette) =>
     gap: 8,
     marginTop: 4,
   },
+  dirHead: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 2,
+  },
+  dirTitle: { flex: 1, color: t.text.primary, fontSize: 20, fontWeight: '700' },
+  dirCount: { color: t.text.muted, fontSize: 11 },
+  dirSub: { color: t.text.muted, fontSize: 11, paddingHorizontal: 20, paddingBottom: 6 },
   groupCaret: { color: t.text.muted, fontSize: 11, width: 12 },
   groupTitle: { flex: 1, color: t.text.primary, fontSize: 14, fontWeight: '700' },
   groupCount: { color: t.text.muted, fontSize: 11 },

@@ -25,7 +25,8 @@ describe('buildHomeRows', () => {
       { collapsed: {}, showArchived: false, archivedIds: [] },
     );
     expect(rows.map((row) => row.kind)).toEqual(['group', 'session', 'session']);
-    expect(rows[0]).toMatchObject({ title: 'one', count: 2 });
+    // cwd 分组标题取最后两层目录，单看最后一段没信息量
+    expect(rows[0]).toMatchObject({ title: 'w/one', count: 2 });
   });
 
   it('折叠的分组只留组头', () => {
