@@ -28,6 +28,12 @@ interface Props {
   onCreate: () => void;
   onHoldOrb: () => void;
   onHoldCard: (sessionId: string) => void;
+  /** 松手：结束录音 */
+  onRelease: () => void;
+  recording: boolean;
+  transcribing: boolean;
+  /** 服务端允许的单条录音上限（秒），用来显示倒计时/提示 */
+  maxRecordSeconds: number;
 }
 
 export function FocusHome({
@@ -41,6 +47,10 @@ export function FocusHome({
   onCreate,
   onHoldOrb,
   onHoldCard,
+  onRelease,
+  recording,
+  transcribing,
+  maxRecordSeconds,
 }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
@@ -75,15 +85,33 @@ export function FocusHome({
       ) : (
         <View style={styles.grid}>
           {items.map((item) => (
-            <FocusCard key={item.sessionId} item={item} onOpen={onOpen} onHold={onHoldCard} />
+            <FocusCard
+              key={item.sessionId}
+              item={item}
+              onOpen={onOpen}
+              onHold={onHoldCard}
+              onRelease={onRelease}
+            />
           ))}
         </View>
       )}
 
       <View style={styles.orbStage}>
-        <VoiceOrb onTap={onCreate} onHold={onHoldOrb} voiceReady={voiceReady} />
+        <VoiceOrb
+          onTap={onCreate}
+          onHold={onHoldOrb}
+          onRelease={onRelease}
+          voiceReady={voiceReady}
+          recording={recording}
+        />
         <Text style={styles.orbHint} maxFontSizeMultiplier={1.3}>
-          {voiceReady ? '按住说话 · 松手发送' : '轻点新建会话 · 语音未启用'}
+          {recording
+            ? `正在听… 松手发送（最长 ${maxRecordSeconds}s）`
+            : transcribing
+              ? '正在识别…'
+              : voiceReady
+                ? '按住说话 · 轻点用文字'
+                : '轻点新建会话 · 语音未启用'}
         </Text>
       </View>
     </View>
@@ -95,10 +123,12 @@ function FocusCard({
   item,
   onOpen,
   onHold,
+  onRelease,
 }: {
   item: FocusItem;
   onOpen: (sessionId: string) => void;
   onHold: (sessionId: string) => void;
+  onRelease: () => void;
 }) {
   const styles = useThemedStyles(makeStyles);
   const waiting = item.pendingCount > 0;
@@ -108,6 +138,7 @@ function FocusCard({
       style={[styles.card, waiting ? styles.cardWaiting : styles.cardRunning]}
       onPress={() => onOpen(item.sessionId)}
       onLongPress={() => onHold(item.sessionId)}
+      onPressOut={onRelease}
       delayLongPress={600}
       accessibilityHint={waiting ? '长按可以直接语音回复' : '正在进行中'}
     >
@@ -147,11 +178,15 @@ function FocusCard({
 function VoiceOrb({
   onTap,
   onHold,
+  onRelease,
   voiceReady,
+  recording,
 }: {
   onTap: () => void;
   onHold: () => void;
+  onRelease: () => void;
   voiceReady: boolean;
+  recording: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
   // 用 state 持有 Animated.Value：渲染期读它是合法的（react-hooks/refs 禁止渲染期读 ref）。
@@ -175,6 +210,7 @@ function VoiceOrb({
     <Pressable
       onPress={onTap}
       onLongPress={onHold}
+      onPressOut={onRelease}
       delayLongPress={600}
       style={styles.orbHit}
       accessibilityHint={voiceReady ? '按住说话新建会话，轻点用文字' : '轻点新建会话'}
@@ -182,7 +218,7 @@ function VoiceOrb({
       <Animated.View
         style={[styles.orbRing, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
       />
-      <View style={styles.orb} />
+      <View style={[styles.orb, recording && styles.orbLive]} />
     </Pressable>
   );
 }
@@ -274,5 +310,6 @@ const makeStyles = (t: Palette) =>
       borderWidth: 1.5,
       borderColor: t.border.activeOrigin,
     },
+    orbLive: { backgroundColor: t.action.primaryBg, borderColor: t.action.primaryBg },
     orbHint: { color: t.text.muted, fontSize: 12 },
   });

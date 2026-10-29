@@ -27,6 +27,16 @@ import {
 import type { HelloFrame, ServerFrame, SessionItem, WorkspacesFrame } from './src/protocol/types';
 import { applyOutlineFrame, type OutlineMap } from './src/protocol/outline-cache';
 import { selectFocusSessions } from './src/protocol/focus';
+import {
+  hasReadyProvider,
+  mapSpeechCatalog,
+  maxRecordSeconds,
+  transcriptText,
+  type SpeechCatalog,
+} from './src/protocol/speech';
+import { soleApproval } from './src/protocol/pending';
+import { matchDecision } from './src/protocol/voice-decision';
+import { useVoiceCapture } from './src/ui/voice/useVoiceCapture';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
@@ -115,8 +125,19 @@ function AppBody() {
   const [pending, setPending] = useState<PendingMap>({});
   /** 每个会话最近几轮的大纲；首页卡片拿它显示「最后一句回复」，不用逐会话拉历史。 */
   const [outlines, setOutlines] = useState<OutlineMap>({});
-  /** 服务器是否启用了官方语音输入（speech-catalog 的 available） */
-  const [voiceReady, setVoiceReady] = useState(false);
+  /** 服务器语音目录：provider、语言、音频上限都在这里 */
+  const [speechCatalog, setSpeechCatalog] = useState<SpeechCatalog | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const voice = useVoiceCapture();
+  /** 正在等哪条转写结果，以及结果要发给谁；迟到的结果按 requestId 丢掉 */
+  const voiceJobRef = useRef<{
+    requestId: string;
+    target: { kind: 'new' } | { kind: 'session'; sessionId: string };
+  } | null>(null);
+  /** handleFrame 里要读最新的待办，但不想因为待办变化重建回调 */
+  const pendingRef = useRef<PendingMap>({});
+  const voiceReady = hasReadyProvider(speechCatalog);
   /** 工作区快照：分组、置顶、归档都在这条帧里。null 表示还没拿到。 */
   const [workspaceFrame, setWorkspaceFrame] = useState<WorkspacesFrame | null>(null);
   /** 首页当前 Tab：聚焦 / 全部会话。只在这两页之间切，会话页不挂 Tab。 */
@@ -220,6 +241,10 @@ function AppBody() {
     },
     [control],
   );
+
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
 
   // control 通道只关心审批/提问；hello 表示重连成功，先清空再让服务端回放，
   // 否则断线期间处理掉的待办会一直挂在列表上。
@@ -405,9 +430,54 @@ function AppBody() {
           setOutlines((current) => applyOutlineFrame(current, frame) ?? current);
           break;
         }
-        case 'speech-catalog': {
-          const catalog = frame as unknown as { available?: boolean };
-          setVoiceReady(catalog.available === true);
+        case 'speech-catalog':
+        case 'speech-state': {
+          const catalog = mapSpeechCatalog(frame);
+          if (catalog) setSpeechCatalog(catalog);
+          break;
+        }
+        case 'speech-transcript': {
+          const job = voiceJobRef.current;
+          const received = frame as unknown as { requestId?: string };
+          // 只认当前这条请求；切页/重录之后的迟到结果一律丢。
+          if (!job || job.requestId !== received.requestId) break;
+          voiceJobRef.current = null;
+          setTranscribing(false);
+          const text = transcriptText(frame) ?? '';
+          if (!text) {
+            Alert.alert('没听清', '再说一次试试');
+            break;
+          }
+          if (job.target.kind === 'session') {
+            const approval = soleApproval(pendingRef.current, job.target.sessionId);
+            if (approval) {
+              const decision = matchDecision(text);
+              if (!decision) {
+                Alert.alert('没听清', `听到的是「${text}」，没有匹配到同意或拒绝`);
+                break;
+              }
+              if (!approval.approvalId) {
+                Alert.alert('无法语音审批', '这条审批没有带 approvalId，请进会话处理');
+                break;
+              }
+              client.send({
+                type: 'approval-response',
+                rpcId: approval.rpcId,
+                sessionId: job.target.sessionId,
+                approvalId: approval.approvalId,
+                outcome: decision === 'approve' ? 'allowed-once' : 'rejected',
+              });
+              break;
+            }
+            client.send({ type: 'message', sessionId: job.target.sessionId, text });
+            break;
+          }
+          // 新会话：一条 message 就够，网关会先建会话再发。
+          client.send({
+            type: 'message',
+            text,
+            ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
+          });
           break;
         }
         case 'session-status': {
@@ -494,7 +564,7 @@ function AppBody() {
           break;
       }
     },
-    [applyTitle, client, startControl],
+    [applyTitle, client, currentWorkspaceId, startControl],
   );
 
   useEffect(() => {
@@ -623,6 +693,56 @@ function AppBody() {
       ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
     });
   }, [client, connected, currentWorkspaceId]);
+
+  /** 按住开始录音；target 决定转写结果发给谁。 */
+  const beginVoice = useCallback(
+    async (target: { kind: 'new' } | { kind: 'session'; sessionId: string }) => {
+      if (!voiceReady) {
+        Alert.alert('语音还没就绪', '服务器语音模型还在准备，稍后再试。');
+        return;
+      }
+      if (recording || transcribing) return;
+      try {
+        await voice.start();
+        voiceJobRef.current = target === null ? null : { requestId: '', target };
+        setRecording(true);
+      } catch (failure) {
+        Alert.alert('录音失败', failure instanceof Error ? failure.message : '无法开始录音');
+      }
+    },
+    [recording, transcribing, voice, voiceReady],
+  );
+
+  /** 松手：结束录音并发起转写。 */
+  const finishVoice = useCallback(async () => {
+    if (!recording) return;
+    const job = voiceJobRef.current;
+    setRecording(false);
+    voiceJobRef.current = null;
+    if (!job) {
+      voice.cancel();
+      return;
+    }
+    try {
+      const clip = await voice.stop();
+      if (!clip) return;
+      // 太短的多半是误触，别浪费一次往返。
+      if (clip.duration < 0.4) return;
+      const requestId = randomUUID();
+      voiceJobRef.current = { requestId, target: job.target };
+      setTranscribing(true);
+      client.send({
+        type: 'speech-transcribe',
+        requestId,
+        providerId: speechCatalog?.providerId,
+        language: speechCatalog?.language,
+        audioBase64: clip.base64,
+      });
+    } catch (failure) {
+      setTranscribing(false);
+      Alert.alert('录音失败', failure instanceof Error ? failure.message : '无法读取录音');
+    }
+  }, [client, recording, speechCatalog, voice]);
 
   /** 换当前工作区：只影响之后新建的会话，历史会话一个都不动。 */
   const pickWorkspace = useCallback((id: string) => {
@@ -1033,17 +1153,12 @@ function AppBody() {
                   if (target) setActive(target);
                 }}
                 onCreate={handleCreate}
-                onHoldOrb={() => {
-                  if (voiceReady) return;
-                  Alert.alert(
-                    '语音还没启用',
-                    '服务器上的官方语音输入包还没有开启，先在手机上用文字新建会话。',
-                  );
-                }}
-                onHoldCard={() => {
-                  if (voiceReady) return;
-                  Alert.alert('语音还没启用', '开启服务器语音输入后，才能按住卡片直接回复。');
-                }}
+                onHoldOrb={() => void beginVoice({ kind: 'new' })}
+                onHoldCard={(sessionId) => void beginVoice({ kind: 'session', sessionId })}
+                onRelease={() => void finishVoice()}
+                recording={recording}
+                transcribing={transcribing}
+                maxRecordSeconds={maxRecordSeconds(speechCatalog?.maxAudioBytes ?? 4194304)}
               />
             ) : (
             <>
