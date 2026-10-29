@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useTheme, useThemedStyles } from '../theme';
-import { WhaleOrbStage } from './WhaleOrbStage';
+import { useThemedStyles } from '../theme';
+import { PetStage } from './PetStage';
 import type { Palette } from '../../theme/tokens';
 import type { FocusEntry } from '../../protocol/focus';
 
@@ -53,7 +53,6 @@ export function FocusHome({
   transcribing,
 }: Props) {
   const styles = useThemedStyles(makeStyles);
-  const t = useTheme();
   return (
     <View style={styles.root}>
       <View style={styles.head}>
@@ -100,23 +99,15 @@ export function FocusHome({
       )}
 
       <View style={styles.orbStage}>
-        <Text style={styles.orbCaption} maxFontSizeMultiplier={1.2}>
-          默认归属工作区：{workspaceLabel}
-        </Text>
-        <WhaleOrbStage
-          theme={t.name === 'paper' ? 'PAPER' : 'EINK_SLATE'}
+        <PetStage
           voiceReady={voiceReady}
+          recording={recording}
           transcribing={transcribing}
-          onDoubleTap={onCreate}
           onVoiceStart={onHoldOrb}
-          onVoiceLaunch={() => onRelease()}
+          onVoiceLaunch={onRelease}
           onVoiceCancel={onCancelVoice}
+          onCreate={onCreate}
         />
-        {transcribing ? (
-          <Text style={styles.orbHint} maxFontSizeMultiplier={1.3}>
-            服务端识别中…
-          </Text>
-        ) : null}
       </View>
     </View>
   );
@@ -259,47 +250,6 @@ const makeStyles = (t: Palette) =>
     emptyBox: { paddingVertical: 26, gap: 6 },
     emptyTitle: { color: t.text.primary, fontSize: 15, fontWeight: '600' },
     emptyHint: { color: t.text.muted, fontSize: 12 },
-    orbStage: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-    orbHit: { width: 112, height: 112, alignItems: 'center', justifyContent: 'center' },
-    orbRing: {
-      position: 'absolute',
-      width: 112,
-      height: 112,
-      borderRadius: 56,
-      borderWidth: 1,
-      borderColor: t.border.default,
-    },
-    orb: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: t.bg.elevatedAnswer,
-      borderWidth: 1.5,
-      borderColor: t.border.activeOrigin,
-    },
-    orbCaption: { color: t.text.muted, fontSize: 11, letterSpacing: 0.3 },
-    // 麦克风用三个 View 拼，避免 emoji 破坏单色调
-    micCapsule: {
-      width: 10,
-      height: 16,
-      borderRadius: 5,
-      backgroundColor: t.text.secondary,
-    },
-    micCradle: {
-      width: 18,
-      height: 8,
-      borderWidth: 1.4,
-      borderTopWidth: 0,
-      borderColor: t.text.secondary,
-      borderBottomLeftRadius: 9,
-      borderBottomRightRadius: 9,
-      marginTop: -1,
-    },
-    micStem: { width: 1.4, height: 3, backgroundColor: t.text.secondary },
-    micOn: { backgroundColor: t.action.primaryText },
-    micCradleOn: { borderColor: t.action.primaryText },
-    orbLive: { backgroundColor: t.action.primaryBg, borderColor: t.action.primaryBg },
-    orbHint: { color: t.text.muted, fontSize: 12 },
+    // 舞台自己撑开：上面是卡片网格（flexShrink 0），这里吃掉剩下所有空间。
+    orbStage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   });
