@@ -2170,6 +2170,8 @@ export function SessionScreen({
               onChangeText={setDraft}
               placeholder="发消息…"
               placeholderTextColor={t.text.muted}
+              // 空白会话（双击鲸鱼新建出来的）直接把键盘叫起来，省一次点击
+              autoFocus={Boolean(session.blank)}
               multiline
             />
             <Pressable
