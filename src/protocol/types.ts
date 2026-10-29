@@ -375,6 +375,8 @@ export type ServerFrame =
   | SessionsFrame
   | WorkspacesFrame
   | SearchFrame
+  | { kind: 'schedule-catalog'; items?: unknown[] }
+  | { kind: 'schedule-changed' }
   | DirectoriesFrame
   | SessionCreatedFrame
   | EventFrame
@@ -406,6 +408,8 @@ export type ClientFrame =
   | { type: 'workspaces' }
   /** query 网关会自己 trim；空白会被回 bad-request，别发空串 */
   | { type: 'search'; query: string }
+  /** 定时任务目录；协议要求走 control 连接 */
+  | { type: 'schedule-catalog' }
   /** 问一下服务器到底有没有启用官方语音输入；available:false 就别展示语音入口 */
   | { type: 'speech-catalog'; requestId?: string }
   /** 订阅语音状态：speech-state 会持续推完整目录快照 */
