@@ -42,7 +42,8 @@
         }
       ],
       "expo-sharing",
-      "expo-audio"
+      "expo-audio",
+      "expo-image"
     ]
   }
 }
