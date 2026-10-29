@@ -22,7 +22,7 @@
 
 结论：**「按项目分组 + 组内按最近交互排序」这个判断是对的**。
 
-### 1.2 我们手机上拿得到什么
+### 1.2 我们手机上拿得到什么（更正：协议有，我们没接）
 
 `dsh-mobile-v1` 的 `sessions` 帧只有这些字段：
 
@@ -37,8 +37,10 @@ projections.asOfSeq, projections.values.title
 | --- | --- |
 | 按项目分组 | 可行：用 `cwd` 派生项目（basename 作组名） |
 | 组内按最近排序 | 可行：`updatedAt` 已经有了 |
+| 项目分组（权威） | **可行：网关有 `workspaces` 请求**，返回 `items[]`（`workspaceId/path/title/sessionIds/createdAt/updatedAt`） |
+| 置顶 / 归档 | **可行**：`workspaces` 快照里同时带 `pinnedSessionIds` 与 `archivedSessionIds` |
 | 待审批徽标 | 可行：全局待办已经从 `approval-requested` 帧收集 |
-| 置顶 / 折叠状态 | 只能本地存（按 gatewayId），不同步 |
+| 折叠状态 | 仍只能本地存（按 gatewayId）——它是浏览器 UI 状态，不在协议里 |
 | 归档 | 协议不支持，先不做 |
 
 ## 2. 设计目标
@@ -132,7 +134,13 @@ projections.asOfSeq, projections.values.title
 | `src/ui/home/ProjectGroup.tsx`（新） | 组头 + 组内行，含 `LayoutAnimation` |
 | `App.tsx` | 列表段替换成 `<HomeBoard/>`；保留网关头、搜索、新建 |
 
-不改协议：**没有 workspace 帧，就按 `cwd` 派生**。等网关以后透出 `workspaceId/pinned/archived` 再切过去，`deriveProjects` 的入参留一个可选的 `workspaceId`。
+要补的第一件事是**发 `workspaces` 请求**（`dsh-plugin-mobile-gateway@0.11.1` 的 `index.mjs:1508` 已实现，legacy 通道的白名单里也有）：
+
+    客户端发: { type: 'workspaces' }
+    服务端回: { kind: 'workspaces', items: WorkspaceView[], pinnedSessionIds: string[], archivedSessionIds: string[] }
+
+拿到之后分组用 `sessionIds` 成员关系（权威），`cwd` 只作为兜底（没有 workspaces 帧时旧版网关仍可用）。
+`deriveProjects(sessions, workspaces)` 的第二个参数可空，保证向后兼容。
 
 ## 9. 需要和 Gemini 定的 5 个问题
 
