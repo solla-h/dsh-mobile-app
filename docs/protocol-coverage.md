@@ -43,6 +43,10 @@
 - `sessions.items[].updatedAt` 实测是**毫秒**（`1793240232363`），PROTOCOL.md 的示例写的是秒
   （`1786937352`）；`workspaces.items[].createdAt/updatedAt` 反而是 ISO-8601 字符串。
 
+> 注意这两条的**接入深度**：目前只有类型定义 + 纯函数 + 单测，`App.tsx` 里还没有任何
+> `client.send({type:'workspaces'})` / `{type:'search'}` 的发送点，也没有对应的 `case` 分支。
+> 也就是说表里的「已接」指协议层已验通，线上界面还没消费。
+
 两个使用上的坑：
 
 - `workspaces` 不是廉价的列表查询：网关每次都会开一条 `workspace/follow` 流、取开场 baseline

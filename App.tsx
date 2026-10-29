@@ -24,7 +24,12 @@ import {
   pendingItems,
   type PendingMap,
 } from './src/protocol/pending';
-import type { HelloFrame, ServerFrame, SessionItem } from './src/protocol/types';
+import type { HelloFrame, ServerFrame, SessionItem, WorkspacesFrame } from './src/protocol/types';
+import { applyOutlineFrame, type OutlineMap } from './src/protocol/outline-cache';
+import { selectFocusSessions } from './src/protocol/focus';
+import { BottomTabBar } from './src/ui/home/BottomTabBar';
+import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
+import { buildHomeRows } from './src/ui/home/rows';
 import {
   activateGateway,
   clearGateway,
@@ -108,6 +113,19 @@ function AppBody() {
   const [scanning, setScanning] = useState(false);
   const [manual, setManual] = useState(false);
   const [pending, setPending] = useState<PendingMap>({});
+  /** 每个会话最近几轮的大纲；首页卡片拿它显示「最后一句回复」，不用逐会话拉历史。 */
+  const [outlines, setOutlines] = useState<OutlineMap>({});
+  /** 服务器是否启用了官方语音输入（speech-catalog 的 available） */
+  const [voiceReady, setVoiceReady] = useState(false);
+  /** 工作区快照：分组、置顶、归档都在这条帧里。null 表示还没拿到。 */
+  const [workspaceFrame, setWorkspaceFrame] = useState<WorkspacesFrame | null>(null);
+  /** 首页当前 Tab：聚焦 / 全部会话。只在这两页之间切，会话页不挂 Tab。 */
+  const [tab, setTab] = useState<'focus' | 'all'>('focus');
+  /** 全部会话页里折叠起来的工作区分组 */
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  /** 当前工作区：只影响「之后新建的会话」，不移动任何历史会话。 */
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
+  const [workspaceSheet, setWorkspaceSheet] = useState(false);
   /** 正在重命名的会话；非 null 时弹输入框。 */
   const [renaming, setRenaming] = useState<SessionItem | null>(null);
   const [menuSession, setMenuSession] = useState<SessionItem | null>(null);
@@ -126,8 +144,45 @@ function AppBody() {
   const savedRef = useRef<SavedGateway | null>(null);
   /** 防止重复扫码/重复点击把同一个配对码连两次。 */
   const pairingRef = useRef(false);
+  /** 用户是否亲手选过工作区；选过之后就不再自动切到 mobile。 */
+  const workspaceTouchedRef = useRef(false);
 
   const connected = state === 'ready' && hello?.authenticated === true;
+
+  /** 聚焦网格的输入：只看待办 / 正在跑，最多 4 条，摘要来自大纲缓存。 */
+  const focusItems = useMemo<FocusItem[]>(() => {
+    const byId = new Map(sessions.map((item) => [item.sessionId, item]));
+    return selectFocusSessions(sessions, {
+      pending,
+      archivedIds: archived,
+      outlines,
+    }).map((entry) => ({ ...entry, cwd: byId.get(entry.sessionId)?.cwd ?? '' }));
+  }, [archived, outlines, pending, sessions]);
+
+  /** 搜索只过滤会话本身；分组在 buildHomeRows 里做，归档默认不进树。 */
+  const searchedSessions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return sessions;
+    return sessions.filter((item) => {
+      const title = item.projections?.values.title ?? '';
+      return title.toLowerCase().includes(query) || (item.cwd ?? '').toLowerCase().includes(query);
+    });
+  }, [search, sessions]);
+
+  const rows = useMemo(
+    () =>
+      buildHomeRows(searchedSessions, workspaceFrame, {
+        collapsed: collapsedGroups,
+        showArchived,
+        archivedIds: archived,
+      }),
+    [archived, collapsedGroups, searchedSessions, showArchived, workspaceFrame],
+  );
+
+  const pendingCount = useMemo(
+    () => Object.values(pending).reduce((sum, items) => sum + items.length, 0),
+    [pending],
+  );
 
   const visibleSessions = useMemo(() => {
     const hidden = new Set(archived);
@@ -194,7 +249,13 @@ function AppBody() {
         case 'hello': {
           const helloFrame = frame as HelloFrame;
           setHello(helloFrame);
-          if (helloFrame.authenticated) client.send({ type: 'sessions' });
+          if (helloFrame.authenticated) {
+            client.send({ type: 'sessions' });
+            // 分组/置顶/归档一次拿全；这条不是廉价查询，只在这几个时机重发。
+            client.send({ type: 'workspaces' });
+            // 语音是可选能力：先问一次，服务器没启用就别在界面上画饼。
+            client.send({ type: 'speech-catalog', requestId: randomUUID() });
+          }
           // 网关自报的名字比 URL 好认，顺手补进本地记录里。
           const current = savedRef.current;
           if (helloFrame.gatewayName && current && current.gatewayName !== helloFrame.gatewayName) {
@@ -273,6 +334,60 @@ function AppBody() {
         }
         case 'session-archives': {
           setArchived((frame as { archivedSessionIds?: string[] }).archivedSessionIds ?? []);
+          break;
+        }
+        case 'workspaces': {
+          const snapshot = frame as unknown as WorkspacesFrame;
+          if (!Array.isArray(snapshot.items)) break;
+          setWorkspaceFrame(snapshot);
+          // 选过的工作区被删了就退回「默认目录」，别让新建一直失败。
+          setCurrentWorkspaceId((current) => {
+            if (current) {
+              return snapshot.items.some((item) => item.workspaceId === current) ? current : null;
+            }
+            // 用户还没挑过：有 mobile 就默认用它，这是设计上约定的「手机默认工作区」。
+            if (workspaceTouchedRef.current) return current;
+            const mobile = snapshot.items.find((item) => item.title.trim().toLowerCase() === 'mobile');
+            return mobile ? mobile.workspaceId : current;
+          });
+          const nextArchived = Array.isArray(snapshot.archivedSessionIds)
+            ? snapshot.archivedSessionIds
+            : [];
+          // 归档集合是整体替换语义；内容没变就别换引用，否则整列表白重绘一次。
+          setArchived((current) =>
+            current.length === nextArchived.length &&
+            current.every((id, index) => id === nextArchived[index])
+              ? current
+              : nextArchived,
+          );
+          break;
+        }
+        case 'projection-baseline':
+        case 'turn-outline-updated': {
+          setOutlines((current) => applyOutlineFrame(current, frame) ?? current);
+          break;
+        }
+        case 'speech-catalog': {
+          const catalog = frame as unknown as { available?: boolean };
+          setVoiceReady(catalog.available === true);
+          break;
+        }
+        case 'session-status': {
+          const status = frame as unknown as { sessionId?: string; running?: boolean };
+          if (!status.sessionId) break;
+          const running = status.running === true;
+          setSessions((current) =>
+            current.map((item) =>
+              item.sessionId === status.sessionId && item.running !== running
+                ? { ...item, running }
+                : item,
+            ),
+          );
+          setActive((current) =>
+            current && current.sessionId === status.sessionId && current.running !== running
+              ? { ...current, running }
+              : current,
+          );
           break;
         }
         case 'fork': {
@@ -359,6 +474,13 @@ function AppBody() {
       try {
         const deviceId = await getDeviceId();
         deviceIdRef.current = deviceId;
+        // 工作区偏好按网关各存一份，切网关不会串。
+        workspaceTouchedRef.current = false;
+        const storedWorkspace = await readJson<{ workspaceId?: string | null }>(
+          'workspace-' + gateway.id,
+        );
+        setCurrentWorkspaceId(storedWorkspace?.workspaceId ?? null);
+        if (storedWorkspace?.workspaceId) workspaceTouchedRef.current = true;
         client.connect({
           url: gateway.url,
           token: gateway.token,
@@ -447,8 +569,41 @@ function AppBody() {
     if (!connected) return;
     setCreating(true);
     setError(null);
-    client.send({ type: 'session-create', requestId: randomUUID() });
-  }, [client, connected]);
+    // 选中工作区就开在里面；没选就让宿主用默认目录，不去猜。
+    client.send({
+      type: 'session-create',
+      requestId: randomUUID(),
+      ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
+    });
+  }, [client, connected, currentWorkspaceId]);
+
+  /** 换当前工作区：只影响之后新建的会话，历史会话一个都不动。 */
+  const pickWorkspace = useCallback((id: string) => {
+    setWorkspaceSheet(false);
+    const next = id === 'default' ? null : id;
+    workspaceTouchedRef.current = true;
+    setCurrentWorkspaceId(next);
+    const gateway = savedRef.current;
+    if (gateway) void writeJson('workspace-' + gateway.id, { workspaceId: next });
+  }, []);
+
+  const workspaceActions = useMemo<SheetAction[]>(() => {
+    const items = workspaceFrame?.items ?? [];
+    return [
+      ...items.map((item) => ({
+        id: item.workspaceId,
+        label: item.title,
+        hint: item.path,
+      })),
+      { id: 'default', label: '默认目录', hint: '用网关自己的默认工作目录' },
+    ];
+  }, [workspaceFrame]);
+
+  const workspaceLabel = useMemo(() => {
+    if (!currentWorkspaceId) return '默认目录';
+    const found = workspaceFrame?.items.find((item) => item.workspaceId === currentWorkspaceId);
+    return found?.title ?? '默认目录';
+  }, [currentWorkspaceId, workspaceFrame]);
 
   /** 拉一层目录；不带 path 就是宿主 home。 */
   const openDirectory = useCallback(
@@ -811,6 +966,33 @@ function AppBody() {
                 </Pressable>
               );
             })()}
+            {tab === 'focus' ? (
+              <FocusHome
+                items={focusItems}
+                connected={connected}
+                pendingTotal={pendingCount}
+                voiceReady={voiceReady}
+                workspaceLabel={workspaceLabel}
+                onPickWorkspace={() => setWorkspaceSheet(true)}
+                onOpen={(sessionId) => {
+                  const target = sessions.find((item) => item.sessionId === sessionId);
+                  if (target) setActive(target);
+                }}
+                onCreate={handleCreate}
+                onHoldOrb={() => {
+                  if (voiceReady) return;
+                  Alert.alert(
+                    '语音还没启用',
+                    '服务器上的官方语音输入包还没有开启，先在手机上用文字新建会话。',
+                  );
+                }}
+                onHoldCard={() => {
+                  if (voiceReady) return;
+                  Alert.alert('语音还没启用', '开启服务器语音输入后，才能按住卡片直接回复。');
+                }}
+              />
+            ) : (
+            <>
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>设备</Text>
               <Text style={styles.metaValue}>{hello?.device?.name ?? '未知'}</Text>
@@ -851,8 +1033,8 @@ function AppBody() {
               </Pressable>
             </View>
             <FlatList
-              data={visibleSessions}
-              keyExtractor={(item) => item.sessionId}
+              data={rows}
+              keyExtractor={(row) => (row.kind === 'group' ? 'g:' + row.id : row.item.sessionId)}
               // 草稿/待发标记不在 item 里，得靠 extraData 才会重绘。
               extraData={`${outboxTick}:${draftIds.join(',')}`}
               contentContainerStyle={styles.listContent}
@@ -876,11 +1058,31 @@ function AppBody() {
                   </Pressable>
                 ) : undefined
               }
-              renderItem={({ item }) => {
+              renderItem={({ item: row }) => {
+                if (row.kind === 'group') {
+                  return (
+                    <Pressable
+                      style={styles.groupHead}
+                      onPress={() =>
+                        setCollapsedGroups((current) => ({
+                          ...current,
+                          [row.id]: !current[row.id],
+                        }))
+                      }
+                    >
+                      <Text style={styles.groupCaret}>{row.collapsed ? '▸' : '▾'}</Text>
+                      <Text style={styles.groupTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                        {row.title}
+                      </Text>
+                      <Text style={styles.groupCount}>{row.count}</Text>
+                    </Pressable>
+                  );
+                }
+                const item = row.item;
                 const waiting = pendingItems(pending, item.sessionId);
                 return (
                   <Pressable
-                    style={styles.card}
+                    style={[styles.card, row.indent && styles.cardIndent]}
                     onPress={() => setActive(item)}
                     onLongPress={() => openSessionMenu(item)}
                     delayLongPress={320}
@@ -927,6 +1129,16 @@ function AppBody() {
                 <Text style={styles.footerActionText}>断开并清除</Text>
               </Pressable>
             </View>
+            </>
+            )}
+            <BottomTabBar
+              tabs={[
+                { key: 'focus', label: '聚焦', badge: pendingCount },
+                { key: 'all', label: '全部会话' },
+              ]}
+              active={tab}
+              onChange={(key) => setTab(key === 'all' ? 'all' : 'focus')}
+            />
           </View>
         ) : (
           <View style={styles.pairCard}>
@@ -978,6 +1190,15 @@ function AppBody() {
         actions={sessionActions}
         onPick={runSessionAction}
         onClose={() => setMenuSession(null)}
+      />
+
+      <ActionSheet
+        visible={workspaceSheet}
+        title="当前工作区"
+        subtitle="只影响之后新建的会话，已有的会话不会移动"
+        actions={workspaceActions}
+        onPick={pickWorkspace}
+        onClose={() => setWorkspaceSheet(false)}
       />
 
       <ActionSheet
@@ -1257,14 +1478,29 @@ const makeStyles = (t: Palette) =>
     paddingBottom: 8,
   },
   listContent: { paddingHorizontal: 20, paddingBottom: 12 },
+  // 无框行：不要背景、圆角和阴影，只留一条底部分割线。
   card: {
-    backgroundColor: t.bg.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border.default,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: t.border.subtle,
   },
+  // 缩进 + 左侧导轨线，层级靠这一条竖线表达
+  cardIndent: {
+    marginLeft: 14,
+    paddingLeft: 12,
+    borderLeftWidth: 1,
+    borderLeftColor: t.border.default,
+  },
+  groupHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 38,
+    gap: 8,
+    marginTop: 4,
+  },
+  groupCaret: { color: t.text.muted, fontSize: 11, width: 12 },
+  groupTitle: { flex: 1, color: t.text.primary, fontSize: 14, fontWeight: '700' },
+  groupCount: { color: t.text.muted, fontSize: 11 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { color: t.text.primary, fontSize: 15, fontWeight: '600', flex: 1 },
   runningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: t.semantic.diffAddText, marginLeft: 8 },

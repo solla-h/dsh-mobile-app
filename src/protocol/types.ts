@@ -406,6 +406,8 @@ export type ClientFrame =
   | { type: 'workspaces' }
   /** query 网关会自己 trim；空白会被回 bad-request，别发空串 */
   | { type: 'search'; query: string }
+  /** 问一下服务器到底有没有启用官方语音输入；available:false 就别展示语音入口 */
+  | { type: 'speech-catalog'; requestId?: string }
   /** 不带 path 时网关回宿主 home。 */
   | { type: 'directories'; path?: string }
   | { type: 'session-create'; requestId: string; workspaceId?: string; cwd?: string }
