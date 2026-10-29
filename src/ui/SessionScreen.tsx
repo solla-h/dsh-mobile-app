@@ -358,6 +358,8 @@ export function SessionScreen({
   /** 首屏历史只自动贴底一次，之后交给 followRef。 */
   const pinnedOnceRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
+  /** 弧形转盘展开时，底下的消息列表必须停止滚动，否则滑的是轮次不是转盘。 */
+  const [dialOpen, setDialOpen] = useState(false);
 
   // 流式每来一段就补一次贴底：只靠 onContentSizeChange 时，
   // 高度没变（同一行在长高）不会回调，回答就会被顶到屏幕外。
@@ -1708,6 +1710,7 @@ export function SessionScreen({
         activeId={session.sessionId}
         blockedIds={blockedSessionIds}
         onSelect={onOpenSession}
+        onOpenChange={setDialOpen}
       />
       <View style={styles.header}>
         <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
@@ -1769,6 +1772,7 @@ export function SessionScreen({
         ) : (
           <FlatList<StreamRow>
             ref={listRef}
+            scrollEnabled={!dialOpen}
             data={rows}
             keyExtractor={(item) => item.id}
             // 下载进度只改 fileStates，不刷新 data；不给 extraData 卡片状态根本不会重绘。

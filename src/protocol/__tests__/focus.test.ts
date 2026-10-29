@@ -149,11 +149,34 @@ describe('selectFocusSessions', () => {
     ]);
   });
 
-  it('没人需要关注时返回空数组', () => {
+  it('没有待办也没有在跑时，仍然常驻最近的会话（只是排在后面）', () => {
     const sessions = [
-      session({ sessionId: 'idle' }),
+      session({ sessionId: 'old', updatedAt: 1_000 }),
+      session({ sessionId: 'new', updatedAt: 9_000 }),
       session({ sessionId: 'blank', blank: true }),
     ];
-    expect(selectFocusSessions(sessions, { pending: {} })).toEqual([]);
+    expect(ids(selectFocusSessions(sessions, { pending: {} }))).toEqual(['new', 'old']);
+  });
+
+  it('排序优先级：待审批 > 进行中 > 刚聊过', () => {
+    const sessions = [
+      session({ sessionId: 'idle-new', updatedAt: 9_000 }),
+      session({ sessionId: 'running-old', running: true, updatedAt: 1_000 }),
+      session({ sessionId: 'wait-oldest', updatedAt: 100 }),
+    ];
+    const entries = selectFocusSessions(sessions, { pending: pendingOf({ 'wait-oldest': 1 }) });
+    expect(ids(entries)).toEqual(['wait-oldest', 'running-old', 'idle-new']);
+  });
+
+  it('常驻四张卡：六个会话也只取最靠前的四个', () => {
+    const sessions = Array.from({ length: 6 }, (_, index) =>
+      session({ sessionId: 's' + index, updatedAt: index * 1_000 }),
+    );
+    expect(ids(selectFocusSessions(sessions, { pending: {} }))).toEqual([
+      's5',
+      's4',
+      's3',
+      's2',
+    ]);
   });
 });

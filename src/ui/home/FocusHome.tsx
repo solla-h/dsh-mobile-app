@@ -57,7 +57,7 @@ export function FocusHome({
     <View style={styles.root}>
       <View style={styles.head}>
         <Text style={styles.headTitle} maxFontSizeMultiplier={1.2} numberOfLines={1}>
-          ACTIVE FOCUS · 待审批与进行中{items.length > 0 ? `（${items.length}）` : ''}
+          ACTIVE FOCUS · 最近会话{items.length > 0 ? `（${items.length}）` : ''}
         </Text>
         <Text style={styles.headHint} maxFontSizeMultiplier={1.2} numberOfLines={1}>
           点按进入 · 按住直接语音回
@@ -76,10 +76,10 @@ export function FocusHome({
       {items.length === 0 ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle} maxFontSizeMultiplier={1.3}>
-            {connected ? '当前所有 Agent 均已就绪' : '连接断开'}
+            {connected ? '还没有会话' : '连接断开'}
           </Text>
           <Text style={styles.emptyHint} maxFontSizeMultiplier={1.3}>
-            {connected ? '按住下方语音球，直接开一个新任务' : '顶部提示可以点一下重连'}
+            {connected ? '按住下方语音球，直接开第一个任务' : '顶部提示可以点一下重连'}
           </Text>
         </View>
       ) : (
@@ -113,7 +113,7 @@ export function FocusHome({
           {recording
             ? `正在听… 松手发送（最长 ${maxRecordSeconds}s）`
             : transcribing
-              ? '正在识别…'
+              ? '服务端识别中…'
               : voiceReady
                 ? `按住说话 · 在 ${workspaceLabel} 新建会话`
                 : '轻点新建会话 · 语音未启用'}
@@ -156,15 +156,22 @@ function FocusCard({
         <Text style={styles.cardDir} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {dir}
         </Text>
-        <Text style={[styles.cardTag, waiting ? styles.tagWaiting : styles.tagRunning]} maxFontSizeMultiplier={1.2}>
-          {waiting ? '待审批' : '进行中'}
+        <Text
+          style={[
+            styles.cardTag,
+            waiting ? styles.tagWaiting : item.running ? styles.tagRunning : styles.tagIdle,
+          ]}
+          maxFontSizeMultiplier={1.2}
+        >
+          {waiting ? '待审批' : item.running ? '进行中' : '已就绪'}
         </Text>
       </View>
       <Text style={styles.cardTitle} numberOfLines={2} maxFontSizeMultiplier={1.3}>
         {item.title || '未命名会话'}
       </Text>
       <Text style={styles.cardSummary} numberOfLines={2} maxFontSizeMultiplier={1.3}>
-        {item.summary || (waiting ? 'agent 停在这里，等你确认' : '正在回复…')}
+        {item.summary ||
+          (waiting ? 'agent 停在这里，等你确认' : item.running ? '正在回复…' : '上一轮已结束')}
       </Text>
       <View style={styles.cardBottom}>
         <Text style={styles.cardTime} maxFontSizeMultiplier={1.2}>
@@ -172,7 +179,7 @@ function FocusCard({
         </Text>
         {voiceReady ? (
           <Text style={styles.cardHold} maxFontSizeMultiplier={1.2}>
-            🎤 按住直回
+            按住直回
           </Text>
         ) : null}
       </View>
@@ -291,6 +298,7 @@ const makeStyles = (t: Palette) =>
     cardTag: { fontSize: 10, fontWeight: '700' },
     tagWaiting: { color: t.semantic.gateAmberText },
     tagRunning: { color: t.text.secondary },
+    tagIdle: { color: t.text.muted },
     cardTitle: { color: t.text.primary, fontSize: 13, fontWeight: '700', lineHeight: 18 },
     cardSummary: { color: t.text.secondary, fontSize: 11, lineHeight: 15 },
     cardBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' },

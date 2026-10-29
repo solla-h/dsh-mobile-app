@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -18,6 +18,11 @@ import { MONO, useTheme } from '../theme';
 interface Props {
   sessions: SessionItem[];
   activeId?: string;
+  /**
+   * 展开/收起回调。会话页据此把底下的消息列表滚动静音——
+   * 转盘展开时手指还在滑，列表跟着滚会让人分不清到底在切会话还是翻页。
+   */
+  onOpenChange?: (open: boolean) => void;
   /** 正在等待审批或回答的会话 ID 列表，用来在弧形节点上亮起暖琥珀色呼吸灯 */
   blockedIds?: string[];
   onSelect: (sessionId: string) => void;
@@ -46,10 +51,14 @@ const STEP_RAD = (9.5 * Math.PI) / 180;
  * - 拇指上下滑动时每扫过一个会话触发一次机械棘轮震动 (tickFeedback)，松手即刻切换；
  * - 同样支持轻点呼出后直接点按任意会话胶囊切换。
  */
-export function ArcDial({ sessions, activeId, blockedIds = [], onSelect }: Props) {
+export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenChange }: Props) {
   const t = useTheme();
   const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [onOpenChange, open]);
   const list = useMemo(() => sessions.slice(0, MAX_ITEMS), [sessions]);
   const initialIndex = Math.max(
     0,
