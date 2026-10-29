@@ -1206,9 +1206,13 @@ function AppBody() {
                 onHoldOrb={() => void beginVoice({ kind: 'new' })}
                 onHoldCard={(sessionId) => void beginVoice({ kind: 'session', sessionId })}
                 onRelease={() => void finishVoice()}
+                onCancelVoice={() => {
+                  voice.cancel();
+                  voiceJobRef.current = null;
+                  setRecording(false);
+                }}
                 recording={recording}
                 transcribing={transcribing}
-                maxRecordSeconds={maxRecordSeconds(speechCatalog?.maxAudioBytes ?? 4194304)}
               />
             ) : tab === 'schedules' ? (
               <SchedulesView rows={mapSchedules(schedules)} catalogReady={schedules !== null} />

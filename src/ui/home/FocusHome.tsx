@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useThemedStyles } from '../theme';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTheme, useThemedStyles } from '../theme';
+import { WhaleOrbStage } from './WhaleOrbStage';
 import type { Palette } from '../../theme/tokens';
 import type { FocusEntry } from '../../protocol/focus';
 
@@ -30,10 +30,10 @@ interface Props {
   onHoldCard: (sessionId: string) => void;
   /** 松手：结束录音 */
   onRelease: () => void;
+  /** 上滑取消这次录音 */
+  onCancelVoice: () => void;
   recording: boolean;
   transcribing: boolean;
-  /** 服务端允许的单条录音上限（秒），用来显示倒计时/提示 */
-  maxRecordSeconds: number;
 }
 
 export function FocusHome({
@@ -48,11 +48,12 @@ export function FocusHome({
   onHoldOrb,
   onHoldCard,
   onRelease,
+  onCancelVoice,
   recording,
   transcribing,
-  maxRecordSeconds,
 }: Props) {
   const styles = useThemedStyles(makeStyles);
+  const t = useTheme();
   return (
     <View style={styles.root}>
       <View style={styles.head}>
@@ -102,22 +103,20 @@ export function FocusHome({
         <Text style={styles.orbCaption} maxFontSizeMultiplier={1.2}>
           默认归属工作区：{workspaceLabel}
         </Text>
-        <VoiceOrb
-          onTap={onCreate}
-          onHold={onHoldOrb}
-          onRelease={onRelease}
+        <WhaleOrbStage
+          theme={t.name === 'paper' ? 'PAPER' : 'EINK_SLATE'}
           voiceReady={voiceReady}
-          recording={recording}
+          transcribing={transcribing}
+          onDoubleTap={onCreate}
+          onVoiceStart={onHoldOrb}
+          onVoiceLaunch={() => onRelease()}
+          onVoiceCancel={onCancelVoice}
         />
-        <Text style={styles.orbHint} maxFontSizeMultiplier={1.3}>
-          {recording
-            ? `正在听… 松手发送（最长 ${maxRecordSeconds}s）`
-            : transcribing
-              ? '服务端识别中…'
-              : voiceReady
-                ? `按住说话 · 在 ${workspaceLabel} 新建会话`
-                : '轻点新建会话 · 语音未启用'}
-        </Text>
+        {transcribing ? (
+          <Text style={styles.orbHint} maxFontSizeMultiplier={1.3}>
+            服务端识别中…
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -170,7 +169,7 @@ function FocusCard({
         {item.title || '未命名会话'}
       </Text>
       <Text style={styles.cardSummary} numberOfLines={2} maxFontSizeMultiplier={1.3}>
-        {item.summary ||
+        {plainText(item.summary) ||
           (waiting ? 'agent 停在这里，等你确认' : item.running ? '正在回复…' : '上一轮已结束')}
       </Text>
       <View style={styles.cardBottom}>
@@ -187,60 +186,13 @@ function FocusCard({
   );
 }
 
-/**
- * 语音球。静息时外圈缓慢呼吸，按住时放大——只用 Animated 的 scale/opacity，
- * 走原生驱动，不碰布局，所以不会和列表或手势打架。
- */
-function VoiceOrb({
-  onTap,
-  onHold,
-  onRelease,
-  voiceReady,
-  recording,
-}: {
-  onTap: () => void;
-  onHold: () => void;
-  onRelease: () => void;
-  voiceReady: boolean;
-  recording: boolean;
-}) {
-  const styles = useThemedStyles(makeStyles);
-  // 用 state 持有 Animated.Value：渲染期读它是合法的（react-hooks/refs 禁止渲染期读 ref）。
-  const [breath] = useState(() => new Animated.Value(0));
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breath, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        Animated.timing(breath, { toValue: 0, duration: 1200, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [breath]);
-
-  const ringScale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-  const ringOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.28] });
-
-  return (
-    <Pressable
-      onPress={onTap}
-      onLongPress={onHold}
-      onPressOut={onRelease}
-      delayLongPress={600}
-      style={styles.orbHit}
-      accessibilityHint={voiceReady ? '按住说话新建会话，轻点用文字' : '轻点新建会话'}
-    >
-      <Animated.View
-        style={[styles.orbRing, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-      />
-      <View style={[styles.orb, recording && styles.orbLive]}>
-        <View style={[styles.micCapsule, recording && styles.micOn]} />
-        <View style={[styles.micCradle, recording && styles.micCradleOn]} />
-        <View style={[styles.micStem, recording && styles.micOn]} />
-      </View>
-    </Pressable>
-  );
+/** 大纲里的回复是 markdown 原文，卡片上只留文字：去掉标题井号、星号、行内代码。 */
+function plainText(text: string): string {
+  return text
+    .replace(/[*#>`]/g, '')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** 只取最后两层目录，和弧形转盘的副标题保持一致的省略方式。 */
