@@ -673,7 +673,9 @@ const makeStyles = (t: Palette) =>
     fontSize: 13,
     color: t.semantic.gateAmberText,
     backgroundColor: t.border.subtle,
-    borderRadius: 4,
+    // Android 上这个 radius 不生效：RN 用 BackgroundColorSpan 画 <Text> 的背景，
+    // 只能画矩形（试过调到 16 依然是直角）。iOS 生效，所以留着。
+    borderRadius: 2,
     paddingHorizontal: 3,
   },
   list: { marginVertical: 2 },
@@ -706,7 +708,9 @@ const makeStyles = (t: Palette) =>
     backgroundColor: t.bg.canvas,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.border.subtle,
-    borderRadius: 10,
+    // 同心圆角：这个块嵌在 AnswerCard(16) 里，正文内距 11 → 16 - 11 = 5。
+    // 之前是 10，比容器只小一点，角落的缝看着比边上宽。
+    borderRadius: 5,
     marginVertical: 6,
     overflow: 'hidden',
   },

@@ -1,3 +1,6 @@
+/* eslint-disable react-hooks/refs -- 麦克风的 PanResponder 只能创建一次
+   （依赖一变就重建会把进行中的手势丢掉），它的回调在触摸时才执行；回调里读写 ref 是这套写法的前提，
+   渲染期真正读到的只有不可变的 panHandlers。与 PetStage 同一套理由。 */
 import * as Clipboard from 'expo-clipboard';
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
@@ -11,6 +14,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -221,6 +225,11 @@ const TIME_ZONE = (() => {
   }
 })();
 
+/** 按住多久才真正开麦：轻点不该误触发录音（和首页宠物同一个手感）。 */
+const VOICE_HOLD_MS = 200;
+/** 上滑多少 dp 算取消，同样对齐首页宠物。 */
+const VOICE_CANCEL_DY = -60;
+
 export function SessionScreen({
   client,
   session,
@@ -240,6 +249,13 @@ export function SessionScreen({
   const canPickPreset = capabilities.includes('session-agent-preset');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  /** 转写回来要和「此刻」的草稿合并，而 handleFrame 不订阅 draft，只能走 ref。 */
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  /** 松手即发：send 声明在后面，handleFrame 通过 ref 取最新版本。 */
+  const sendRef = useRef<(text: string) => void>(() => undefined);
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -286,8 +302,40 @@ export function SessionScreen({
     options: CommandOption[];
     loading: boolean;
   } | null>(null);
-  /** 最近一次选择的结果（模型/权限），显示在输入框上方。 */
-  const [statusLabel, setStatusLabel] = useState<string | null>(null);
+  /** 最近一次选择的结果（模型/权限）、录音提示等，显示在输入框上方。
+      是**短暂**提示：淡入 → 停留 → 淡出 → 卸载。以前只在切会话时清，
+      结果「已取消录音」这种一次性提示会一直挂在输入框上面。 */
+  const [statusLabel, setStatusLabelRaw] = useState<string | null>(null);
+  const [statusFade] = useState(() => new Animated.Value(0));
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setStatusLabel = useCallback(
+    (next: string | null, holdMs = 2800) => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+      setStatusLabelRaw(next);
+      if (!next) {
+        statusFade.setValue(0);
+        return;
+      }
+      statusFade.setValue(0);
+      Animated.timing(statusFade, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+      statusTimerRef.current = setTimeout(() => {
+        Animated.timing(statusFade, { toValue: 0, duration: 280, useNativeDriver: true }).start(
+          // 淡出跑完再卸载，否则直接从树上摘掉就看不到渐出了。
+          ({ finished }) => {
+            if (finished) setStatusLabelRaw(null);
+          },
+        );
+      }, holdMs);
+    },
+    [statusFade],
+  );
+  useEffect(
+    () => () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    },
+    [],
+  );
   // ---- 语音输入：点麦克风开始/结束，转写结果回填输入框 ----
   const voice = useVoiceCapture();
   const [recording, setRecording] = useState(false);
@@ -295,6 +343,12 @@ export function SessionScreen({
   const [recordSec, setRecordSec] = useState(0);
   const voiceRequestRef = useRef<string | null>(null);
   const [voiceGlow] = useState(() => new Animated.Value(0));
+  /** 按住还没到开麦时间的定时器。 */
+  const voiceHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 本次按住是否已经滑过取消线。 */
+  const voiceCancelRef = useRef(false);
+  /** 滑过取消线了（用来把提示改成「松开取消」）。 */
+  const [voiceWillCancel, setVoiceWillCancel] = useState(false);
   /** 对话流 / 轨迹视图切换 */
   const [viewMode, setViewMode] = useState<'chat' | 'trajectory'>('chat');
   const [stats, setStats] = useState<SessionStatsFrame | null>(null);
@@ -493,8 +547,10 @@ export function SessionScreen({
           setStatusLabel('没听清，再说一次试试');
           return;
         }
-        setDraft((prev) => (prev.trim() ? prev + ' ' + text : text));
-        setStatusLabel('语音已转写');
+        // 松手就是一次发送：转写结果直接走发送，不再停在输入框等用户再点一下。
+        const merged = draftRef.current.trim() ? draftRef.current + ' ' + text : text;
+        setDraft(merged);
+        sendRef.current(merged);
         return;
       }
       if (kind === 'attachment') {
@@ -782,7 +838,7 @@ export function SessionScreen({
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [client, session.sessionId],
+    [client, session.sessionId, setStatusLabel],
   );
 
   useEffect(() => {
@@ -857,7 +913,7 @@ export function SessionScreen({
       if (uploaderRef.current === uploader) uploaderRef.current = null;
       client.send({ type: 'unsubscribe' });
     };
-  }, [client, handleFrame, session.sessionId]);
+  }, [client, handleFrame, session.sessionId, setStatusLabel]);
 
   // 断线重连后服务端不再记得我们的订阅，必须重新订阅并补一次历史，
   // 否则回到前台会一直看着断线前的旧内容。
@@ -1414,28 +1470,37 @@ export function SessionScreen({
     return () => loop.stop();
   }, [recording, voiceGlow]);
 
-  // 离开页面时放弃未结束的录音
-  useEffect(() => () => voice.cancel(), [voice]);
+  // 离开页面时放弃未结束的录音，并清掉还没到点的开麦定时器
+  useEffect(
+    () => () => {
+      if (voiceHoldRef.current) clearTimeout(voiceHoldRef.current);
+      voice.cancel();
+    },
+    [voice],
+  );
 
-  const toggleVoice = useCallback(async () => {
-    if (transcribing) return;
-    if (!recording) {
-      try {
-        await voice.start();
-        setRecordSec(0);
-        setRecording(true);
-        setStatusLabel(null);
-      } catch (failure) {
-        setStatusLabel(failure instanceof Error ? failure.message : '没法开始录音');
-      }
-      return;
+  /** 按住开麦。轻点不开麦（见 VOICE_HOLD_MS），所以不叫 toggle 了。 */
+  const beginVoice = useCallback(async () => {
+    if (recording || transcribing) return;
+    try {
+      await voice.start();
+      setRecordSec(0);
+      setRecording(true);
+      setStatusLabel(null);
+    } catch (failure) {
+      setStatusLabel(failure instanceof Error ? failure.message : '没法开始录音');
     }
+  }, [recording, transcribing, voice, setStatusLabel]);
+
+  /** 松手：结束录音并送转写。 */
+  const endVoice = useCallback(async () => {
+    if (!recording) return;
     setRecording(false);
     try {
       const clip = await voice.stop();
       if (!clip) return;
       if (clip.duration < 0.4) {
-        setStatusLabel('太短啦，点麦克风多说一会儿再点一次');
+        setStatusLabel('太短啦，按住多说一会儿');
         return;
       }
       const requestId = randomUUID();
@@ -1445,10 +1510,11 @@ export function SessionScreen({
     } catch (failure) {
       setStatusLabel(failure instanceof Error ? failure.message : '读不到这段录音');
     }
-  }, [client, recording, transcribing, voice]);
+  }, [client, recording, voice, setStatusLabel]);
 
   /** 取消：录音中丢弃整段录音；转写中撤回已发出的转写请求。 */
   const cancelVoice = useCallback(() => {
+    setVoiceWillCancel(false);
     if (recording) {
       voice.cancel();
       setRecording(false);
@@ -1466,14 +1532,66 @@ export function SessionScreen({
       setTranscribing(false);
       setStatusLabel('已取消转写');
     }
-  }, [client, recording, transcribing, voice]);
+  }, [client, recording, setStatusLabel, transcribing, voice]);
+
+  // PanResponder 只建一次，处理器从 ref 取最新的——直接在 create 里闭包会读到旧状态。
+  // 写 ref 放进 effect（无依赖 = 每次渲染后同步一次），渲染期写 ref 会被 lint 拦。
+  const voiceApiRef = useRef({ begin: beginVoice, end: endVoice, cancel: cancelVoice });
+  useEffect(() => {
+    voiceApiRef.current = { begin: beginVoice, end: endVoice, cancel: cancelVoice };
+  });
+
+  // 和首页 PetStage 同一个形状：手势只建一次，处理器从 ref 取最新状态。
+  // 用 useRef 而不是 useMemo：依赖一变就重建 responders 会把进行中的手势丢掉。
+  const voicePanRef = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      // 手指一动别被外面的滚动/键盘收走。
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        voiceCancelRef.current = false;
+        setVoiceWillCancel(false);
+        if (voiceHoldRef.current) clearTimeout(voiceHoldRef.current);
+        voiceHoldRef.current = setTimeout(() => {
+          voiceHoldRef.current = null;
+          void voiceApiRef.current.begin();
+        }, VOICE_HOLD_MS);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const willCancel = gesture.dy < VOICE_CANCEL_DY;
+        if (willCancel === voiceCancelRef.current) return;
+        voiceCancelRef.current = willCancel;
+        setVoiceWillCancel(willCancel);
+      },
+      onPanResponderRelease: () => {
+        if (voiceHoldRef.current) {
+          // 没到开麦时间就松手了：当一次轻点，提示一下手势。
+          clearTimeout(voiceHoldRef.current);
+          voiceHoldRef.current = null;
+          setVoiceWillCancel(false);
+          setStatusLabel('按住说话，松手发送 · 上滑取消');
+          return;
+        }
+        if (voiceCancelRef.current) voiceApiRef.current.cancel();
+        else void voiceApiRef.current.end();
+      },
+      onPanResponderTerminate: () => {
+        if (voiceHoldRef.current) {
+          clearTimeout(voiceHoldRef.current);
+          voiceHoldRef.current = null;
+        }
+        voiceApiRef.current.cancel();
+      },
+    }),
+  );
 
   const canSend = !uploadingFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
 
-  const send = useCallback(() => {
+  const sendMessage = useCallback((raw: string) => {
     // 编辑排队消息：走 queue-update 的 edit，不要新发一条。
     if (editingQueue) {
-      const next = draft.trim();
+      const next = raw.trim();
       if (!next) return;
       const edited = client.send({
         type: 'queue-update',
@@ -1491,7 +1609,7 @@ export function SessionScreen({
       setDraft('');
       return;
     }
-    const text = [quote ? formatQuote(quote) : '', draft.trim()].filter(Boolean).join('\n\n');
+    const text = [quote ? formatQuote(quote) : '', raw.trim()].filter(Boolean).join('\n\n');
     const images = picked;
     const files = readyFiles;
     if (!text && images.length === 0 && files.length === 0) return;
@@ -1552,7 +1670,13 @@ export function SessionScreen({
       setQuote(null);
       setError(null);
     }
-  }, [client, draft, editingQueue, picked, quote, readyFiles, running, sendMode, session.sessionId]);
+  }, [client, editingQueue, picked, quote, readyFiles, running, sendMode, session.sessionId]);
+
+  /** 输入框那条路径：发草稿。语音那条走 sendMessage 直接发转写结果。 */
+  const send = useCallback(() => sendMessage(draft), [draft, sendMessage]);
+  useEffect(() => {
+    sendRef.current = sendMessage;
+  });
 
   /** 离线待发的消息：直接删掉，不再重试。 */
   const discardOffline = useCallback((id: string) => {
@@ -2312,7 +2436,11 @@ export function SessionScreen({
                   </Text>
                 </Pressable>
               ) : null}
-              {statusLabel ? <Text style={styles.statusChip}>{statusLabel}</Text> : null}
+              {statusLabel ? (
+                <Animated.Text style={[styles.statusChip, { opacity: statusFade }]}>
+                  {statusLabel}
+                </Animated.Text>
+              ) : null}
               {statsLine ? (
                 <Text style={styles.statusMeta} numberOfLines={1}>
                   {statsLine}
@@ -2403,13 +2531,26 @@ export function SessionScreen({
                 style={styles.input}
                 value={draft}
                 onChangeText={setDraft}
-                placeholder={recording ? '正在聆听 ' + formatSec(recordSec) : '发消息…'}
-                placeholderTextColor={recording ? t.semantic.diffAddText : t.text.muted}
+                placeholder={
+                  recording
+                    ? voiceWillCancel
+                      ? '松手取消'
+                      : '正在聆听 ' + formatSec(recordSec)
+                    : '发消息…'
+                }
+                placeholderTextColor={
+                  recording
+                    ? voiceWillCancel
+                      ? t.semantic.dangerText
+                      : t.semantic.diffAddText
+                    : t.text.muted
+                }
                 // 空白会话（双击鲸鱼新建出来的）直接把键盘叫起来，省一次点击
                 autoFocus={Boolean(session.blank)}
                 multiline
               />
-              {recording || transcribing ? (
+              {/* 录音期间不再给 ✕：上滑取消就是它。转写要等结果，才留一个撤回。 */}
+              {transcribing ? (
                 <Pressable
                   style={styles.voiceCancel}
                   onPress={() => {
@@ -2419,64 +2560,74 @@ export function SessionScreen({
                   accessibilityRole="button"
                   accessibilityLabel="取消"
                 >
-                  <Text style={styles.voiceCancelText}>×</Text>
+                  <View style={styles.cancelGlyph}>
+                    <View style={[styles.cancelBar, { backgroundColor: t.text.muted }]} />
+                    <View style={[styles.cancelBar, styles.cancelBarAlt, { backgroundColor: t.text.muted }]} />
+                  </View>
                 </Pressable>
               ) : null}
-              <Pressable
-                style={[styles.micInInput, recording ? styles.micInInputOn : null]}
-                onPress={() => {
-                  tapFeedback();
-                  void toggleVoice();
-                }}
-                disabled={transcribing}
+              {/* 按住说话、松手发送、上滑取消（与首页宠物同一套手势）。
+                  外层是按住区域：36×36 撑满胶囊高度，再往上下各借 8dp——
+                  **left 给 0**，绝不压到左边输入框的长按选择/粘贴。 */}
+              <View
+                {...voicePanRef.current.panHandlers}
+                style={styles.micTouch}
+                hitSlop={{ top: 8, bottom: 8, right: 6, left: 0 }}
                 accessibilityRole="button"
-                accessibilityLabel={recording ? '结束录音' : '开始语音输入'}
+                accessibilityLabel={recording ? '松开结束录音' : '按住说话'}
+                accessibilityHint="按住说话，松手发送，上滑取消"
               >
-                {recording ? (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[
-                      styles.micGlowInner,
-                      {
-                        opacity: voiceGlow,
-                        transform: [
-                          {
-                            scale: voiceGlow.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [1, 1.35],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                ) : null}
-                {transcribing ? (
-                  <ActivityIndicator size="small" color={t.text.muted} />
-                ) : (
-                  <View style={styles.micGlyph}>
-                    <View
+                {/* 圆底始终透明：录音状态只由呼吸光晕和文案表达，
+                    再叠一层实心色底会在光晕上压出一个色块。 */}
+                <View style={styles.micInInput}>
+                  {recording ? (
+                    <Animated.View
+                      pointerEvents="none"
                       style={[
-                        styles.micGlyphHead,
-                        { backgroundColor: recording ? '#FFFFFF' : t.text.muted },
+                        styles.micGlowInner,
+                        // 滑过取消线时整圈光变红——状态全由这一圈呼吸灯表达，
+                        // 圆底和图标本身始终不动。
+                        {
+                          backgroundColor: voiceWillCancel
+                            ? t.semantic.dangerText
+                            : t.semantic.diffAddText,
+                        },
+                        {
+                          // 不透明度封顶 0.55、缩放从 1.15 起：吸气到底时也不会
+                          // 变成一个盖住图标的实心圆，始终是「绕着图标的一圈晕」。
+                          opacity: voiceGlow.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.55],
+                          }),
+                          transform: [
+                            {
+                              scale: voiceGlow.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1.15, 1.6],
+                              }),
+                            },
+                          ],
+                        },
                       ]}
                     />
-                    <View
-                      style={[
-                        styles.micGlyphBase,
-                        { backgroundColor: recording ? '#FFFFFF' : t.text.muted },
-                      ]}
-                    />
-                  </View>
-                )}
-              </Pressable>
+                  ) : null}
+                  {transcribing ? (
+                    <ActivityIndicator size="small" color={t.text.muted} />
+                  ) : (
+                    <View style={styles.micGlyph}>
+                      <View style={[styles.micGlyphHead, { backgroundColor: t.text.muted }]} />
+                      <View style={[styles.micGlyphBase, { backgroundColor: t.text.muted }]} />
+                    </View>
+                  )}
+                </View>
+              </View>
             </View>
             <Pressable
               style={[styles.send, !canSend && styles.sendDisabled]}
               disabled={!canSend}
               onPress={send}
             >
-              <Text style={styles.sendText}>发送</Text>
+              <Text style={styles.sendText}>↑</Text>
             </Pressable>
           </View>
         </View>
@@ -3016,27 +3167,46 @@ function makeStyles(t: Palette) {
     color: t.text.primary,
     fontSize: 15,
   },
+  /** 按住区域：比圆形视觉大一圈，撑满胶囊高度，按住更稳。 */
+  micTouch: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   micInInput: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    marginBottom: 3,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  /** 录音/转写期间的取消按钮：浅灰小圆 ×，轻量不抢主操作。 */
+  /** 录音/转写期间的取消：和麦克风按钮同尺寸，浅灰小圆，轻量不抢主操作。
+      尺寸和下边距都跟 micInInput 对齐，两个按钮才像一对。 */
   voiceCancel: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    marginBottom: 5,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginBottom: 3,
     marginRight: 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: t.bg.subtle,
   },
-  voiceCancelText: { color: t.text.muted, fontSize: 16, lineHeight: 18 },
-  micInInputOn: { backgroundColor: t.semantic.diffAddText },
+  /** ✕ 也用手绘的两根圆头短棒，不用字体里的 ×：那个字重比麦克风细、
+      光学居中还跟着字体度量走，跟旁边手绘的字形放一起就是「不搭」。
+      棒厚 1.5 与 micGlyphBase 同款，圆角取其一半 = 圆头。 */
+  cancelGlyph: { width: 12, height: 12 },
+  cancelBar: {
+    position: 'absolute',
+    top: 5.25,
+    left: 0,
+    width: 12,
+    height: 1.5,
+    borderRadius: 0.75,
+    transform: [{ rotate: '45deg' }],
+  },
+  cancelBarAlt: { transform: [{ rotate: '-45deg' }] },
   /** 录音光晕：与按钮同尺寸的圆，缓慢放大淡出。 */
   micGlowInner: {
     position: 'absolute',
@@ -3048,15 +3218,18 @@ function makeStyles(t: Palette) {
   micGlyph: { alignItems: 'center', gap: 1.5 },
   micGlyphHead: { width: 5.5, height: 9, borderRadius: 3 },
   micGlyphBase: { width: 9, height: 1.5, borderRadius: 1 },
+  /** 和 ＋、麦克风同一尺寸的圆钮：三个 36pt 圆排成一排。 */
   send: {
+    width: 36,
+    height: 36,
     marginLeft: 8,
     backgroundColor: t.action.primaryBg,
     borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sendDisabled: { opacity: 0.3 },
-  sendText: { color: t.action.primaryText, fontSize: 14, fontWeight: '600' },
+  sendText: { color: t.action.primaryText, fontSize: 19, lineHeight: 22, fontWeight: '700' },
   localImages: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   localImage: { width: 120, height: 90, borderRadius: 8, backgroundColor: t.bg.surface },
   attach: {

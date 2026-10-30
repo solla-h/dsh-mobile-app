@@ -275,7 +275,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   rowCard: {
-    borderRadius: 10,
+    // 同心圆角：嵌在 card(12) 的 body 里，body 内距 8 → 12 - 8 = 4。
+    borderRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
