@@ -79,12 +79,18 @@ describe('mapPermissionCatalog', () => {
       options: ['ask', { value: 'workspace-write', name: 'Workspace Write', description: '可写工作区' }],
       defaultOptions: [{ value: 'ask', name: 'Ask' }],
       defaultPreset: 'ask',
-      sessionPermissions: ['workspace-write'],
+      // 线上 0.11.1 的真实形状：会话的 permissions projection 被展开进对象
+      sessionPermissions: { currentValue: 'workspace-write', options: [{ value: 'ask' }] },
     });
     expect(catalog!.options[0]).toEqual({ value: 'ask', name: 'ask' });
     expect(catalog!.options[1].name).toBe('Workspace Write');
     expect(catalog!.defaultPreset).toBe('ask');
-    expect(catalog!.sessionPermissions).toEqual(['workspace-write']);
+    expect(catalog!.sessionPermissions).toBe('workspace-write');
+  });
+
+  it('没有会话记录时 sessionPermissions 为 null，不当成有值', () => {
+    const catalog = mapPermissionCatalog({ options: ['ask'], sessionPermissions: null });
+    expect(catalog!.sessionPermissions).toBeUndefined();
   });
 });
 

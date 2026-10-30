@@ -1,6 +1,6 @@
 import { requestRecordingPermissionsAsync, useAudioStream } from 'expo-audio';
 import { File } from 'expo-file-system';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 /**
  * 按住说话用的录音器。
@@ -64,5 +64,8 @@ export function useVoiceCapture(): VoiceCapture {
     }
   }, [stream]);
 
-  return { start, stop, cancel };
+  // 必须 memo：调用方常把整个对象放进 effect 依赖（如「离开页面放弃录音」的
+  // 清理函数），每次渲染换一个新对象会让清理函数每帧都跑一次，
+  // 刚 start() 的录音会被立刻 cancel 掉。
+  return useMemo(() => ({ start, stop, cancel }), [start, stop, cancel]);
 }

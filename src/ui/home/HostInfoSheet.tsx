@@ -143,9 +143,12 @@ export function HostInfoSheet({ control, onClose }: Props) {
               <Text style={styles.empty}>读取中…</Text>
             ) : (
               <>
+                {/* onPress 不用 onPressIn：手指一落下就触发的话，
+                    在列表上滑动会顺手把选择器打开。禁用态也不再进选择器。 */}
                 <TouchableOpacity
                   style={styles.row}
-                  onPressIn={() => setPicking('preset')}
+                  disabled={!defaults.modeSelectionEnabled}
+                  onPress={() => setPicking('preset')}
                 >
                   <View style={styles.rowBody}>
                     <Text style={styles.rowLabel}>默认 Agent 预设</Text>
@@ -159,7 +162,7 @@ export function HostInfoSheet({ control, onClose }: Props) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.row}
-                  onPressIn={() => setPicking('permission')}
+                  onPress={() => setPicking('permission')}
                 >
                   <View style={styles.rowBody}>
                     <Text style={styles.rowLabel}>默认权限</Text>
@@ -193,7 +196,7 @@ export function HostInfoSheet({ control, onClose }: Props) {
                 ) : null}
                 <TouchableOpacity
                   style={styles.row}
-                  onPressIn={() => setPicking('font')}
+                  onPress={() => setPicking('font')}
                 >
                   <View style={styles.rowBody}>
                     <Text style={styles.rowLabel}>全局字号</Text>
@@ -207,7 +210,10 @@ export function HostInfoSheet({ control, onClose }: Props) {
             )}
           </ScrollView>
 
-          {picking !== null ? (
+          {/* 字号走行内展开（174 行那个 fontPicker），不进这块底部通用选择区；
+              写成 picking !== null 会让点「全局字号」时同时弹出一个「默认权限」面板，
+              点中任意一项就会往网关写全局 set-default。 */}
+          {picking === 'preset' || picking === 'permission' ? (
             <View style={styles.pickerWrap}>
               <View style={styles.pickerHead}>
                 <Text style={styles.pickerTitle}>

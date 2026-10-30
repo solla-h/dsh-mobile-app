@@ -18,7 +18,10 @@ export type StreamRow =
 
 /** 带正文的 assistant（正式回答）——空 text 的 assistant 只是 reasoning 载体。 */
 function hasBody(message: ChatMessage): boolean {
-  return message.kind === 'assistant' && message.text.trim().length > 0;
+  if (message.kind !== 'assistant') return false;
+  // 失败轮次 text 是空的、只有 failure。这种行也必须在胶囊外面，
+  // 一旦收进去，ActivityGroup 展开只画思考条，错误原因就彻底看不见了。
+  return message.text.trim().length > 0 || Boolean(message.failure);
 }
 
 /**
@@ -96,6 +99,16 @@ function foldActivities(rows: StreamRow[], running: boolean): StreamRow[] {
       }
       // 正式回答出现：之前的活动收成一个胶囊，回答本身留在外面。
       flush();
+      out.push(row);
+      continue;
+    }
+    // 客户端的排队/发送中回显不是回合边界，只是本地乐观行。正在跑的时候拿它
+    // 打断，会把还没出正文的最后一轮错误地折成胶囊，等这条排队消息被消费掉
+    // 又展开回来——同一批步骤在两种形态间来回跳，key 也变，动画和振动重复触发。
+    if (running && row.kind === 'message' && row.message.kind === 'queued') {
+      // 缓冲原样吐出来（保持展开）再放排队行，顺序不能反。
+      for (const step of pending) out.push(step);
+      pending = [];
       out.push(row);
       continue;
     }

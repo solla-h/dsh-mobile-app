@@ -1552,6 +1552,13 @@ export function SessionScreen({
     const actions: SheetAction[] = [];
     const text = 'text' in message ? message.text : '';
     if (text) actions.push({ id: 'copy', label: '复制文本' });
+    if (text) {
+      actions.push({
+        id: 'select',
+        label: '选择文本',
+        hint: '进专门的选择页，拖手柄挑任意片段',
+      });
+    }
     if ('seq' in message && typeof message.seq === 'number') {
       actions.push({
         id: 'fork',
@@ -1577,6 +1584,11 @@ export function SessionScreen({
           () => showToast('已复制'),
           () => showToast('复制失败'),
         );
+        return;
+      }
+      if (id === 'select') {
+        if (!('text' in message)) return;
+        setSelectMessage(message);
         return;
       }
       if (id === 'fork') {
@@ -1758,6 +1770,14 @@ export function SessionScreen({
     // 连续的 tool 调用合并成一组，其余消息原样透传。
     return groupMessages([...baseRows, ...extras], { running });
   }, [baseRows, offlineItems, pendingSends, queued, running]);
+
+  /** 最后一个活动胶囊的 id：只有它会在「实时一轮刚收拢」时播放收拢动画。 */
+  const lastActivityId = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      if (rows[i].kind === 'activity') return rows[i].id;
+    }
+    return null;
+  }, [rows]);
 
   // 进会话先把上次没发完的草稿捞回来。切换会话时先清空，
   // 否则上一会话的文字会被当成这一会话的草稿写回去。
@@ -2007,6 +2027,7 @@ export function SessionScreen({
                     <View style={styles.toolGroupWrap}>
                       <ActivityGroup
                         steps={item.steps}
+                        animateIn={running && item.id === lastActivityId}
                         pendingCallId={approval?.callId}
                         onOpenGate={() => setTriageOpen(true)}
                         onQuoteLine={(line) =>

@@ -99,7 +99,12 @@ const STATE_LABEL: Record<ConnectionState, string> = {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AppBody />
+      {/* 必须包在 AppBody 外面：AppBody 自己就调用 useThemedStyles(makeStyles)，
+          放进它的 return 里的话，顶栏、设备条、搜索框、重命名弹窗这些样式读到的
+          永远是默认倍率，字号调大后和子页面不一致。 */}
+      <FontScaleProvider>
+        <AppBody />
+      </FontScaleProvider>
     </SafeAreaProvider>
   );
 }
@@ -1160,7 +1165,6 @@ function AppBody() {
   }
 
   return (
-    <FontScaleProvider>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={t.name === 'paper' ? 'dark' : 'light'} />
       {/* Android 走 edge-to-edge 时窗口不会自己缩，必须让 KAV 补键盘高度。
@@ -1657,7 +1661,6 @@ function AppBody() {
         onClose={() => setDirPicker(false)}
       />
     </SafeAreaView>
-    </FontScaleProvider>
   );
 }
 

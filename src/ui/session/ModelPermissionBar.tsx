@@ -74,7 +74,7 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
         const result = mapPermissionResult(frame);
         if (result?.set) {
           setPermission((current) =>
-            current ? { ...current, sessionPermissions: [result.set!] } : current,
+            current ? { ...current, sessionPermissions: result.set } : current,
           );
         }
         setBusy(false);
@@ -117,7 +117,7 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
   );
 
   const current = models?.current;
-  const currentPermission = permission?.sessionPermissions?.[permission.sessionPermissions.length - 1];
+  const currentPermission = permission?.sessionPermissions;
   const modelLabel = current ? displayModel(current.model) : null;
   /** 当前思考强度的可读名；没有指定时显示「默认」——胶囊上始终能看到强度。 */
   const effortLabel = (() => {
@@ -224,7 +224,6 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
               : permissionActions
         }
         onPick={(id) => {
-          console.log('[MPB] onPick', id, sheet ? sheet.kind : 'null');
           const active = sheet;
           if (!active) return;
           if (active.kind === 'model') {
