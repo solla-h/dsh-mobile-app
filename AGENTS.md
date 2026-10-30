@@ -79,6 +79,36 @@ src/ui/                  屏幕与组件
 - 文件下载的 `offset` 是**解码后**的字节数，下一页 = 服务端 offset + base64 解码长度。
 - `agent-preset` 一旦会话跑过一轮就 `locked`，锁上不会再解开。
 
+## 宿主与真网关
+
+真网关跑在 **`chuncheon-from0632`**（`~/.ssh/config` 里有别名，`ssh chuncheon-from0632`；
+`ubuntu` 有 NOPASSWD sudo）：
+
+```
+dsh-web.service         # systemd 单元，User=dsh，HOME=/home/dsh，cwd /home/dsh/workspace
+/home/dsh/.dsh/sessions # 会话日志，<session>.v4.jsonl.zstd（zstdcat 后 grep）
+/home/dsh/.dsh/profiles/web/cordis.patch.yml   # profile 补丁层（改审批策略/插插件都在这里，动前先备份）
+sudo -u dsh -H dsh-pair                        # 打印 5 分钟有效的配对串
+```
+
+**要造一次真审批**（App 的审批 UI 只有这条路能验）：临时插一个 ask 钩子——
+`cordis.patch.yml` 末尾加
+
+```yaml
+- insert:
+    - id: approval-probe
+      name: './approval-probe.mjs'
+```
+
+同目录放 `approval-probe.mjs`（`tools/pre-execute` 里只对含 `DSH_APPROVAL_PROBE` 的命令返回
+`{kind:'ask', reason, displayReason:{en,zh}}`，其余 `return next()`），然后 `sudo systemctl restart dsh-web`，
+在手机上发一条 `echo DSH_APPROVAL_PROBE`。**验完把插件和那段 patch 一起删掉再重启**，别留在生产上。
+
+已确认的死路（别再试）：宿主 bash 执行器没有 `sandboxMode`，工具 schema 里**没有**
+`sandbox_permissions`/`justification` 这两个参数，所以模型「申请越权」的调用会被校验器直接打回
+（`invalid escalation: justification-without-sandbox_permissions`），永远不会 ask；
+approval policy 本身是 `ask`，不是策略问题。详见 `docs/HANDOFF.md` §13.3。
+
 ## 命令
 
 ```bash

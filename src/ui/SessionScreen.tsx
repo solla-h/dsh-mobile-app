@@ -26,6 +26,7 @@ import {
   mergeSnapshot,
   prependHistory,
   splitThinkTags,
+  type ApprovalRecord,
   type ChatMessage,
   type QueuedMessage,
 } from '../protocol/chat';
@@ -262,6 +263,9 @@ export function SessionScreen({
   /** 悔棋窗里压着还没发的决定 */
   const graceRef = useRef<{ approval: PendingApproval; outcome: ApprovalOutcome } | null>(null);
   const autoApprovedRef = useRef<Set<string>>(new Set());
+  /** 本机拍过的板，喂给轨迹页的审批记录行（网关不把它写进 history）。 */
+  const [approvalLog, setApprovalLog] = useState<ApprovalRecord[]>([]);
+  const loggedApprovalsRef = useRef<Set<string>>(new Set());
   /** 待发送图片 */
   const [picked, setPicked] = useState<PickedImage[]>([]);
   /** 待发送文件（上传完成后才有 receiptId） */
@@ -519,26 +523,8 @@ export function SessionScreen({
           onRunningChangeRef.current(false);
           setCancelling(false);
           setStreaming(null);
-          const payload = eventFrame.event as Record<string, any>;
-          const failure = payload.reasonDetails?.error?.message;
-          if (payload.reason === 'aborted') {
-            setMessages((current) => [
-              ...current,
-              { id: 'abort-' + eventFrame.seq, kind: 'notice', text: '已停止本轮', time: eventFrame.time },
-            ]);
-          }
-          if (payload.reason === 'error' && failure) {
-            setMessages((current) => [
-              ...current,
-              {
-                id: `err-${eventFrame.seq}`,
-                kind: 'assistant',
-                text: '',
-                failure: String(failure).slice(0, 400),
-                time: eventFrame.time,
-              },
-            ]);
-          }
+          // 中断/出错的提示统一由 applyRealtime 生成的 outcome 行承担
+          // （见 protocol/chat.ts outcomeOf），这里再补一条就是同一件事写两遍。
         }
         setMessages((current) => applyRealtime(current, eventFrame.event as Record<string, any>, eventFrame.seq, eventFrame.time));
         return;
@@ -601,6 +587,10 @@ export function SessionScreen({
       if (kind === 'approval-response') {
         const receipt = frame as unknown as { rpcId: string; accepted?: boolean; reason?: string };
         if (receipt.accepted === false) {
+          // 没被接受（多半别的端已经先答了）：刚写下的那行回显是错的，撤掉。
+          // 真实的结论等重拉历史时由审计记录给出，别在轨迹里留一条反向的假记录。
+          loggedApprovalsRef.current.delete(receipt.rpcId);
+          setApprovalLog((current) => current.filter((item) => item.id !== `approval-${receipt.rpcId}`));
           setInteractionError(
             receipt.reason === 'not-pending' ? '这次审批已经失效（可能已在别的端处理）' : '审批提交被拒绝，请重试',
           );
@@ -967,23 +957,52 @@ export function SessionScreen({
 
   /** 把某一条审批的决定真正发给网关。 */
   const sendApproval = useCallback(
-    (target: PendingApproval, outcome: ApprovalOutcome) => {
-      client.send({
+    (target: PendingApproval, outcome: ApprovalOutcome, via?: string) => {
+      const sent = client.send({
         type: 'approval-response',
         rpcId: target.rpcId,
         sessionId: target.sessionId,
         approvalId: target.approvalId,
         outcome,
       });
+      if (!sent) {
+        // 审批没有离线队列（收据绑在连接上），这一票压根没出去：面板恢复成可点的，
+        // 更不能在轨迹里留一条网关从没收到过的结论。
+        setGraceLabel(null);
+        setDecidedId(null);
+        setInteractionError('离线：这次审批没发出去，重连后请重新拍板');
+        return;
+      }
+      // 轨迹页那行审批的即时回显：宿主会把审批写成审计事件对，但那要等下一次重拉历史
+      // 才回得来，刚拍完板这一段本来就该看得见。callId 是给去重用的——历史记录一到，
+      // 同一 callId 的回显就让位（见下面的 trajectoryApprovals）。
+      // 记在这里而不是 decideApproval：悔棋窗撤回过、或者压根没发出去的决定不该留痕。
+      if (!loggedApprovalsRef.current.has(target.rpcId)) {
+        loggedApprovalsRef.current.add(target.rpcId);
+        const reason = pickDisplayReason(target.displayReason, target.reason);
+        setApprovalLog((current) => [
+          ...current,
+          {
+            id: `approval-${target.rpcId}`,
+            kind: 'approval',
+            decision: outcome === 'allowed-once' ? 'approved' : 'denied',
+            target: [target.toolName, reason].filter(Boolean).join(' · ') || '工具调用',
+            callId: target.callId,
+            via,
+            sessionId: target.sessionId,
+            time: Date.now(),
+          },
+        ]);
+      }
       setInteractionError(null);
     },
     [client],
   );
 
   const respondApproval = useCallback(
-    (outcome: ApprovalOutcome) => {
+    (outcome: ApprovalOutcome, via?: string) => {
       if (!approval) return;
-      sendApproval(approval, outcome);
+      sendApproval(approval, outcome, via);
     },
     [approval, sendApproval],
   );
@@ -1712,7 +1731,7 @@ export function SessionScreen({
     if (autoApprovedRef.current.has(approval.approvalId)) return;
     autoApprovedRef.current.add(approval.approvalId);
     setDecidedId(approval.approvalId);
-    respondApproval('allowed-once');
+    respondApproval('allowed-once', '目录信任');
     showToast(`已按目录信任放行 · ${approvalInfo.dir}`);
   }, [approval, approvalInfo, trustedDirs, respondApproval, showToast]);
 
@@ -1734,6 +1753,24 @@ export function SessionScreen({
       },
     ];
   }, [messages, streaming]);
+
+  /**
+   * 轨迹页的审批记录：SessionScreen 不随会话切换卸载，得自己按会话分；
+   * 历史里已经有同一条（gateway 的审计事件对）时，本机回显让位，不然会画两遍。
+   * 只按 callId 对——两边都拿不到 callId 的时候宁可贵一条回显，也不要漏掉历史记录。
+   */
+  const trajectoryApprovals = useMemo(() => {
+    const inHistory = new Set(
+      messages
+        .filter((message): message is ApprovalRecord => message.kind === 'approval' && !!message.callId)
+        .map((message) => message.callId as string),
+    );
+    return approvalLog.filter(
+      (item) =>
+        (!item.sessionId || item.sessionId === session.sessionId) &&
+        (!item.callId || !inHistory.has(item.callId)),
+    );
+  }, [approvalLog, messages, session.sessionId]);
 
   const rows: StreamRow[] = useMemo(() => {
     const extras: ChatMessage[] = [
@@ -1933,7 +1970,7 @@ export function SessionScreen({
             <ActivityIndicator color={t.text.muted} />
           </View>
         ) : viewMode === 'trajectory' ? (
-          <TrajectoryView messages={messages} />
+          <TrajectoryView messages={baseRows} approvals={trajectoryApprovals} running={running} />
         ) : (
           <FlatList<StreamRow>
             ref={listRef}
@@ -2593,7 +2630,23 @@ function MessageRow({
   if (message.kind === 'notice') {
     return (
       <View style={styles.noticeRow}>
-        <Text style={styles.noticeText}>{message.text}</Text>
+        <Text
+          style={[styles.noticeText, message.tone === 'warn' ? styles.noticeWarn : null]}
+        >
+          {message.text}
+        </Text>
+      </View>
+    );
+  }
+  // 轨迹页专属的行。对话流里这些落到最后一个 return 就会画成用户气泡，必须显式挡掉：
+  // 上下文注入和审批记录在对话流里没有可操作性（审批有专门的决策坞），
+  // 每轮结论只在「这轮不是正常结束」时留一行——正常结束是噪音。
+  if (message.kind === 'context' || message.kind === 'approval') return null;
+  if (message.kind === 'outcome') {
+    if (!message.failed) return null;
+    return (
+      <View style={styles.noticeRow}>
+        <Text style={styles.noticeWarn}>{message.text}</Text>
       </View>
     );
   }
@@ -2783,6 +2836,8 @@ function makeStyles(t: Palette) {
     paddingHorizontal: 24,
     lineHeight: 16,
   },
+  /** 压缩 / 重试 / 非正常结束的轮次：比普通通知重一档，别被当成系统闲聊划过去。 */
+  noticeWarn: { color: t.semantic.gateAmberText },
   pendingBar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -16,6 +16,11 @@ export type Palette = {
   };
   border: { default: string; subtle: string; activeOrigin: string };
   text: { primary: string; secondary: string; muted: string };
+  /**
+   * 轨迹页的角色色。对齐 DSH Web 的七类着色（用户蓝 / 助手紫 / 工具琥珀 / 上下文绿），
+   * 但全部压到本调色板的明度区间里（canvas 上 ≥6:1），不引入 Web 那组饱和色。
+   */
+  role: { user: string; assistant: string; tool: string; context: string };
   action: { primaryBg: string; primaryText: string; secondaryBg: string; secondaryText: string };
   semantic: {
     diffAddBg: string;
@@ -42,6 +47,7 @@ export const PAPER: Palette = {
   },
   border: { default: '#D8D5CC', subtle: '#DFDCD3', activeOrigin: '#5C5A52' },
   text: { primary: '#1C1C1A', secondary: '#5C5B57', muted: '#8C8A84' },
+  role: { user: '#2A5480', assistant: '#5E4478', tool: '#7A4A14', context: '#28563D' },
   action: {
     primaryBg: '#2B2B28',
     primaryText: '#F4F2ED',
@@ -72,6 +78,7 @@ export const EINK_SLATE: Palette = {
   },
   border: { default: '#3E3E39', subtle: '#363632', activeOrigin: '#8C887D' },
   text: { primary: '#CECBC2', secondary: '#9A978E', muted: '#75736B' },
+  role: { user: '#86ACD4', assistant: '#B49CCB', tool: '#C79E5F', context: '#82B492' },
   action: {
     primaryBg: '#C4C1B6',
     primaryText: '#222220',

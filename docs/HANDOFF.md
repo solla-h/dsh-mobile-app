@@ -252,3 +252,76 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 
 注意 `workspaces` 不是廉价查询：网关每次都会开一条 `workspace/follow` 流取首帧再断开，
 别拿它轮询；成员和置顶变化也没有推送帧，只能重查。
+
+## 13. 轨迹页 + 审批链路真机验证（2026-10-30）
+
+### 13.1 做了什么
+
+轨迹页（`src/ui/stream/TrajectoryView.tsx`）重做，映射层跟着补：
+
+- **一行一件事**：正文默认压 4 行、点开看全文；上下文注入折 2 行；
+  工具行是「名字 · 参数首行 → 结果首行」+ 耗时/错误码；每轮一条分隔线兼作轮次分界
+  （`第 N 轮 · 本轮出错：RATE_LIMIT · 42s`，红/琥珀/灰三色）。
+- **审批记录进轨迹**，两个来源：网关审计事件对（`approval/asked` + `approval/decided`，conversation 视图不裁）
+  和本机拍板瞬间的回显（带 `callId`，历史一到就让位，不会画两遍）。
+- `developer/message`（工具增删）映射成上下文行 `+bash -write`；
+  `compaction/summary` 带出摘要全文（收起一行、展开看正文）。
+- 修掉历史/实时两套 `tool/result` 的失败判定不一致：统一按
+  `message.isError || data.error || 结果块 isError` 三处任一。
+- 小改：内联代码块加圆角（`Markdown.tsx`）；轨迹角色色进了 `tokens.ts`（`role.*`，深浅两套）。
+
+### 13.2 真机验到了什么（24129PN74C，1200×2670）
+
+- 轨迹页各类行、上下文折叠、工具耗时、`思考 N 字`、通知行合并（一次 429 只留一行）、
+  出错分隔线、失败工具红字——都过了。
+- **审批链路整条走通**（这台宿主上第一次）：
+  `approval-requested` → 面板显示宿主给的 zh displayReason → 快速批准 → 悔棋窗倒计时 →
+  轨迹出现「已批准 · 本机决定 · bash · 允许执行这条探针命令吗？」→ **重开会话重拉历史后**，
+  同一行换成审计记录「已批准 · bash · 移动端审批链路真机验证」（meta 消失、**只有一行**，callId 去重生效）；
+  点开那一行显示「审计记录只留工具名和说明文字，参数在对应的工具行上。」
+- 宿主落库的原始事件（`session-573daa7b-…`）：
+  `{"type":"approval/asked",...,"data":{"id":"287be01d-…","toolName":"bash","callId":"call_resp_01a18cd7-…_0","reason":"移动端审批链路真机验证"}}`
+  `{"type":"approval/decided",...,"data":{"id":"287be01d-…","outcome":"allowed-once"}}`
+
+### 13.3 宿主侧的关键发现（别再重复踩）
+
+1. **这台宿主从来没有任何一次真审批**：把 `/home/dsh/.dsh/sessions` 全量解压 grep，
+   `approval/asked` 只出现在插件 API 的文档字符串里，零个真实事件。
+2. approval policy 本来就是 `ask`（`cordis.patch.yml:121-122`），**不是**策略没生效。
+3. 真正的原因：宿主 bash 执行器**没有 sandboxMode**，所以工具 JSON schema 里根本没有
+   `sandbox_permissions` / `justification`（deployed `dsh-tool-bash/lib/index.js:343-346`、`519-527`；
+   所有 session 的 `request/header` 里 grep 零命中）。模型想申请越权也传不进去，只在
+   `justification` 单独到达时被校验器打回：`invalid escalation: justification-without-sandbox_permissions`。
+   「用 danger-full-access 触发审批」这条路在**当前组合**下是死的。
+4. **要造一次真审批，照抄这个临时钩子**：`cordis.patch.yml` 末尾追加
+   ```yaml
+   - insert:
+       - id: approval-probe
+         name: './approval-probe.mjs'
+   ```
+   同目录放 `approval-probe.mjs`：`tools/pre-execute` 里只对含 `DSH_APPROVAL_PROBE` 的命令返回
+   `{kind:'ask', reason, displayReason:{en,zh}}`，其余 `return next()` 原样放行；然后
+   `sudo systemctl restart dsh-web`。**验完必须删插件 + 撤 patch 再重启**（本次已撤，
+   patch 备份在 `/root/cordis.patch.yml.bak-approval-probe`）。
+5. 宿主 DSH `0.2.1-rc.3`，网关 npm `0.11.1`，会话日志是 zstd：
+   `zstdcat <session>.v4.jsonl.zstd | grep -oE '"type":"approval/[a-z]+"'`。
+
+### 13.4 没测的 / 已知取舍 / 下一步
+
+**没测**：`拦截 → 已拒绝` 那一行（同一分支的另一个 label）、`无人应答`/`请求已撤回` 两种非人决定、
+同一 callId 两次审批的去重（同一 `exec.callId` 可能先预审批再沙箱升权，按 callId 过滤会把第二次回显一起吃掉，
+丢了的那条要等下次重拉历史才补回来）。
+
+**已知取舍（都留了注释）**：
+
+- 回显时间用手机 `Date.now()`，消息时间是宿主钟；两端差几分钟时审批行会插错位置，直到重拉历史换成审计行。
+- `asked`→`decided` 的配对是单页局部的：网关 256KB 快照边界正好切在这对事件中间时，
+  decided 那行退化成「工具调用」且丢 callId（长会话偶发）。
+- `running` 之前漏传给轨迹页，运行中的工具显示成「没有输出」（已修）。
+
+**还能扩的映射**（history 里有、手机没画的事件，按价值排序）：
+`command/run`+`command/done`（斜杠命令）、`agent/inbox/spliced`（排队/插话/撤回）、
+`subagent/catalog`（派过子 agent）、`compaction/prune`、`todo/write`、`goal/change`、`plan/mode`。
+
+**测试残留**：`/home/dsh/mobile` 下「Verify approval flow with Bash tool」是本次探针造的会话
+（含 `echo DSH_APPROVAL_PROBE` 和几次失败的 escalation 尝试），可删。

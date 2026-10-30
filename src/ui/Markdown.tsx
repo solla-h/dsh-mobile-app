@@ -673,6 +673,8 @@ const makeStyles = (t: Palette) =>
     fontSize: 13,
     color: t.semantic.gateAmberText,
     backgroundColor: t.border.subtle,
+    borderRadius: 4,
+    paddingHorizontal: 3,
   },
   list: { marginVertical: 2 },
   listRow: { flexDirection: 'row', marginBottom: 2 },
