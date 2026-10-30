@@ -124,3 +124,53 @@ npx expo lint
   带文件的不能离线发，收据绑在连接上。
 - 会话列表按网关缓存到 `sessions-<gatewayId>.json`，冷启动先读缓存再连，
   断网时列表不会空成一张二维码。
+
+## 插件管理（plugin-management-v1）
+
+页面在 `src/ui/plugins/`（PluginsView + BundleSheet / InstallFlow / SettingsEditor /
+ExemptionsSheet），请求关联与推送在 `usePluginManager.ts`，帧映射在 `src/protocol/plugins.ts`。
+全部走 control 连接（`App.tsx` 里的 `control` 客户端）；响应按 requestId 回显关联，不按 kind。
+
+踩过的点：
+
+- 目录分组在客户端做：排除 6 个 `@deepseek-ai/dsh-*` 内置包（`BUILTIN_BUNDLES`），
+  `optional && !installed`→官方，`installed || !optional`→已安装。
+- bundle 总开关只看 `bundle.enabled`，不要从 `plugins[]` 推；`readOnlyReason` 禁启停，
+  `removable:false` 只禁卸载。
+- `meta.icon` 是 data URL，当图片渲染；`meta.title/description` 是文本或带 en 回退的语言映射
+  （`pickLocalized`）。icon 只接受 `data:image` 开头，别的丢弃防注入。
+- `plugin-inspect` 的 refused 是成功帧里 `result.status`，不是 error 帧。
+- `ChangeResult.application` 为 `restart-required` 要提示重启 DSH Web 后刷新目录。
+- `pendingBuilds` 非空必须让用户批准那些具体包名，再带 `approvedBuilds` 重装，禁止自动批准。
+- 安装日志是不可信文本，内存里限行数（`MAX_LOG_LINES=200`）。
+- 断线恢复用 `plugin-install-status`（installId=原安装 requestId），不要盲目重装。
+- settings 保存带读取时的 `expectedRevision`（乐观锁）；冲突或收到
+  `plugin-settings-changed` 推送时重读。secrets 只显 `secrets[].set`，服务端不回明文。
+- **关闭/卸载 `dsh-plugin-mobile-gateway` 自身会切断当前连接**——操作前必须提示，
+  中断后标「待重连确认」，不能当成功或失败。
+
+踩过的点（详情卡片轮播 PluginCard）：
+
+- **Animated 的 transform 混用驱动会炸掉整条手势链**：同一个 transform 里
+  一个节点 spring 用 `useNativeDriver: true`（如入场微弹 scale）、另一个被
+  `Animated.event`（useNativeDriver: false）跟手写，native 提升后 JS 写入直接抛
+  「moved to native」，且异常被静默吞掉——表现为「手势完全无反应」。解法：同一
+  transform 全部 JS 驱动，或干脆删掉装饰动画。红屏出现前先怀疑这个。
+- Modal 里 PanResponder 必须挂在**命中视图本体**上：挂在
+  `pointerEvents="box-none"` 的容器上时容器不参与命中测试，手势协商不会经过它。
+- **切卡手势的正解是 down 冒泡接管**（`onStartShouldSetPanResponder: () => true`）：
+  协商从最深 target 冒泡，按钮（Pressable）和条目 ScrollView 更深先拿到 → 正常工作；
+  纯文本/空白区没人要 → 卡片接管横滑。两个反面教材：
+  capture 阶段 `onStartShouldSet...Capture: true` 会连按钮的 down 一起吃掉（按钮全失效）；
+  只靠 `onMoveShouldSet...Capture` 在本 Modal 场景从未被协商到（探针 0 次调用，
+  疑似 down 时被隐式 responder 截胡），表现为滑动完全无反应。
+- Host 的 `listPlugins` 会返回上百个条目（含内置包内的服务），「独立条目」区
+  必须默认折叠，否则目录页被拉到两万 dp 之外。
+- 切卡动效（tinder 牌堆，参考 flutter_swiper SwiperLayout.TINDER）：顶层卡平移+倾斜(±10°)+
+  边缘淡出、下层卡随揭示进度从 0.92 放大到 1——**全部是 pan.x 的插值**，
+  飞出时只驱动 pan.x 一处（timing 到 -900），整套餐杯自动编排；不要再引入
+  第二个动画值单独驱动同一 transform。飞出中再触摸，onPanResponderGrant 里按
+  pendingTarget 立即提交，防止停在半空。
+- **下层卡必须渲染与顶层完全相同的卡面（CardBody）**：只画标题预览的话，
+  揭示到落位时内容会跳变（割裂感）；且**按拖动方向只渲染一张下层卡**——
+  上一张/下一张两张壳完全重叠时，渲染顺序会让一个方向被另一张盖住，左右观感不统一。

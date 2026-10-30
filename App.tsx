@@ -38,7 +38,7 @@ import { soleApproval } from './src/protocol/pending';
 import { matchDecision } from './src/protocol/voice-decision';
 import { useVoiceCapture } from './src/ui/voice/useVoiceCapture';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
-import { CapabilitiesView } from './src/ui/home/CapabilitiesView';
+import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
@@ -1297,7 +1297,8 @@ function AppBody() {
             ) : tab === 'schedules' ? (
               <SchedulesView rows={mapSchedules(schedules)} catalogReady={schedules !== null} />
             ) : tab === 'plugins' ? (
-              <CapabilitiesView
+              <PluginsView
+                control={control}
                 capabilities={hello?.capabilities ?? []}
                 gatewayName={hello?.gatewayName}
                 protocol={hello?.protocol}
