@@ -16,6 +16,8 @@ interface Props {
   pendingCallId?: string;
   onOpenGate?: () => void;
   onQuoteLine?: Parameters<typeof ToolGroup>[0]['onQuoteLine'];
+  /** 只有「实时一轮由展开变胶囊」才播收拢动画和触感，历史挂载不播。 */
+  animateIn?: boolean;
 }
 
 /**
@@ -25,22 +27,25 @@ interface Props {
  * 一个胶囊替代原来 N 个思考胶囊 + M 个工具组，用户和回答之间不再隔几屏。
  * 点按可展开复看每一步；展开后仍是原来的 ThinkPill / ToolGroup 组件。
  */
-export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine }: Props) {
+export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, animateIn }: Props) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
   const mountedRef = useRef(false);
 
   // 首次挂载（正文刚开始输出时由展开态变成胶囊）做一次柔和的收拢动画与触感。
+  // 只在 animateIn 时播：冷启动读历史、loadOlder、FlatList 虚拟化重新挂载
+  // 都会触发 mount，无条件播的话历史里每个胶囊都震一下，串成一串。
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
+      if (!animateIn) return;
       LayoutAnimation.configureNext({
         duration: 240,
         update: { type: LayoutAnimation.Types.spring, springDamping: 1 },
       });
       softFeedback();
     }
-  }, []);
+  }, [animateIn]);
 
   const thoughts = steps.filter((step) => step.kind === 'message').length;
   const tools = steps.reduce(

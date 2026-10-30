@@ -149,8 +149,8 @@ export interface PermissionCatalog {
   options: PermissionOption[];
   defaultOptions: PermissionOption[];
   defaultPreset?: string;
-  /** 该会话当前生效的权限名（可能是列表，取最后一项作为展示） */
-  sessionPermissions: string[];
+  /** 该会话当前生效的权限名；网关不返回会话记录时为 undefined */
+  sessionPermissions?: string;
 }
 
 function mapPermissionOption(value: unknown): PermissionOption | null {
@@ -176,9 +176,9 @@ function mapPermissionList(value: unknown): PermissionOption[] {
 export function mapPermissionCatalog(raw: unknown): PermissionCatalog | null {
   const frame = asRecord(raw);
   if (!frame) return null;
-  const sessionPermissions = Array.isArray(frame.sessionPermissions)
-    ? frame.sessionPermissions.filter((item): item is string => typeof item === 'string')
-    : [];
+  // 线上 0.11.1 给的是对象 { currentValue, options, ... }（lib/index.mjs:1847
+  // 把会话的 permissions projection 展开进来），会话不存在时是 null。
+  const sessionPermissions = str(asRecord(frame.sessionPermissions)?.currentValue);
   return {
     options: mapPermissionList(frame.options),
     defaultOptions: mapPermissionList(frame.defaultOptions),

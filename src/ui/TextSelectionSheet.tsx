@@ -2,7 +2,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import * as Clipboard from 'expo-clipboard';
 
 import { tapFeedback } from './haptics';
-import { useTheme, useThemedStyles } from './theme';
+import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
 
 /**
@@ -20,7 +20,6 @@ interface Props {
 
 export function TextSelectionSheet({ visible, title, text, onClose }: Props) {
   const styles = useThemedStyles(makeStyles);
-  const t = useTheme();
 
   const copyAll = () => {
     tapFeedback();
