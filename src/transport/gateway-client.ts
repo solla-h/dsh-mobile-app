@@ -47,6 +47,12 @@ export class GatewayClient {
   private online = true;
   /** 前后台监听；后台期间 JS 定时器会被挂起，回前台不能拿旧时间戳判假死。 */
   private unwatchAppState: { remove: () => void } | null = null;
+  /** 最近一次广播的连接状态；订阅前就能查询（onState 不回放当前状态）。 */
+  private lastState: ConnectionState = 'idle';
+
+  get state(): ConnectionState {
+    return this.lastState;
+  }
 
   onFrame(listener: FrameListener): () => void {
     this.frameListeners.add(listener);
@@ -292,6 +298,7 @@ export class GatewayClient {
   }
 
   private emitState(state: ConnectionState, detail?: string): void {
+    this.lastState = state;
     this.stateListeners.forEach((listener) => listener(state, detail));
   }
 }

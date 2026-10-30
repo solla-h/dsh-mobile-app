@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Keyboard,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
   useWindowDimensions,
   View,
   type GestureResponderEvent,
+  type KeyboardEvent,
   type PanResponderGestureState,
 } from 'react-native';
 import type { SessionItem } from '../../protocol/types';
@@ -29,6 +31,10 @@ interface Props {
 }
 
 const STRIP_H = 104;
+/** 输入栏自身高度 + 上沿余量：键盘弹出时按这个数把感应条抬到输入栏之上。 */
+const COMPOSER_RESERVE = 76;
+/** 感应条命中区与输入栏之间至少留出的空隙。 */
+const DIAL_GAP = 16;
 const CARD_W = 190; // 缩小卡片宽度，防止超出屏幕左侧
 const CARD_H = 52;
 /** 圆弧半径：以「选中项」为弧顶，整串卡片绕着这个半径转。 */
@@ -56,6 +62,19 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
   const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
 
+  /** 键盘弹出时输入栏会上移，感应条如果留在原地，命中区会盖住发送按钮。 */
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event: KeyboardEvent) =>
+      setKeyboardHeight(event?.endCoordinates?.height ?? 0),
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   useEffect(() => {
     onOpenChange?.(open);
   }, [onOpenChange, open]);
@@ -75,7 +94,17 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
   const movedRef = useRef(false);
   const focus = useState(() => new Animated.Value(initialIndex))[0];
 
-  const centerY = height * 0.48;
+  /**
+   * 感应条锚点。键盘弹出时输入栏顶部 ≈ height - keyboardHeight - 输入栏高度，
+   * 把感应条抬到输入栏上方并收窄下缘热区，打字、点发送就不会误触呼出转盘；
+   * 键盘收起后回到默认的 0.48 屏高。
+   */
+  const keyboardOpen = keyboardHeight > 0;
+  const maxCenterY =
+    height - (keyboardOpen ? keyboardHeight + COMPOSER_RESERVE : 0) - DIAL_GAP - STRIP_H / 2;
+  const centerY = keyboardOpen
+    ? Math.max(96, Math.min(height * 0.48, maxCenterY))
+    : height * 0.48;
 
   /**
    * 手指位置 → 角度的映射，必须和卡片的视觉排布用同一套几何：
@@ -183,8 +212,10 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
     () =>
       // eslint-disable-next-line react-hooks/refs
       PanResponder.create({
-        onStartShouldSetPanResponder: () => list.length > 0,
-        onMoveShouldSetPanResponder: () => list.length > 0,
+        // 键盘开着时整个输入区（输入框/发送按钮）优先：感应条不接管任何触摸，
+        // 宁可让转盘暂时不可用，也不在打字时抢走点击。
+        onStartShouldSetPanResponder: () => !keyboardOpen && list.length > 0,
+        onMoveShouldSetPanResponder: () => !keyboardOpen && list.length > 0,
         // 一旦接管就不许旁边的 FlatList 抢走手势：默认允许终止，
         // 于是按住右缘往上拖时列表会先滚一下再让转盘闪退。
         onPanResponderTerminationRequest: () => false,
@@ -194,7 +225,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
         onPanResponderRelease: handleRelease,
         onPanResponderTerminate: handleTerminate,
       }),
-    [handleGrant, handleMove, handleRelease, handleTerminate, list.length],
+    [handleGrant, handleMove, handleRelease, handleTerminate, keyboardOpen, list.length],
   );
 
   if (list.length === 0) return null;
@@ -213,12 +244,14 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
               top: centerY - STRIP_H / 2,
               backgroundColor: t.bg.surface,
               borderColor: t.border.default,
-              opacity: open ? 0 : 1,
+              opacity: open ? 0 : keyboardOpen ? 0.3 : 1,
             },
           ]}
           // 命中区比视觉条宽得多：手指落在右缘附近就开始接管，
           // 不然偶尔会被下面的 FlatList 先接住、转盘呼不出来。
-          hitSlop={{ left: 32, right: 8, top: 56, bottom: 56 }}
+          // 键盘弹出时下缘几乎不留热区：中心点已经抬到输入栏上方，
+          // 再外扩 56 就又盖回发送按钮了。
+          hitSlop={{ left: 32, right: 8, top: keyboardOpen ? 24 : 56, bottom: keyboardOpen ? 4 : 56 }}
           {...responder.panHandlers}
           accessibilityRole="adjustable"
           accessibilityLabel="按住或轻点呼出拇指弧形会话转盘"
