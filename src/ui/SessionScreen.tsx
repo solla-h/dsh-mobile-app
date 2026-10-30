@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } 
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   Keyboard,
@@ -29,13 +30,18 @@ import {
   type QueuedMessage,
 } from '../protocol/chat';
 import { ApprovalDock } from './dock/ApprovalDock';
+import { ModelPermissionBar } from './session/ModelPermissionBar';
+import { TextSelectionSheet } from './TextSelectionSheet';
+import { useVoiceCapture } from './voice/useVoiceCapture';
 import { GraceUndo } from './dock/GraceUndo';
 import { TriageSheet } from './dock/TriageSheet';
 import { ContextHairline, StatusPill } from './nav/AmbientContext';
 import { ArcDial } from './nav/ArcDial';
 import { AnswerCard } from './stream/AnswerCard';
 import { groupMessages, type StreamRow } from './stream/group';
+import { ActivityGroup } from './stream/ActivityGroup';
 import { ThinkPill } from './stream/ThinkPill';
+import { TrajectoryView } from './stream/TrajectoryView';
 import { ToolGroup } from './stream/ToolGroup';
 import { extractToolDiff, parseArgs, toolCommand } from './tool-format';
 import {
@@ -90,6 +96,7 @@ import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
 import { MOTION, type Palette } from '../theme/tokens';
 import { useTheme, useThemedStyles } from './theme';
+import { transcriptText } from '../protocol/speech';
 import { tapFeedback } from './haptics';
 import { InteractionSheet } from './InteractionSheet';
 import { MarkdownView } from './Markdown';
@@ -277,6 +284,15 @@ export function SessionScreen({
   } | null>(null);
   /** 最近一次选择的结果（模型/权限），显示在输入框上方。 */
   const [statusLabel, setStatusLabel] = useState<string | null>(null);
+  // ---- 语音输入：点麦克风开始/结束，转写结果回填输入框 ----
+  const voice = useVoiceCapture();
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [recordSec, setRecordSec] = useState(0);
+  const voiceRequestRef = useRef<string | null>(null);
+  const [voiceGlow] = useState(() => new Animated.Value(0));
+  /** 对话流 / 轨迹视图切换 */
+  const [viewMode, setViewMode] = useState<'chat' | 'trajectory'>('chat');
   const [stats, setStats] = useState<SessionStatsFrame | null>(null);
   /** 交付文件的下载状态，键是卡片上的原始路径。 */
   const [fileStates, setFileStates] = useState<Record<string, FileUiState>>({});
@@ -308,6 +324,8 @@ export function SessionScreen({
   const [sheetHidden, setSheetHidden] = useState(false);
   /** 长按某条消息后弹出的操作表；null 表示没打开。 */
   const [actionMessage, setActionMessage] = useState<ChatMessage | null>(null);
+  /** 专门的文本选择页（自由拖选复制片段） */
+  const [selectMessage, setSelectMessage] = useState<ChatMessage | null>(null);
   /** 连接状态：断线时输入框上方给一条提示，别让用户对着空气发消息。 */
   const [conn, setConn] = useState<string>('ready');
   /** 从代码块引用过来的内容，发送时自动拼在正文前面。 */
@@ -459,6 +477,20 @@ export function SessionScreen({
           if (pageMin < oldestSeqRef.current) oldestSeqRef.current = pageMin;
         }
         setLoading(false);
+        return;
+      }
+      if (kind === 'speech-transcript') {
+        const received = frame as unknown as { requestId?: string };
+        if (!voiceRequestRef.current || received.requestId !== voiceRequestRef.current) return;
+        voiceRequestRef.current = null;
+        setTranscribing(false);
+        const text = transcriptText(frame) ?? '';
+        if (!text) {
+          setStatusLabel('没听清，再说一次试试');
+          return;
+        }
+        setDraft((prev) => (prev.trim() ? prev + ' ' + text : text));
+        setStatusLabel('语音已转写');
         return;
       }
       if (kind === 'attachment') {
@@ -730,6 +762,11 @@ export function SessionScreen({
         };
         // 目录没拉到就允许下次再试，别让一次失败把 / 菜单永久关掉。
         if (failure.requestType === 'commands') commandRequestedRef.current = false;
+        if (failure.requestType === 'speech-transcribe') {
+          voiceRequestRef.current = null;
+          setTranscribing(false);
+          setStatusLabel(failure.code === 'speech/unavailable' ? '网关没有可用的语音服务' : '转写失败，再试一次');
+        }
         if (failure.requestType === 'select-agent-preset') {
           // 乐观改过的本地状态要退回去：以服务端为准重查一次。
           client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
@@ -1332,6 +1369,86 @@ export function SessionScreen({
   const uploadingFiles = pickedFiles.some(
     (item) => item.state.status === 'hashing' || item.state.status === 'uploading',
   );
+  // 录音计时（每 0.5s 刷新；清零放在 toggle 里，避免 effect 同步 setState）
+  useEffect(() => {
+    if (!recording) return;
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setRecordSec(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [recording]);
+
+  // 淡绿光晕缓慢呼吸（Native 驱动，轻而不闪）
+  useEffect(() => {
+    if (!recording) {
+      voiceGlow.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(voiceGlow, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.timing(voiceGlow, { toValue: 0, duration: 1400, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [recording, voiceGlow]);
+
+  // 离开页面时放弃未结束的录音
+  useEffect(() => () => voice.cancel(), [voice]);
+
+  const toggleVoice = useCallback(async () => {
+    if (transcribing) return;
+    if (!recording) {
+      try {
+        await voice.start();
+        setRecordSec(0);
+        setRecording(true);
+        setStatusLabel(null);
+      } catch (failure) {
+        setStatusLabel(failure instanceof Error ? failure.message : '没法开始录音');
+      }
+      return;
+    }
+    setRecording(false);
+    try {
+      const clip = await voice.stop();
+      if (!clip) return;
+      if (clip.duration < 0.4) {
+        setStatusLabel('太短啦，点麦克风多说一会儿再点一次');
+        return;
+      }
+      const requestId = randomUUID();
+      voiceRequestRef.current = requestId;
+      setTranscribing(true);
+      client.send({ type: 'speech-transcribe', requestId, audioBase64: clip.base64 });
+    } catch (failure) {
+      setStatusLabel(failure instanceof Error ? failure.message : '读不到这段录音');
+    }
+  }, [client, recording, transcribing, voice]);
+
+  /** 取消：录音中丢弃整段录音；转写中撤回已发出的转写请求。 */
+  const cancelVoice = useCallback(() => {
+    if (recording) {
+      voice.cancel();
+      setRecording(false);
+      setRecordSec(0);
+      setStatusLabel('已取消录音');
+      return;
+    }
+    if (transcribing && voiceRequestRef.current) {
+      client.send({
+        type: 'speech-cancel',
+        requestId: randomUUID(),
+        targetRequestId: voiceRequestRef.current,
+      });
+      voiceRequestRef.current = null;
+      setTranscribing(false);
+      setStatusLabel('已取消转写');
+    }
+  }, [client, recording, transcribing, voice]);
+
   const canSend = !uploadingFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
 
   const send = useCallback(() => {
@@ -1639,8 +1756,8 @@ export function SessionScreen({
       })),
     ];
     // 连续的 tool 调用合并成一组，其余消息原样透传。
-    return groupMessages([...baseRows, ...extras]);
-  }, [baseRows, offlineItems, pendingSends, queued]);
+    return groupMessages([...baseRows, ...extras], { running });
+  }, [baseRows, offlineItems, pendingSends, queued, running]);
 
   // 进会话先把上次没发完的草稿捞回来。切换会话时先清空，
   // 否则上一会话的文字会被当成这一会话的草稿写回去。
@@ -1758,6 +1875,32 @@ export function SessionScreen({
         )}
       </View>
 
+      {/* 对话 / 轨迹切换：对话流里正文优先（思考/工具折叠），轨迹页摊开完整时间线 */}
+      <View style={styles.viewTabs}>
+        <Pressable
+          style={[styles.viewTab, viewMode === 'chat' ? styles.viewTabOn : null]}
+          onPress={() => {
+            tapFeedback();
+            setViewMode('chat');
+          }}
+        >
+          <Text style={[styles.viewTabText, viewMode === 'chat' ? styles.viewTabTextOn : null]}>
+            对话
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.viewTab, viewMode === 'trajectory' ? styles.viewTabOn : null]}
+          onPress={() => {
+            tapFeedback();
+            setViewMode('trajectory');
+          }}
+        >
+          <Text style={[styles.viewTabText, viewMode === 'trajectory' ? styles.viewTabTextOn : null]}>
+            轨迹
+          </Text>
+        </Pressable>
+      </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <KeyboardAvoidingView
@@ -1769,6 +1912,8 @@ export function SessionScreen({
           <View style={styles.center}>
             <ActivityIndicator color={t.text.muted} />
           </View>
+        ) : viewMode === 'trajectory' ? (
+          <TrajectoryView messages={messages} />
         ) : (
           <FlatList<StreamRow>
             ref={listRef}
@@ -1841,19 +1986,39 @@ export function SessionScreen({
               </Text>
             }
             renderItem={({ item, index }) => {
-              const time = item.kind === 'tools' ? (item.tools[0]?.time ?? 0) : item.message.time;
+              const rowTime = (row: StreamRow): number => {
+                if (row.kind === 'tools') return row.tools[0]?.time ?? 0;
+                if (row.kind === 'activity') {
+                  const first = row.steps[0];
+                  if (!first) return 0;
+                  return first.kind === 'tools' ? (first.tools[0]?.time ?? 0) : first.message.time;
+                }
+                return row.message.time;
+              };
+              const time = rowTime(item);
               const previous = rows[index - 1];
-              const previousTime = previous
-                ? previous.kind === 'tools'
-                  ? (previous.tools[0]?.time ?? 0)
-                  : previous.message.time
-                : 0;
+              const previousTime = previous ? rowTime(previous) : 0;
               return (
                 <View>
                   {dayLabel(time) && dayLabel(time) !== dayLabel(previousTime) ? (
                     <Text style={styles.dayDivider}>{dayLabel(time)}</Text>
                   ) : null}
-                  {item.kind === 'tools' ? (
+                  {item.kind === 'activity' ? (
+                    <View style={styles.toolGroupWrap}>
+                      <ActivityGroup
+                        steps={item.steps}
+                        pendingCallId={approval?.callId}
+                        onOpenGate={() => setTriageOpen(true)}
+                        onQuoteLine={(line) =>
+                          setQuote({
+                            lang: 'diff',
+                            label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+                            code: line.text,
+                          })
+                        }
+                      />
+                    </View>
+                  ) : item.kind === 'tools' ? (
                     <View style={styles.toolGroupWrap}>
                       <ToolGroup
                         tools={item.tools}
@@ -1954,6 +2119,15 @@ export function SessionScreen({
           onPick={runMessageAction}
           onClose={() => setActionMessage(null)}
         />
+
+        {selectMessage ? (
+          <TextSelectionSheet
+            visible
+            title={selectMessage.kind === 'assistant' ? '选择回答文本' : '选择消息文本'}
+            text={'text' in selectMessage ? selectMessage.text : ''}
+            onClose={() => setSelectMessage(null)}
+          />
+        ) : null}
 
         {toast ? (
           <View style={styles.toast} pointerEvents="none">
@@ -2066,6 +2240,7 @@ export function SessionScreen({
               </Text>
             </View>
           ) : null}
+          <ModelPermissionBar client={client} sessionId={session.sessionId} />
           {statusLabel || statsLine ? (
             <View style={styles.statusBar}>
               {canPickPreset && presetList.presets.length > 0 ? (
@@ -2163,17 +2338,81 @@ export function SessionScreen({
                 <Text style={styles.attachText}>＋</Text>
               )}
             </Pressable>
-            <TextInput
-              ref={composerRef}
-              style={styles.input}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="发消息…"
-              placeholderTextColor={t.text.muted}
-              // 空白会话（双击鲸鱼新建出来的）直接把键盘叫起来，省一次点击
-              autoFocus={Boolean(session.blank)}
-              multiline
-            />
+            {/* 麦克风嵌在输入框内部右侧：未录音浅灰图标，录音时绿底 + 淡绿呼吸光晕 */}
+            <View style={styles.inputWrap}>
+              <TextInput
+                ref={composerRef}
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={recording ? '正在聆听 ' + formatSec(recordSec) : '发消息…'}
+                placeholderTextColor={recording ? t.semantic.diffAddText : t.text.muted}
+                // 空白会话（双击鲸鱼新建出来的）直接把键盘叫起来，省一次点击
+                autoFocus={Boolean(session.blank)}
+                multiline
+              />
+              {recording || transcribing ? (
+                <Pressable
+                  style={styles.voiceCancel}
+                  onPress={() => {
+                    tapFeedback();
+                    cancelVoice();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="取消"
+                >
+                  <Text style={styles.voiceCancelText}>×</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={[styles.micInInput, recording ? styles.micInInputOn : null]}
+                onPress={() => {
+                  tapFeedback();
+                  void toggleVoice();
+                }}
+                disabled={transcribing}
+                accessibilityRole="button"
+                accessibilityLabel={recording ? '结束录音' : '开始语音输入'}
+              >
+                {recording ? (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.micGlowInner,
+                      {
+                        opacity: voiceGlow,
+                        transform: [
+                          {
+                            scale: voiceGlow.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [1, 1.35],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  />
+                ) : null}
+                {transcribing ? (
+                  <ActivityIndicator size="small" color={t.text.muted} />
+                ) : (
+                  <View style={styles.micGlyph}>
+                    <View
+                      style={[
+                        styles.micGlyphHead,
+                        { backgroundColor: recording ? '#FFFFFF' : t.text.muted },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.micGlyphBase,
+                        { backgroundColor: recording ? '#FFFFFF' : t.text.muted },
+                      ]}
+                    />
+                  </View>
+                )}
+              </Pressable>
+            </View>
             <Pressable
               style={[styles.send, !canSend && styles.sendDisabled]}
               disabled={!canSend}
@@ -2186,6 +2425,13 @@ export function SessionScreen({
       </KeyboardAvoidingView>
     </View>
   );
+}
+
+/** 录音计时：12 → 0:12 */
+function formatSec(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? m + ':' + String(s).padStart(2, '0') : '0:' + String(s).padStart(2, '0');
 }
 
 /** 128000 → 128k，1500 → 1.5k，方便塞进一行统计条。 */
@@ -2569,6 +2815,21 @@ function makeStyles(t: Palette) {
     paddingHorizontal: 14,
     paddingBottom: 6,
   },
+  viewTabs: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  viewTab: {
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: t.bg.surface,
+  },
+  viewTabOn: { backgroundColor: t.action.primaryBg },
+  viewTabText: { color: t.text.muted, fontSize: 11.5, fontWeight: '600' },
+  viewTabTextOn: { color: t.action.primaryText },
   statusChip: {
     color: t.text.primary,
     fontSize: 10.5,
@@ -2656,26 +2917,65 @@ function makeStyles(t: Palette) {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: t.border.subtle,
   },
+  /** 输入框容器：背景与圆角在这里，麦克风按钮嵌在右侧内部。 */
+  inputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    minHeight: 36,
+    maxHeight: 116,
+    backgroundColor: t.bg.surface,
+    borderRadius: 18,
+    paddingLeft: 14,
+    paddingRight: 3,
+  },
   input: {
     flex: 1,
-    maxHeight: 120,
-    minHeight: 40,
-    backgroundColor: t.bg.surface,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
     color: t.text.primary,
     fontSize: 15,
   },
+  micInInput: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginBottom: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** 录音/转写期间的取消按钮：浅灰小圆 ×，轻量不抢主操作。 */
+  voiceCancel: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    marginBottom: 5,
+    marginRight: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.bg.subtle,
+  },
+  voiceCancelText: { color: t.text.muted, fontSize: 16, lineHeight: 18 },
+  micInInputOn: { backgroundColor: t.semantic.diffAddText },
+  /** 录音光晕：与按钮同尺寸的圆，缓慢放大淡出。 */
+  micGlowInner: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: t.semantic.diffAddText,
+  },
+  micGlyph: { alignItems: 'center', gap: 1.5 },
+  micGlyphHead: { width: 5.5, height: 9, borderRadius: 3 },
+  micGlyphBase: { width: 9, height: 1.5, borderRadius: 1 },
   send: {
     marginLeft: 8,
     backgroundColor: t.action.primaryBg,
-    borderRadius: 20,
+    borderRadius: 18,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
@@ -2684,9 +2984,9 @@ function makeStyles(t: Palette) {
   localImages: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   localImage: { width: 120, height: 90, borderRadius: 8, backgroundColor: t.bg.surface },
   attach: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,

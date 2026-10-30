@@ -40,6 +40,8 @@ import { useVoiceCapture } from './src/ui/voice/useVoiceCapture';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
 import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
+import { HostInfoSheet } from './src/ui/home/HostInfoSheet';
+import { FontScaleProvider } from './src/ui/fontScale';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
 import {
@@ -171,6 +173,8 @@ function AppBody() {
   const [tab, setTab] = useState<'focus' | 'all' | 'schedules' | 'plugins'>('focus');
   /** 定时任务目录；null 表示还没拿到（不是「没有任务」） */
   const [schedules, setSchedules] = useState<unknown[] | null>(null);
+  /** 宿主信息与全局默认抽屉 */
+  const [hostSheet, setHostSheet] = useState(false);
   /** 全部会话页里折叠起来的工作区分组 */
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   /** 当前工作区：只影响「之后新建的会话」，不移动任何历史会话。 */
@@ -1156,6 +1160,7 @@ function AppBody() {
   }
 
   return (
+    <FontScaleProvider>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={t.name === 'paper' ? 'dark' : 'light'} />
       {/* Android 走 edge-to-edge 时窗口不会自己缩，必须让 KAV 补键盘高度。
@@ -1295,7 +1300,13 @@ function AppBody() {
                 transcribing={transcribing}
               />
             ) : tab === 'schedules' ? (
-              <SchedulesView rows={mapSchedules(schedules)} catalogReady={schedules !== null} />
+              <SchedulesView
+                rows={mapSchedules(schedules)}
+                catalogReady={schedules !== null}
+                control={control}
+                rawItems={schedules}
+                onChanged={() => control.send({ type: 'schedule-catalog' })}
+              />
             ) : tab === 'plugins' ? (
               <PluginsView
                 control={control}
@@ -1307,12 +1318,13 @@ function AppBody() {
               />
             ) : (
             <>
-            <View style={styles.metaRow}>
+            <Pressable style={styles.metaRow} onPress={() => setHostSheet(true)}>
               <Text style={styles.metaLabel}>设备</Text>
               <Text style={styles.metaValue}>{hello?.device?.name ?? '未知'}</Text>
               <Text style={styles.metaLabel}>协议</Text>
               <Text style={styles.metaValue}>v{hello?.protocol ?? '?'}</Text>
-            </View>
+              <Text style={styles.metaAction}>宿主 ›</Text>
+            </Pressable>
             {sessions.length > 3 ? (
               <View style={styles.searchWrap}>
                 <TextInput
@@ -1528,6 +1540,7 @@ function AppBody() {
         onClose={() => setCreateSheet(false)}
       />
 
+      {hostSheet ? <HostInfoSheet control={control} onClose={() => setHostSheet(false)} /> : null}
       <ActionSheet
         visible={gatewaySheet}
         title="网关"
@@ -1644,6 +1657,7 @@ function AppBody() {
         onClose={() => setDirPicker(false)}
       />
     </SafeAreaView>
+    </FontScaleProvider>
   );
 }
 
@@ -1718,6 +1732,7 @@ const makeStyles = (t: Palette) =>
   },
   metaLabel: { color: t.text.muted, fontSize: 12 },
   metaValue: { color: t.text.secondary, fontSize: 12, marginRight: 12 },
+  metaAction: { flex: 1, textAlign: 'right', color: t.text.muted, fontSize: 11 },
   gatePill: {
     flexDirection: 'row',
     alignItems: 'center',

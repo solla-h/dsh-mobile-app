@@ -89,7 +89,9 @@ npx expo lint
 
 ## 真机调试
 
+- **adb `input tap` 不可靠**：MIUI 上 Modal 内的单点注入经常被系统丢弃（同一坐标连续扫描可能命中一次、单点不中），表现为「按钮点了没反应」。**交互细节不要靠 adb 单点验证**——先用真实手指或看协议帧；只有非交互的视觉/布局可以用截图。
 - `adb reverse tcp:8081 tcp:8081` 在 adb server 重启后会丢，重新拉一次再用 `exp://127.0.0.1:8081` 打开。
+- **Metro 会 OOM**（node heap 满被系统杀）：日志表现为 bundle 请求全部失效、手机跑缓存 bundle（改了代码但界面不变）。启动时带 `NODE_OPTIONS=--max-old-space-size=8192`；怀疑「改动没生效」时先 `curl 8081/status`。
 - **不要改手机的输入法设置**（`ime enable/disable/set`）。需要输入空格时用设备侧引号：
   `adb shell "input text 'a b c'"`。
 

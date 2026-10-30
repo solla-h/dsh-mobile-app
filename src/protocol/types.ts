@@ -472,6 +472,39 @@ export type ClientFrame =
   | { type: 'agent-presets' }
   | { type: 'session-agent-preset'; sessionId: string; requestId?: string }
   | { type: 'select-agent-preset'; sessionId: string; agentPreset: string; requestId?: string }
+  /** 模型目录：带 sessionId 时会话级（current+routable），不带是全局目录 */
+  | { type: 'models'; sessionId?: string }
+  | { type: 'providers' }
+  | {
+      type: 'select-model';
+      sessionId: string;
+      provider: string;
+      model: string;
+      reasoningEffort?: string;
+    }
+  | { type: 'default-model' }
+  | { type: 'save-default-model'; provider: string; model: string; reasoningEffort?: string }
+  /** 权限候选与该会话当前生效值 */
+  | { type: 'permission-options'; sessionId?: string }
+  /** 通过官方 /permission 命令切换会话权限 preset */
+  | { type: 'permission'; sessionId: string; name: string }
+  | { type: 'host' }
+  | { type: 'defaults' }
+  | { type: 'set-default'; target: 'agent-preset' | 'permission'; value: string }
+  /** 定时任务管理：走 control 连接；update 的 expected 必须是目录里的完整记录 */
+  | { type: 'schedule-list'; sessionId: string }
+  | { type: 'schedule-history'; sessionId: string; id: string; limit: number; before?: string }
+  | {
+      type: 'schedule-update';
+      sessionId: string;
+      id: string;
+      expected: Record<string, unknown>;
+      title?: string;
+      prompt?: string;
+      change?: Record<string, unknown>;
+      requestId?: string;
+    }
+  | { type: 'schedule-delete'; sessionId: string; id: string; requestId?: string }
   | { type: 'tasks'; sessionId: string }
   | { type: 'goal'; sessionId: string }
   | {

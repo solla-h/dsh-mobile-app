@@ -1,5 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useThemedStyles } from '../theme';
+import { ScheduleSheet } from './ScheduleSheet';
+import type { GatewayClient } from '../../transport/gateway-client';
 import type { Palette } from '../../theme/tokens';
 
 /**
@@ -45,8 +48,28 @@ export function mapSchedules(items: unknown): ScheduleRow[] {
   return rows;
 }
 
-export function SchedulesView({ rows, catalogReady }: { rows: ScheduleRow[]; catalogReady: boolean }) {
+export function SchedulesView({
+  rows,
+  catalogReady,
+  control,
+  rawItems,
+  onChanged,
+}: {
+  rows: ScheduleRow[];
+  catalogReady: boolean;
+  control: GatewayClient;
+  rawItems: unknown[] | null;
+  onChanged: () => void;
+}) {
   const styles = useThemedStyles(makeStyles);
+  /** 打开详情抽屉的原始条目（update 的 expected 必须带完整记录） */
+  const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const openDetail = (id: string) => {
+    const found = (rawItems ?? []).find(
+      (item) => item !== null && typeof item === 'object' && (item as { id?: unknown }).id === id,
+    );
+    if (found && typeof found === 'object') setSelected(found as Record<string, unknown>);
+  };
   return (
     <View style={styles.root}>
       <Text style={styles.title} maxFontSizeMultiplier={1.3}>
@@ -67,7 +90,7 @@ export function SchedulesView({ rows, catalogReady }: { rows: ScheduleRow[]; cat
         </View>
       ) : (
         rows.map((row) => (
-          <View key={row.id} style={styles.row}>
+          <Pressable key={row.id} style={styles.row} onPress={() => openDetail(row.id)}>
             <View style={styles.rowHead}>
               <Text style={styles.schedule} numberOfLines={1}>
                 {row.schedule ?? row.id}
@@ -82,9 +105,18 @@ export function SchedulesView({ rows, catalogReady }: { rows: ScheduleRow[]; cat
                 {row.detail}
               </Text>
             ) : null}
-          </View>
+          </Pressable>
         ))
       )}
+
+      {selected ? (
+        <ScheduleSheet
+          client={control}
+          item={selected}
+          onClose={() => setSelected(null)}
+          onChanged={onChanged}
+        />
+      ) : null}
     </View>
   );
 }
