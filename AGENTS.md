@@ -109,6 +109,69 @@ sudo -u dsh -H dsh-pair                        # 打印 5 分钟有效的配对�
 （`invalid escalation: justification-without-sandbox_permissions`），永远不会 ask；
 approval policy 本身是 `ask`，不是策略问题。详见 `docs/HANDOFF.md` §13.3。
 
+## 本机网关（家里网络差的时候用它测）
+
+`chuncheon` 那台跨国家庭网络容易抖，本机也能起一个**功能等价**的网关，而且**不用探针插件就能出真审批**。
+
+```bash
+npm i -g @deepseek-ai/dsh@0.2.1-rc.3          # 与宿主同版本，已装
+dsh plugin --profile web add dsh-plugin-mobile-gateway
+# profile: ~/.dsh/profiles/web（package.json + cordis.patch.yml）
+cd ~/dsh-lab && MAGPIE_GATEWAY_KEY=magpie dsh web --no-open
+```
+
+`cordis.patch.yml` 里接的是**本机 magpie**（`http://127.0.0.1:3425/v1`，`api: openai-completions`，
+默认模型 `group/dsf-1017`），不需要任何外部 key；magpie 本身不校验鉴权，`MAGPIE_GATEWAY_KEY`
+随便给个值就行（`apiKeyEnv` 指向的变量缺失会报错，所以要给）。
+
+**端口**：`3080` 只绑 loopback（Web UI + `/ws/mobile` + `/mgw/*` 管理面），
+`3081` 绑 `0.0.0.0`（局域网 `/ws/mobile`）。Windows 防火墙早有放行
+`D:\programs\node\node.exe` 的入站规则（Private+Public），局域网这条路不用再动系统设置。
+
+**开网关 + 配对**（`dsh-pair` 是 chuncheon 上的脚本，本机直接用 curl）：
+
+```bash
+curl -X POST http://127.0.0.1:3080/mgw/gateway -H 'content-type: application/json' -d '{"mode":"persistent"}'
+node .scratch/local-pair.mjs                    # 默认局域网入口，生成二维码页并打开浏览器
+node .scratch/local-pair.mjs ws://127.0.0.1:3080/ws/mobile   # USB 路径
+```
+
+- App 的选路是 `candidates.find(wss) ?? candidates[0]`，本机没有 `wss`，所以**由 `publicUrl` 决定**；
+  配对请求里必须显式传 `publicUrl`，否则落到网关自己的 loopback 默认值。
+- 手机开 WiFi：用 `ws://192.168.10.12:3081/ws/mobile`（PC 的局域网 IP）。
+- 手机只有蜂窝 + VPN：局域网到不了，得 `adb reverse tcp:3080 tcp:3080` 走 `ws://127.0.0.1:3080/ws/mobile`。
+- 撤销设备：`POST /mgw/devices/<id>/revoke`；查状态 `/mgw/status`、`/mgw/devices`。
+
+**真审批怎么造**——Windows 上组合了 `pwsh-sandbox`，`pwsh` 工具 schema 里**有**
+`sandbox_permissions` + `justification`（Linux 宿主没有，那才是死路），所以模型能自己申请升权：
+
+> 用 pwsh 工具把文本 xxx 写进 `C:\Users\from0\dsh-sandbox-outside.txt`。工作区之外会被沙箱拦，
+> 那就用 sandbox_permissions 加 justification 申请一次升权，我需要看到审批弹窗。
+
+先被沙箱拒一次（`[sandbox: escalation available — retry this exact command once with
+sandbox_permissions …]`），下一步就带 `sandbox_permissions: danger-full-access` 重试 → `approval/asked`。
+注意这条审批要的是**整块磁盘的访问权**，测试时默认拒绝/撤回，别随手批准。
+
+`.scratch/localgw-approval-probe.mjs` 是不经手机的探针：`node … "<提示词>" [allowed-once|rejected]`，
+**不给结论就挂起**（审批留在网关侧等手机拍板，别让脚本自己超时——连接一断网关按「撤回」处理）。
+
+**要把语音输入也弄成和宿主一样**，得补两处（都已在 profile 里配好）：
+
+1. 装 `@deepseek-ai/dsh-experimental-voice-input-bundle@0.1.7-alpha.1`，**并且**在
+   `~/.dsh/profiles/web/compatibility.json` 里给它的 4 个包开对 `0.2.1-rc.3` 的版本豁免——
+   它们声明的是 `@deepseek-ai/dsh-* ^0.1.7-alpha.1`，不满足 0.2.1-rc.3，不开豁免会被
+   「incompatible with dsh」整排禁用（表现就是 `speech-input-v1` 能力消失、App 显示「语音未启用」）。
+   豁免文件照抄 chuncheon 的 `/home/dsh/.dsh/profiles/web/compatibility.json` 即可。
+2. 识别模型默认从 **`huggingface.co`** 下，国内直连超时（`UND_ERR_CONNECT_TIMEOUT`）。
+   在 `cordis.patch.yml` 里把 `speech-to-text-sensevoice` 的 `modelOrigin` 换成 `https://hf-mirror.com`；
+   **补丁整块替换 config，`dataRoot` 必须重申**。共 3 个文件约 241 MB
+   （`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`），实测镜像 ~1.5 MB/s。
+
+**注意 App 的「语音未启用」文案不等于网关没启用语音**：它是 `hasReadyProvider()` 的结果，
+即 `available && 有 ready/standby 的 provider`。模型没下载时 phase 是 `unprepared`，
+能力在、目录在，但 App 仍然显示这句。真机上看的是 `speech-catalog` 返回的
+`providers[].preparation.phase`（注意 phase 在 `preparation` 底下，不在 provider 顶层）。
+
 ## 命令
 
 ```bash
