@@ -325,3 +325,19 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 
 **测试残留**：`/home/dsh/mobile` 下「Verify approval flow with Bash tool」是本次探针造的会话
 （含 `echo DSH_APPROVAL_PROBE` 和几次失败的 escalation 尝试），可删。
+
+## 14. 本机网关 + 输入栏手势（2026-10-31）
+
+家里网络到 chuncheon 不稳，改在本机起网关测（做法见 `AGENTS.md`「本机网关」）。
+本机 Windows 组合了 `pwsh-sandbox`，工具 schema 里有 `sandbox_permissions` + `justification`，
+**模型能自己申请升权 → 真审批**，不需要 §13.3 那种临时探针插件。
+
+真机确认：§13 里挂着没看的「请求已撤回」行已经正常渲染（2026-10-30 23:05:22 那条）。
+多网关配对/切换/冷启动记忆也都验过（`default-vnic` ↔ 本机 `yong_huang`）。
+
+### 待办（明天讨论，不用当场验证）
+
+- **`Reasoning and tool use` 胶囊的收纳与折叠逻辑还有问题**。用户观察到的现象记在这里，
+  明天再深入：收起/展开的触发时机、嵌套层级、以及和下面 AnswerCard 的关系要一起捋。
+  主要看 `src/ui/stream/ActivityGroup.tsx`、`ThinkPill.tsx`、`ToolGroup.tsx`，
+  组装逻辑在 `src/ui/stream/group.ts`。
