@@ -32,6 +32,9 @@ interface Props {
   sessionId: string;
 }
 
+/** 折叠标题行的 id 前缀——要能在 JSON.parse 之前被认出来。 */
+const GROUP_PREFIX = 'group:';
+
 export function ModelPermissionBar({ client, sessionId }: Props) {
   const styles = useThemedStyles(makeStyles);
   const [models, setModels] = useState<ModelCatalog | null>(null);
@@ -51,6 +54,8 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
       }
   >(null);
   const [busy, setBusy] = useState(false);
+  /** 折起来的模型组（按 group.id）。默认只展开当前模型所在的那组。 */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const reload = useCallback(() => {
     client.send({ type: 'models', sessionId });
@@ -132,20 +137,48 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
   const permissionLabel =
     permission?.options.find((item) => item.value === currentPermission)?.name ?? currentPermission;
 
-  // 模型列表拍平：label 用模型名，hint 带组名与思考等级标记。
+  // 模型列表按 provider 分组、每组可折叠：本地 magpie 一家就有二十多个模型，
+  // 平铺时找模型全靠肉眼扫。开面板时只展开当前模型所在的那组。
+  // hint 里不用再重复组名（组名已经在标题行上了），只留思考等级标记。
   // 两级选择：模型列表 → 有思考等级的模型进入强度列表（同一个弹层换内容，
   // 不重开 Modal——Android 上两个 Modal 同帧一关一开，新的会被丢弃）。
-  // id 用 JSON 编码，模型 id 本身可能含斜杠（deepseek-ai/DeepSeek-V4.1-Flash-1017）。
-  const modelActions: SheetAction[] = (models?.groups ?? []).flatMap((group) =>
-    group.models.map((model) => ({
-      id: JSON.stringify([group.id, model.id]),
-      label:
-        (current?.provider === group.id && current?.model === model.id ? '✓ ' : '') + model.name,
-      hint: [group.name, model.efforts.length > 0 ? '可选思考等级' : null]
-        .filter(Boolean)
-        .join(' · '),
-    })),
-  );
+  // 模型 id 用 JSON 编码，模型 id 本身可能含斜杠（deepseek-ai/DeepSeek-V4.1-Flash-1017）；
+  // 标题行的 id 带 GROUP_PREFIX 前缀，在 JSON.parse 之前就要分流。
+  const modelActions: SheetAction[] = [];
+  for (const group of models?.groups ?? []) {
+    const open = !collapsed[group.id];
+    modelActions.push({
+      id: GROUP_PREFIX + group.id,
+      heading: true,
+      label: `${open ? '▾' : '▸'} ${group.name}（${group.models.length}）`,
+    });
+    if (!open) continue;
+    for (const model of group.models) {
+      modelActions.push({
+        id: JSON.stringify([group.id, model.id]),
+        label:
+          (current?.provider === group.id && current?.model === model.id ? '✓ ' : '') + model.name,
+        hint: model.efforts.length > 0 ? '可选思考等级' : undefined,
+      });
+    }
+  }
+
+  /** 打开模型面板：重置折叠状态，只留当前模型那组展开。
+      只有一组时不折（折了也没得选）；宿主没回 current 时全展开——
+      否则一屏全是标题行，等于把目录藏起来。 */
+  const openModelSheet = useCallback(() => {
+    const groups = models?.groups ?? [];
+    const focus = current?.provider;
+    setCollapsed(
+      Object.fromEntries(
+        groups.map((group) => [
+          group.id,
+          Boolean(focus) && groups.length > 1 && group.id !== focus,
+        ]),
+      ),
+    );
+    setSheet({ kind: 'model' });
+  }, [models, current?.provider]);
   const effortActions: SheetAction[] =
     sheet?.kind === 'effort'
       ? [
@@ -172,7 +205,7 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
           style={styles.chip}
           onPress={() => {
             tapFeedback();
-            setSheet({ kind: 'model' });
+            openModelSheet();
           }}
         >
           <Text style={styles.chipText} numberOfLines={1}>
@@ -227,6 +260,11 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
           const active = sheet;
           if (!active) return;
           if (active.kind === 'model') {
+            if (id.startsWith(GROUP_PREFIX)) {
+              const groupId = id.slice(GROUP_PREFIX.length);
+              setCollapsed((state) => ({ ...state, [groupId]: !state[groupId] }));
+              return;
+            }
             let provider = '';
             let modelId = '';
             try {
