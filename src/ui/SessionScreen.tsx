@@ -99,7 +99,7 @@ import { goalRef, mapGoal, mapTodos, type GoalInfo, type TodoItem } from '../pro
 import { FileDownloader } from '../transport/file-download';
 import { FileUploader, type UploadState } from '../transport/file-upload';
 import { loadDraft, saveDraft } from '../storage/drafts';
-import { outbox, type OutboxItem } from '../transport/outbox';
+import { outbox, type OutboxDisplayItem } from '../transport/outbox';
 import type { GatewayClient } from '../transport/gateway-client';
 import { ActionSheet, type SheetAction } from './ActionSheet';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
@@ -143,6 +143,8 @@ interface Props {
   voiceDelivery?: { key: string; sessionId: string; text: string } | null;
   /** 已合并进草稿；App 据此清掉这条投递（避免切走再回来重复合并） */
   onVoiceDeliveryTaken?: (key: string) => void;
+  /** 当前活动网关：离线待发消息归属它，重试时也只发这个网关的 */
+  gatewayId?: string;
 }
 
 interface StreamingDraft {
@@ -261,6 +263,7 @@ export function SessionScreen({
   speechCatalog = null,
   voiceDelivery = null,
   onVoiceDeliveryTaken,
+  gatewayId,
 }: Props) {
   const t = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -402,7 +405,9 @@ export function SessionScreen({
   /** 交付文件的下载状态，键是卡片上的原始路径。 */
   const [fileStates, setFileStates] = useState<Record<string, FileUiState>>({});
   /** 离线发件箱里属于这个会话的消息。 */
-  const [offlineItems, setOfflineItems] = useState<OutboxItem[]>(() => outbox.list(session.sessionId));
+  const [offlineItems, setOfflineItems] = useState<OutboxDisplayItem[]>(() =>
+    outbox.listForDisplay(session.sessionId),
+  );
   /** 草稿是否已经从磁盘读回来了，读完之前不许写盘。 */
   const draftReadyRef = useRef(false);
   /** 草稿还没读完就先到的外部语音投递，等 loadDraft 回来一起合并。 */
@@ -1675,6 +1680,7 @@ export function SessionScreen({
       // 断线了别把用户打的字扔掉：落进发件箱，重连后自动补发。
       outbox.add({
         sessionId: session.sessionId,
+        gatewayId,
         // 纯图片消息的正文留空：占位串只用于本地显示，发给服务端会变成真的「［图片］」。
         text,
         images: images.length
@@ -1687,7 +1693,7 @@ export function SessionScreen({
       setQuote(null);
       setError(null);
     }
-  }, [client, editingQueue, picked, quote, readyFiles, running, sendMode, session.sessionId]);
+  }, [client, editingQueue, gatewayId, picked, quote, readyFiles, running, sendMode, session.sessionId]);
 
   /** 输入框那条路径：发草稿。语音那条走 sendMessage 直接发转写结果。 */
   const send = useCallback(() => sendMessage(draft), [draft, sendMessage]);
@@ -1699,6 +1705,15 @@ export function SessionScreen({
   const discardOffline = useCallback((id: string) => {
     outbox.remove(id);
   }, []);
+
+  /** 未确认/失败的离线消息：点「重试」换一个新 requestId 再发；没连着就等下次 ready。 */
+  const retryOffline = useCallback(
+    (id: string) => {
+      if (!outbox.retry(id)) return;
+      if (conn === 'ready') outbox.flush((frame) => client.send(frame), gatewayId);
+    },
+    [client, conn, gatewayId],
+  );
 
   /** 被服务端拒收的本地回显：点「移除」清掉，错误原因留在顶部。 */
   const discardPending = useCallback((id: string) => {
@@ -1949,6 +1964,8 @@ export function SessionScreen({
         queueId: item.id,
         pending: true,
         offline: true,
+        offlineStatus: item.displayStatus,
+        offlineError: item.error,
       })),
     ];
     // 连续的 tool 调用合并成一组，其余消息原样透传。
@@ -2005,9 +2022,10 @@ export function SessionScreen({
     saveDraft(session.sessionId, draft);
   }, [draft, session.sessionId]);
 
-  // 发件箱是模块级单例，订阅一次就能跟着增删重绘。
+  // 发件箱是模块级单例，订阅一次就能跟着增删重绘
+  //（含「待确认」超时翻成「未确认」的那次通知）。
   useEffect(() => {
-    const sync = () => setOfflineItems(outbox.list(session.sessionId));
+    const sync = () => setOfflineItems(outbox.listForDisplay(session.sessionId));
     sync();
     return outbox.subscribe(sync);
   }, [session.sessionId]);
@@ -2270,6 +2288,7 @@ export function SessionScreen({
                       onOpenFile={openFile}
                       canDownloadFiles={canDownloadFiles}
                       onDiscardOffline={discardOffline}
+                      onRetryOffline={retryOffline}
                       onDiscardPending={discardPending}
                       onLongPress={setActionMessage}
                       onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
@@ -2718,6 +2737,23 @@ function describeStats(stats: SessionStatsFrame | null): string | null {
 }
 
 
+/** 离线气泡那一行状态：待发等联网、发送中等回执、超时未确认、拒收可重试。 */
+function offlineStatusText(
+  status: 'pending' | 'sending' | 'unconfirmed' | 'failed' | undefined,
+  error?: string,
+): string {
+  switch (status) {
+    case 'sending':
+      return '已发送，等确认…';
+    case 'unconfirmed':
+      return '未确认 · 可能没送达';
+    case 'failed':
+      return error ? `发送失败：${error}` : '发送失败';
+    default:
+      return '待发送 · 联网后自动重发';
+  }
+}
+
 function MessageRow({
   message,
   attachmentCache,
@@ -2729,6 +2765,7 @@ function MessageRow({
   onOpenFile,
   canDownloadFiles,
   onDiscardOffline,
+  onRetryOffline,
   onDiscardPending,
   onLongPress,
   onQuoteCode,
@@ -2743,6 +2780,7 @@ function MessageRow({
   onOpenFile: (path: string) => void;
   canDownloadFiles: boolean;
   onDiscardOffline: (id: string) => void;
+  onRetryOffline: (id: string) => void;
   onDiscardPending: (id: string) => void;
   onLongPress: (message: ChatMessage) => void;
   onQuoteCode: (lang: string, code: string) => void;
@@ -2778,9 +2816,18 @@ function MessageRow({
           ) : null}
           {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
           <View style={styles.queuedFooter}>
-            <Text style={[styles.queuedTag, message.failed ? styles.queuedTagFailed : null]}>
+            <Text
+              style={[
+                styles.queuedTag,
+                message.failed || message.offlineStatus === 'failed'
+                  ? styles.queuedTagFailed
+                  : message.offlineStatus === 'unconfirmed'
+                    ? styles.queuedTagWarn
+                    : null,
+              ]}
+            >
               {message.offline
-                ? '待发送 · 联网后自动重发'
+                ? offlineStatusText(message.offlineStatus, message.offlineError)
                 : message.failed
                   ? '发送失败'
                   : message.pending
@@ -2790,9 +2837,20 @@ function MessageRow({
                       : '排队中'}
             </Text>
             {message.offline ? (
-              <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
-                <Text style={styles.queuedAction}>删除</Text>
-              </Pressable>
+              message.offlineStatus === 'sending' ? null : message.offlineStatus === 'pending' ? (
+                <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
+                  <Text style={styles.queuedAction}>删除</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.queuedActions}>
+                  <Pressable hitSlop={8} onPress={() => onRetryOffline(message.queueId)}>
+                    <Text style={styles.queuedAction}>重试</Text>
+                  </Pressable>
+                  <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
+                    <Text style={styles.queuedAction}>移除</Text>
+                  </Pressable>
+                </View>
+              )
             ) : message.failed ? (
               <Pressable hitSlop={8} onPress={() => onDiscardPending(message.queueId)}>
                 <Text style={styles.queuedAction}>移除</Text>
@@ -2970,6 +3028,7 @@ function makeStyles(t: Palette) {
   },
   queuedTag: { color: t.text.muted, fontSize: 10 },
   queuedTagFailed: { color: t.semantic.dangerText },
+  queuedTagWarn: { color: t.semantic.gateAmberText },
   queuedActions: { flexDirection: 'row', gap: 12 },
   queuedAction: { color: t.text.primary, fontSize: 10, fontWeight: '600' },
   // 助手消息可能带表格/代码块，撑满整行才能算出可滚动的宽度。

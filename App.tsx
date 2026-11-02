@@ -744,6 +744,8 @@ function AppBody() {
         case 'sent': {
           // 只认自己这次语音请求的回执；不能用布尔值等「任意一条 sent」。
           const sent = frame as unknown as { requestId?: string; sessionId?: string };
+          // 发件箱条目也按 requestId 认领：这声回执才算真正送到了网关。
+          outbox.ack(sent.requestId);
           if (voiceCreateRequestRef.current && sent.requestId === voiceCreateRequestRef.current) {
             voiceCreateRequestRef.current = null;
             if (sent.sessionId) {
@@ -844,6 +846,8 @@ function AppBody() {
           };
           setCreating(false);
           const text = `${failure.code ?? 'error'}：${failure.message ?? ''}`;
+          // 被整个拒收、连回执都等不到的待发消息：标失败，交给会话页给重试/移除。
+          outbox.fail(failure.requestId, text);
           handleVoiceFailure(failure);
           if (voiceMessagePendingRef.current && failure.requestId === voiceMessagePendingRef.current) {
             voiceMessagePendingRef.current = null;
@@ -904,8 +908,12 @@ function AppBody() {
       setDetail(message ?? null);
       if (next === 'ready') {
         setError(null);
-        // 断线期间写下的消息在重连后补发，顺序按写入先后。
-        outbox.flush((frame) => client.send(frame));
+        // 断线期间写下的消息在重连后补发，顺序按写入先后；只发当前网关的，
+        // 旧版本没记网关的条目按当前网关收养一次并说一声。
+        const flushed = outbox.flush((frame) => client.send(frame), savedRef.current?.id);
+        if (flushed.adopted > 0) {
+          notifyPet(`${flushed.adopted} 条旧待发消息按当前网关继续发送`);
+        }
       } else {
         // 等 session-created 的那句语音草稿等不到了：重连后网关也不会重放响应。
         rescueVoiceDraft('连接断了，文字已复制到剪贴板');
@@ -916,7 +924,7 @@ function AppBody() {
       offState();
       offFrame();
     };
-  }, [client, handleFrame, rescueVoiceDraft]);
+  }, [client, handleFrame, notifyPet, rescueVoiceDraft]);
 
   const connectWith = useCallback(
     async (gateway: SavedGateway, pairingCode?: string) => {
@@ -1382,6 +1390,8 @@ function AppBody() {
             capabilities={hello?.capabilities ?? []}
             // 会话页的语音上限/就绪判断要和首页同一份目录，不能各猜各的
             speechCatalog={speechCatalog}
+            // 离线待发消息按网关归属，切网关后不会把上一个网关的待发消息甩过去
+            gatewayId={saved?.id}
             // 首页语音到上限的文字：由会话页合并进输入框（挂载中/刚挂载都算）
             voiceDelivery={voiceDelivery}
             onVoiceDeliveryTaken={clearVoiceDelivery}
