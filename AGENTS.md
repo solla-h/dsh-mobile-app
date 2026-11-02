@@ -203,7 +203,10 @@ npx expo lint
 - **adb `input tap` 不可靠**：MIUI 上 Modal 内的单点注入经常被系统丢弃（同一坐标连续扫描可能命中一次、单点不中），表现为「按钮点了没反应」。**交互细节不要靠 adb 单点验证**——先用真实手指或看协议帧；只有非交互的视觉/布局可以用截图。
 - `adb reverse tcp:8081 tcp:8081` 在 adb server 重启后会丢，重新拉一次再用 `exp://127.0.0.1:8081` 打开。
 - **Metro 会 OOM**（node heap 满被系统杀）：日志表现为 bundle 请求全部失效、手机跑缓存 bundle（改了代码但界面不变）。启动时带 `NODE_OPTIONS=--max-old-space-size=8192`；怀疑「改动没生效」时先 `curl 8081/status`。
-- **不要改手机的输入法设置**（`ime enable/disable/set`）。需要输入空格时用设备侧引号：
+- **连上手机第一件事：切输入法到小米自带「百度输入法小米版」**——
+  `adb shell ime set com.baidu.input_mi/.ImeService`（原「微信输入法」会把 `adb input text`
+  截在候选层不落进输入框，真机打字很费劲）。只做 `ime set` 切换；
+  **不要 `ime enable/disable`**（会动系统输入法列表，曾坏过输入）。需要输入空格时用设备侧引号：
   `adb shell "input text 'a b c'"`。
 
 
