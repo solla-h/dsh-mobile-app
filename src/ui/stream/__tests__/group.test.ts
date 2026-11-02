@@ -1,4 +1,4 @@
-import { groupMessages } from '../group';
+import { activitySummary, groupMessages, type ActivityStep } from '../group';
 import type { ChatMessage } from '../../../protocol/chat';
 
 const at = (id: string, n: number): number => 1000 + n;
@@ -91,5 +91,54 @@ describe('groupMessages activity 折叠', () => {
     };
     const rows = groupMessages([user('u1', '问题', 1), message]);
     expect(rows.map((row) => row.kind)).toEqual(['message', 'message']);
+  });
+});
+
+describe('activitySummary', () => {
+  const toolStep = (
+    entries: { name: string; output?: string; isError?: boolean }[],
+  ): ActivityStep => ({
+    kind: 'tools',
+    id: 'tools-1',
+    tools: entries.map((entry, index) => ({
+      id: `t${index}`,
+      name: entry.name,
+      time: 0,
+      output: 'output' in entry ? entry.output : 'ok',
+      isError: entry.isError,
+    })),
+  });
+
+  it('思考段数与工具名（单个工具不带「等」）', () => {
+    const summary = activitySummary([
+      { kind: 'message', id: 'm1', message: think('t1', '想', 1) },
+      toolStep([{ name: 'bash' }]),
+    ]);
+    expect(summary).toEqual({ label: '思考 1 段 · 调用 Bash', failed: 0 });
+  });
+
+  it('两个工具名用顿号并列', () => {
+    const summary = activitySummary([toolStep([{ name: 'read' }, { name: 'bash' }])]);
+    expect(summary.label).toBe('调用 Read、Bash');
+  });
+
+  it('超过两个工具名折叠成「等 N 步」', () => {
+    const summary = activitySummary([
+      toolStep([{ name: 'bash' }, { name: 'read' }, { name: 'grep' }, { name: 'edit' }]),
+    ]);
+    expect(summary).toEqual({ label: '调用 Bash、Read 等 4 步', failed: 0 });
+  });
+
+  it('失败计数：isError 与退出码都算，running（无 output）不算', () => {
+    const summary = activitySummary([
+      toolStep([
+        { name: 'bash', isError: true },
+        { name: 'build', output: 'boom\n[exit code: 1]' },
+        { name: 'read', output: undefined },
+      ]),
+    ]);
+    // running 的工具名也计入「等 N 步」的总数。
+    expect(summary.failed).toBe(2);
+    expect(summary.label).toBe('调用 Bash、Build 等 3 步 · 2 次失败');
   });
 });

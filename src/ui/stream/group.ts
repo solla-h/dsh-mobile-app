@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../../protocol/chat';
+import { toolFailed } from '../tool-format';
 import type { ToolEntry } from './ToolGroup';
 
 /** 活动胶囊里的一步：思考消息或一批工具调用（不会嵌套 activity）。 */
@@ -15,6 +16,44 @@ export type StreamRow =
    * 思考/工具保持原样展开，不让用户失去实时进度。
    */
   | { kind: 'activity'; id: string; steps: ActivityStep[] };
+
+/**
+ * 活动胶囊外层的中文摘要（FLOW-1）：`思考 2 段 · 调用 Bash、Read 等 4 步 · 1 次失败`。
+ *
+ * 刻意不带「已思考 18s」：历史里只有工具耗时可算（tool/result.time - tool/call.time），
+ * assistant 消息只有落地时间、没有思考起止，编不出可信时长（Codex 走查结论）。
+ */
+export function activitySummary(steps: ActivityStep[]): { label: string; failed: number } {
+  let thoughts = 0;
+  let toolCount = 0;
+  let failed = 0;
+  const names: string[] = [];
+  for (const step of steps) {
+    if (step.kind === 'message') {
+      thoughts += 1;
+      continue;
+    }
+    for (const tool of step.tools) {
+      toolCount += 1;
+      if (toolFailed(tool.name, tool.output, tool.isError)) failed += 1;
+      const clean = tool.name.trim();
+      if (!clean) continue;
+      const pretty = clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+      if (!names.includes(pretty)) names.push(pretty);
+    }
+  }
+  const parts: string[] = [];
+  if (thoughts > 0) parts.push(`思考 ${thoughts} 段`);
+  if (toolCount > 0) {
+    parts.push(
+      names.length <= 2
+        ? `调用 ${names.join('、')}`
+        : `调用 ${names.slice(0, 2).join('、')} 等 ${toolCount} 步`,
+    );
+  }
+  if (failed > 0) parts.push(`${failed} 次失败`);
+  return { label: parts.join(' · ') || '思考与工具调用', failed };
+}
 
 /** 带正文的 assistant（正式回答）——空 text 的 assistant 只是 reasoning 载体。 */
 function hasBody(message: ChatMessage): boolean {

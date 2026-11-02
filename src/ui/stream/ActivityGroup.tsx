@@ -5,14 +5,14 @@ import { softFeedback, tapFeedback } from '../haptics';
 import { useTheme } from '../theme';
 import { ThinkPill } from './ThinkPill';
 import { ToolGroup } from './ToolGroup';
-import type { StreamRow } from './group';
+import { activitySummary, type ActivityStep } from './group';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 interface Props {
-  steps: StreamRow[];
+  steps: ActivityStep[];
   pendingCallId?: string;
   onOpenGate?: () => void;
   onQuoteLine?: Parameters<typeof ToolGroup>[0]['onQuoteLine'];
@@ -42,17 +42,22 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
       LayoutAnimation.configureNext({
         duration: 240,
         update: { type: LayoutAnimation.Types.spring, springDamping: 1 },
+        // 收拢是「展开的步骤行删掉、34pt 胶囊出现」：不配 create/delete 的话
+        // 首字到达瞬间尺寸直接跳变（FLOW-1 的视口跳动来源），配了才是淡入淡出。
+        create: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+        delete: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
       });
       softFeedback();
     }
   }, [animateIn]);
 
-  const thoughts = steps.filter((step) => step.kind === 'message').length;
-  const tools = steps.reduce(
-    (total, step) => (step.kind === 'tools' ? total + step.tools.length : total),
-    0,
-  );
-  const total = thoughts + tools;
+  const { label, failed } = activitySummary(steps);
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -70,11 +75,11 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
         accessibilityLabel={open ? '收起思考与工具调用' : '展开思考与工具调用'}
       >
         <Text style={[styles.sparkle, { color: t.text.muted }]}>✦</Text>
+        {failed > 0 ? (
+          <View style={[styles.failDot, { backgroundColor: t.semantic.dangerText }]} />
+        ) : null}
         <Text style={[styles.label, { color: t.text.primary }]} numberOfLines={1}>
-          Reasoning and tool use
-        </Text>
-        <Text style={[styles.meta, { color: t.text.muted }]} numberOfLines={1}>
-          {total} 步
+          {label}
         </Text>
         <View style={styles.tail}>
           <Text style={[styles.meta, { color: t.text.muted }]}>{open ? '收起' : '展开'}</Text>
@@ -96,6 +101,7 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
               <View key={step.id} style={styles.toolWrap}>
                 <ToolGroup
                   tools={step.tools}
+                  defaultOpen
                   pendingCallId={pendingCallId}
                   onOpenGate={onOpenGate}
                   onQuoteLine={onQuoteLine}
@@ -121,7 +127,8 @@ const styles = StyleSheet.create({
     height: 34,
   },
   sparkle: { fontSize: 12 },
-  label: { fontSize: 11.5, fontWeight: '600' },
+  failDot: { width: 6, height: 6, borderRadius: 3 },
+  label: { fontSize: 11.5, fontWeight: '600', flexShrink: 1 },
   meta: { fontSize: 10.5, fontVariant: ['tabular-nums'] },
   tail: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' },
   chevron: { fontSize: 11 },

@@ -41,6 +41,11 @@ export interface ToolEntry {
 
 interface Props {
   tools: ToolEntry[];
+  /**
+   * 默认展开（用户没手动点过时生效）：活动胶囊里用它消除套娃折叠（FLOW-1）——
+   * 展开胶囊一次就能看到工具列表，工具输出仍逐行按需展开。
+   */
+  defaultOpen?: boolean;
   /** 当前挂起的审批 callId，命中时在流中单独高亮为黄色 Gate 胶囊 */
   pendingCallId?: string;
   /** 点击黄色 Gate 步骤时直接放大打开底部方案 B 沉浸审批卡 */
@@ -54,7 +59,7 @@ interface Props {
  * 运行中默认展开逐行转圈；整批连续调用一旦全部完成，主动通过过阻尼曲线折叠为「已折叠 N 项连续工具调用」。
  * 遇到待审批 Gate 步骤时以暖琥珀色独立高亮，支持点按呼出方案 B 决策大卡或直接在流内点按 Diff 行引用。
  */
-export function ToolGroup({ tools, pendingCallId, onOpenGate, onQuoteLine }: Props) {
+export function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuoteLine }: Props) {
   const hasGate = tools.some(
     (tool) => tool.pendingGate || (pendingCallId && tool.callId === pendingCallId),
   );
@@ -72,7 +77,7 @@ export function ToolGroup({ tools, pendingCallId, onOpenGate, onQuoteLine }: Pro
     prevRunningRef.current = running;
   }, [running]);
 
-  const open = manual ?? running;
+  const open = manual ?? defaultOpen ?? running;
   const [openId, setOpenId] = useState<string | null>(null);
   const done = tools.filter((tool) => !tool.running).length;
   const t = useTheme();
@@ -102,7 +107,9 @@ export function ToolGroup({ tools, pendingCallId, onOpenGate, onQuoteLine }: Pro
             ? `等待审批 (${done}/${tools.length})`
             : running
               ? `正在连续调用工具 (${done}/${tools.length})`
-              : `已折叠 ${tools.length} 项连续工具调用`}
+              : open
+                ? `${tools.length} 项工具调用`
+                : `已折叠 ${tools.length} 项连续工具调用`}
         </Text>
         {!open ? (
           <Text style={[styles.meta, { color: t.text.muted }]} numberOfLines={1}>
