@@ -872,6 +872,7 @@ export function SessionScreen({
 
   useEffect(() => {
     const off = client.onFrame(handleFrame);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话 key 变化时同步清空本地状态，历史/订阅随后补回
     setLoading(true);
     setMessages([]);
     setStreaming(null);
@@ -1050,6 +1051,7 @@ export function SessionScreen({
   // 新请求进来就重新展开面板；同一个请求被收起后不会再自动弹。
   const requestKey = approval?.rpcId ?? question?.rpcId ?? '';
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 新交互到达时重新展开面板，属于对外部帧的同步
     if (requestKey) setSheetHidden(false);
   }, [requestKey]);
 
@@ -1878,6 +1880,7 @@ export function SessionScreen({
       const key = message.text || (message.images?.length ? IMAGE_ONLY_TEXT : '');
       if (key) seen.add(key);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 服务端确认后清掉本地回显，失败项要保留
     setPendingSends((current) => {
       // 失败的那条只让用户手动移除：按文本去重会被别的同文本消息顺手清掉，
       // 图片更糟——所有图片回显都用同一个占位串。
@@ -2024,7 +2027,6 @@ export function SessionScreen({
   // 否则上一会话的文字会被当成这一会话的草稿写回去。
   useEffect(() => {
     draftReadyRef.current = false;
-    setDraft('');
     let cancelled = false;
     void loadDraft(session.sessionId).then((text) => {
       if (cancelled) return;

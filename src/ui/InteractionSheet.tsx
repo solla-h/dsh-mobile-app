@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -204,9 +204,7 @@ function QuestionBody({
     Object.fromEntries(question.questions.map((item) => [item.id, { selected: [], custom: '' }])),
   );
 
-  useEffect(() => {
-    setDrafts(Object.fromEntries(question.questions.map((item) => [item.id, { selected: [], custom: '' }])));
-  }, [question.rpcId, question.questions]);
+  // drafts 由 key={question.rpcId} 的重挂载负责重置，这里不需要再同步清一次。
 
   const complete = useMemo(() => draftComplete(question.questions, drafts), [question.questions, drafts]);
 
