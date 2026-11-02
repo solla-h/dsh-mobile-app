@@ -2,6 +2,14 @@ import * as Network from 'expo-network';
 import { AppState } from 'react-native';
 
 import type { ClientFrame, ServerFrame } from '../protocol/types';
+import {
+  HANDSHAKE_TIMEOUT_MS,
+  HEARTBEAT_MS,
+  NETWORK_DEBOUNCE_MS,
+  PROBE_TIMEOUT_MS,
+  backoffDelay,
+  classifyClose,
+} from './connection-policy';
 
 export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'closed' | 'error';
 
@@ -24,12 +32,15 @@ export interface ConnectOptions {
 type FrameListener = (frame: ServerFrame) => void;
 type StateListener = (state: ConnectionState, detail?: string) => void;
 
-const BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
-const HEARTBEAT_MS = 25000;
-
 /**
  * dsh-mobile-v1 的 WebSocket 客户端。
  * 只负责连接、鉴权、心跳、重连和帧分发；业务状态由上层维护。
+ *
+ * 三条时间线：
+ * - 握手截止：open() 后 12s 内没有 hello/paired 就重连；
+ * - 心跳：后台每 25s 一次，超过两轮没有任何帧判假死；
+ * - 探活：回前台/切网恢复后 5s 内没有任何帧就主动重连。
+ * 这些是候选值，真机网络测试后再调。
  */
 export class GatewayClient {
   private socket: WebSocket | null = null;
@@ -39,6 +50,10 @@ export class GatewayClient {
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private probeTimer: ReturnType<typeof setTimeout> | null = null;
+  private networkTimer: ReturnType<typeof setTimeout> | null = null;
+  private probeStartedAt = 0;
   private stopped = true;
   /** 最近一次收到任何帧的时间；心跳用来判断连接是不是已经假死。 */
   private lastFrameAt = 0;
@@ -69,15 +84,22 @@ export class GatewayClient {
     this.options = options;
     this.stopped = false;
     this.attempt = 0;
+    this.lastFrameAt = 0;
     this.watchNetwork();
     this.watchForeground();
     this.open();
   }
 
   send(frame: ClientFrame): boolean {
-    if (!this.socket || this.socket.readyState !== 1) return false;
-    this.socket.send(JSON.stringify(frame));
-    return true;
+    const socket = this.socket;
+    if (!socket || socket.readyState !== 1) return false;
+    try {
+      socket.send(JSON.stringify(frame));
+      return true;
+    } catch {
+      // socket 在 readyState 检查和 send 之间关掉时，RN 可能直接抛。
+      return false;
+    }
   }
 
   disconnect(): void {
@@ -87,15 +109,7 @@ export class GatewayClient {
     this.unwatchNetwork = null;
     this.unwatchAppState?.remove();
     this.unwatchAppState = null;
-    if (this.socket) {
-      const socket = this.socket;
-      this.socket = null;
-      try {
-        socket.close();
-      } catch {
-        // 关闭失败不影响状态机
-      }
-    }
+    this.closeSocket();
     this.emitState('idle');
   }
 
@@ -110,6 +124,14 @@ export class GatewayClient {
     if (options.token) headers.Authorization = `Bearer ${options.token}`;
     if (options.channel) headers['X-DSH-Channel'] = options.channel;
 
+    // 任何路径重新 open 之前先收掉旧 socket，避免两个连接同时活着。
+    if (this.socket) {
+      this.clearHandshake();
+      this.clearProbe();
+      this.clearNetworkTimer();
+      this.stopHeartbeat();
+      this.closeSocket();
+    }
     this.emitState('connecting');
     const Socket = WebSocket as unknown as new (
       url: string,
@@ -126,14 +148,25 @@ export class GatewayClient {
       return;
     }
     this.socket = socket;
+    this.startHandshake(socket);
 
     socket.onopen = () => {
-      this.attempt = 0;
+      if (this.socket !== socket) {
+        try {
+          socket.close();
+        } catch {
+          // 已经被新连接替换，关不掉也无所谓
+        }
+        return;
+      }
+      // 注意：这里不能把 attempt 清零。只有真正收到 hello/paired 才算握手成功，
+      // 否则一个「接受后立刻断」的代理会让退避永远停在 1s。
       this.lastFrameAt = Date.now();
       this.startHeartbeat();
     };
 
     socket.onmessage = (event: { data?: unknown }) => {
+      if (this.socket !== socket) return;
       if (typeof event.data !== 'string') return;
       let frame: ServerFrame;
       try {
@@ -147,10 +180,12 @@ export class GatewayClient {
         const token = (frame as { token?: unknown }).token;
         if (typeof token === 'string' && token && this.options) {
           this.options = { ...this.options, token, pairingCode: undefined };
-          this.attempt = 0;
         }
+        // 不在这里清握手截止：真正可用以 hello 为准；paired 只负责换 token。
       }
       if (frame.kind === 'hello') {
+        this.clearHandshake();
+        this.attempt = 0;
         if ((frame as { authenticated?: boolean }).authenticated && this.options?.pairingCode) {
           this.options = { ...this.options, pairingCode: undefined };
         }
@@ -160,32 +195,42 @@ export class GatewayClient {
     };
 
     socket.onerror = () => {
+      if (this.socket !== socket) return;
       this.emitState('error', '连接出错');
     };
 
     socket.onclose = (event: { code?: number; reason?: string }) => {
-      // 已经被 disconnect() 或心跳看门狗换掉的旧 socket，不许再动状态机。
+      // 已经被 disconnect()、探活或握手截止换掉的旧 socket，不许再动状态机。
       if (this.socket !== socket) return;
+      this.clearHandshake();
+      this.clearProbe();
       this.stopHeartbeat();
       this.socket = null;
       if (this.stopped) {
         this.emitState('closed');
         return;
       }
-      if (event.code === 4004) {
+      const decision = classifyClose(event.code, event.reason);
+      if (decision.stop) {
         this.stopped = true;
-        this.emitState('closed', '网关已关闭');
+        this.clearTimers();
+        this.emitState(decision.message === '网关已关闭' ? 'closed' : 'error', decision.message);
         return;
       }
-      if (event.code === 4003) {
-        this.emitState('error', '服务端重新开启了鉴权，正在重连');
-      } else if (event.code === 1006 || event.code === 1001) {
-        this.emitState('error', '连接中断，正在重连');
-      } else {
-        this.emitState('error', event.reason || `连接关闭（${event.code ?? '未知'}）`);
-      }
-      this.scheduleReconnect();
+      this.emitState('error', decision.message);
+      if (decision.reconnect) this.scheduleReconnect();
     };
+  }
+
+  /** 从 socket 创建开始计时；TCP 挂住和 hello 不来都算握手失败。 */
+  private startHandshake(socket: WebSocket): void {
+    this.clearHandshake();
+    this.handshakeTimer = setTimeout(() => {
+      this.handshakeTimer = null;
+      if (this.socket !== socket) return;
+      this.dropSocket('连接超时，正在重连');
+      this.scheduleReconnect();
+    }, HANDSHAKE_TIMEOUT_MS);
   }
 
   private scheduleReconnect(): void {
@@ -196,7 +241,9 @@ export class GatewayClient {
       this.emitState('error', '配对码已被使用或已过期。每个配对码只能用一次，请在服务器上重新运行 dsh-pair');
       return;
     }
-    const delay = BACKOFF_MS[Math.min(this.attempt, BACKOFF_MS.length - 1)];
+    // 已经有一个在等，就别叠第二个定时器。
+    if (this.reconnectTimer) return;
+    const delay = backoffDelay(this.attempt);
     this.attempt += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -210,15 +257,7 @@ export class GatewayClient {
       // 手机切网/进电梯时 TCP 常常半开：socket 还是 OPEN，但再也收不到东西。
       // 网关每 ping 都会回 pong，超过两轮没有任何帧就判定假死，主动断开重连。
       if (this.lastFrameAt && Date.now() - this.lastFrameAt > HEARTBEAT_MS * 2) {
-        const socket = this.socket;
-        this.socket = null;
-        this.stopHeartbeat();
-        this.emitState('error', '连接无响应，正在重连');
-        try {
-          socket?.close();
-        } catch {
-          // 关不掉也要走重连
-        }
+        this.dropSocket('连接无响应，正在重连');
         this.scheduleReconnect();
         return;
       }
@@ -227,8 +266,45 @@ export class GatewayClient {
   }
 
   /**
+   * 回前台/切网恢复后的快速探活。
+   * 发一个 ping，PROBE_TIMEOUT_MS 内收到任何帧都算活着；否则主动断开重连。
+   */
+  private probe(): void {
+    if (this.stopped) return;
+    const socket = this.socket;
+    if (!socket) {
+      if (this.reconnectTimer) return;
+      this.attempt = 0;
+      this.open();
+      return;
+    }
+    if (socket.readyState === 0) {
+      // 正在握手：有截止定时器就让它跑完，别在回前台时把它掐掉。
+      if (this.handshakeTimer) return;
+      this.dropSocket('连接已断开，正在重连');
+      this.scheduleReconnect();
+      return;
+    }
+    if (socket.readyState !== 1) {
+      this.dropSocket('连接已断开，正在重连');
+      this.scheduleReconnect();
+      return;
+    }
+    this.clearProbe();
+    this.probeStartedAt = Date.now();
+    this.send({ type: 'ping' });
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = null;
+      if (this.socket !== socket) return;
+      if (this.lastFrameAt >= this.probeStartedAt) return;
+      this.dropSocket('连接无响应，正在重连');
+      this.scheduleReconnect();
+    }, PROBE_TIMEOUT_MS);
+  }
+
+  /**
    * 系统层面的网络状态：断网时不用按退避阶梯空转，
-   * 恢复时立刻重连，用户不用等 30 秒。
+   * 恢复时防抖 1.5s 再探活/重连，避免 WiFi/5G 切换瞬间打出一串连接。
    */
   private watchNetwork(): void {
     if (this.unwatchNetwork) return;
@@ -239,16 +315,33 @@ export class GatewayClient {
         this.online = online;
         if (this.stopped) return;
         if (!online) {
+          this.clearNetworkTimer();
           if (wasOnline) this.emitState('error', '设备已离线，等待网络恢复');
           return;
         }
-        // 网络刚恢复：清掉退避计时，马上重连。
-        if (!this.socket && this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = null;
-          this.attempt = 0;
-          this.open();
-        }
+        // 第一次回调通常就是「在线」，不触发重连；只在从离线恢复时动作。
+        if (wasOnline) return;
+        this.clearNetworkTimer();
+        this.networkTimer = setTimeout(() => {
+          this.networkTimer = null;
+          if (this.stopped) return;
+          const socket = this.socket;
+          if (!socket) {
+            if (this.reconnectTimer) {
+              clearTimeout(this.reconnectTimer);
+              this.reconnectTimer = null;
+            }
+            this.attempt = 0;
+            this.open();
+            return;
+          }
+          if (socket.readyState === 1) {
+            this.probe();
+            return;
+          }
+          this.dropSocket('网络已恢复，正在重连');
+          this.scheduleReconnect();
+        }, NETWORK_DEBOUNCE_MS);
       });
     } catch {
       this.unwatchNetwork = null;
@@ -256,29 +349,48 @@ export class GatewayClient {
   }
 
   /**
-   * 回到前台时把心跳基准拉回现在。
-   *
-   * 后台期间 JS 定时器会被系统挂起，lastFrameAt 会停在进后台前的时间点；
-   * 回前台后心跳第一跳就会看到「超过两轮没收到帧」，把好端端的连接判成假死，
-   * 白白断一次（界面还会掉回配对页）。这里重置基准并补一个 ping。
+   * 回到前台时不要拿后台期间的旧 lastFrameAt 判假死；
+   * 但也别直接把基准重置成现在——那会把「已经半死」的连接当成健康。
+   * 统一走 probe()：5s 内没有帧才重连。
    */
   private watchForeground(): void {
     if (this.unwatchAppState) return;
     try {
       this.unwatchAppState = AppState.addEventListener('change', (next) => {
-        if (next !== 'active' || this.stopped) return;
-        if (!this.socket) return;
-        if (this.socket.readyState !== 1) {
-          // 后台期间 socket 已经被系统掐了：别等心跳，立刻重连。
-          this.socket = null;
-          if (!this.reconnectTimer) this.scheduleReconnect();
+        if (next !== 'active' || this.stopped || !this.online) return;
+        if (!this.socket) {
+          // 回前台时别让 30s 的退避继续挂着：用户已经在看屏幕了，立刻试一次。
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+          }
+          this.attempt = 0;
+          this.open();
           return;
         }
-        this.lastFrameAt = Date.now();
-        this.send({ type: 'ping' });
+        this.probe();
       });
     } catch {
       this.unwatchAppState = null;
+    }
+  }
+
+  private dropSocket(message: string): void {
+    this.clearHandshake();
+    this.clearProbe();
+    this.stopHeartbeat();
+    this.closeSocket();
+    this.emitState('error', message);
+  }
+
+  private closeSocket(): void {
+    const socket = this.socket;
+    this.socket = null;
+    if (!socket) return;
+    try {
+      socket.close();
+    } catch {
+      // 关闭失败不影响状态机
     }
   }
 
@@ -289,8 +401,32 @@ export class GatewayClient {
     }
   }
 
+  private clearHandshake(): void {
+    if (this.handshakeTimer) {
+      clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = null;
+    }
+  }
+
+  private clearProbe(): void {
+    if (this.probeTimer) {
+      clearTimeout(this.probeTimer);
+      this.probeTimer = null;
+    }
+  }
+
+  private clearNetworkTimer(): void {
+    if (this.networkTimer) {
+      clearTimeout(this.networkTimer);
+      this.networkTimer = null;
+    }
+  }
+
   private clearTimers(): void {
     this.stopHeartbeat();
+    this.clearHandshake();
+    this.clearProbe();
+    this.clearNetworkTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
