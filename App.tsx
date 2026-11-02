@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -1051,6 +1052,25 @@ function AppBody() {
     void draftSessionIds().then(setDraftIds);
   }, [active]);
 
+  /** 会话页 → 列表：左上角「<」与 Android 系统返回键共用同一动作。 */
+  const closeSession = useCallback(() => {
+    setActive(null);
+    client.send({ type: 'sessions' });
+  }, [client]);
+
+  // Android 系统返回键：会话页按返回回列表，不再直接退出 App（FLOW-4）。
+  // 列表/配对页不拦截，交回系统（退出是根页面的正常语义）；各种面板都是 RN Modal
+  // 且带 onRequestClose——Modal 开着时 RN 不会把返回键派发到这里。
+  const hasActiveSession = active !== null;
+  useEffect(() => {
+    if (!hasActiveSession) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeSession();
+      return true;
+    });
+    return () => sub.remove();
+  }, [closeSession, hasActiveSession]);
+
   // 冷启动：有保存的 token 就直接重连，不再让用户手动点一次。
   useEffect(() => {
     let cancelled = false;
@@ -1486,10 +1506,7 @@ function AppBody() {
                 current && current.running !== next ? { ...current, running: next } : current,
               );
             }}
-            onBack={() => {
-              setActive(null);
-              client.send({ type: 'sessions' });
-            }}
+            onBack={closeSession}
             onOpenSession={(sessionId) => {
               openSession({ sessionId, updatedAt: Date.now(), running: false, blank: false });
               // 新 active 只有 id，标题/目录要等列表回来补。
