@@ -1,4 +1,4 @@
-import { applyRealtime, mapHistory, prependHistory, type HistoryEvent } from '../chat';
+import { applyRealtime, mapHistory, type HistoryEvent } from '../chat';
 
 const ev = (seq: number, type: string, data: Record<string, unknown>): HistoryEvent =>
   ({ seq, type, time: 1700000000000 + seq, data }) as unknown as HistoryEvent;
@@ -291,21 +291,5 @@ describe('applyRealtime', () => {
   it('同一个 seq 的事件只进一次', () => {
     const once = applyRealtime([], { type: 'turn/end', turn: 1, reason: 'success' }, 9, 1000);
     expect(applyRealtime(once, { type: 'turn/end', turn: 1, reason: 'success' }, 9, 1000)).toBe(once);
-  });
-});
-
-describe('prependHistory', () => {
-  it('按 seq 去重，重叠的旧消息不会重复出现', () => {
-    const current = mapHistory([ev(2, 'user/message', { content: [{ type: 'text', text: 'b' }] })]);
-    const merged = prependHistory(current, [
-      ev(1, 'user/message', { content: [{ type: 'text', text: 'a' }] }),
-      ev(2, 'user/message', { content: [{ type: 'text', text: 'b' }] }),
-    ]);
-    expect(merged.map((message) => (message as { text: string }).text)).toEqual(['a', 'b']);
-  });
-
-  it('没有新消息时返回原数组引用', () => {
-    const current = mapHistory([ev(1, 'user/message', { content: [{ type: 'text', text: 'a' }] })]);
-    expect(prependHistory(current, [])).toBe(current);
   });
 });

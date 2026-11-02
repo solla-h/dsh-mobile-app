@@ -55,6 +55,7 @@ import { GatewayClient, type ConnectionState } from './src/transport/gateway-cli
 import { draftSessionIds } from './src/storage/drafts';
 import { readJson, removeJson, writeJson } from './src/storage/persisted-state';
 import { outbox } from './src/transport/outbox';
+import { dropCachedGateway } from './src/transport/history-cache';
 import { mapDirectories, type DirectoryListing } from './src/protocol/directories';
 import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
 import { DirectoryPicker } from './src/ui/DirectoryPicker';
@@ -65,6 +66,9 @@ import type { Palette } from './src/theme/tokens';
 
 /** 会话列表按网关分开缓存，切换网关时不会串味。 */
 const sessionsCacheKey = (gatewayId: string) => `sessions-${gatewayId}`;
+
+/** session-create / 语音新会话的兜底：15s 没回包就撤悬挂状态（12–30s 区间取中）。 */
+const CREATE_TIMEOUT_MS = 15000;
 
 /** 列表上的相对时间：比绝对时间戳好读，也不用为「耗时」去拉 session-stats。 */
 function ago(at: number): string {
@@ -162,6 +166,31 @@ function AppBody() {
   const voiceCreateRequestRef = useRef<string | null>(null);
   /** 首页语音发给已有会话的消息，等 sent/error 按 requestId 归位 */
   const voiceMessagePendingRef = useRef<string | null>(null);
+  /** 在途 session-create（列表页/目录新建）：超时按 requestId 判断该不该撤 creating。 */
+  const creatingRequestRef = useRef<string | null>(null);
+  /** session-create / 语音新会话的兜底定时器，按 requestId 挂；回包、error 或超时都会清掉。 */
+  const createTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const armRequestTimeout = useCallback((requestId: string, onTimeout: () => void) => {
+    const timers = createTimersRef.current;
+    const existing = timers.get(requestId);
+    if (existing) clearTimeout(existing);
+    timers.set(
+      requestId,
+      setTimeout(() => {
+        timers.delete(requestId);
+        onTimeout();
+      }, CREATE_TIMEOUT_MS),
+    );
+  }, []);
+  const settleRequestTimeout = useCallback((requestId?: string) => {
+    if (requestId === undefined) return;
+    const timers = createTimersRef.current;
+    const timer = timers.get(requestId);
+    if (timer) {
+      clearTimeout(timer);
+      timers.delete(requestId);
+    }
+  }, []);
   /** 语音只打开审批卡，不代替用户拍板；rpcId 用来让 SessionScreen 定位到那一条 */
   const [approvalFocus, setApprovalFocus] = useState<string | null>(null);
   const approvalFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -452,6 +481,13 @@ function AppBody() {
           notifyPet('连接已断开，文字已复制到剪贴板');
           return;
         }
+        // 回包丢了不能挂死：超时按 rescueVoiceDraft 的语义退剪贴板。
+        armRequestTimeout(requestId, () => {
+          if (voiceDraftRef.current?.requestId !== requestId) return;
+          voiceDraftRef.current = null;
+          void Clipboard.setStringAsync(text);
+          notifyPet('新建会话超时，文字已复制到剪贴板');
+        });
         notifyPet('到上限了，正在新建会话');
         return;
       }
@@ -511,8 +547,14 @@ function AppBody() {
         return;
       }
       voiceCreateRequestRef.current = requestId;
+      // sent 丢了（断线/网关无回执）不能一直挂着等：超时就提示重说，不自动重发。
+      armRequestTimeout(requestId, () => {
+        if (voiceCreateRequestRef.current !== requestId) return;
+        voiceCreateRequestRef.current = null;
+        notifyPet('没收到网关回执，检查网络后再试');
+      });
     },
-    [client, control, currentWorkspaceId, notifyPet, openSessionById],
+    [armRequestTimeout, client, control, currentWorkspaceId, notifyPet, openSessionById],
   );
 
   const voiceInput = useVoiceInput({
@@ -746,6 +788,7 @@ function AppBody() {
           const sent = frame as unknown as { requestId?: string; sessionId?: string };
           // 发件箱条目也按 requestId 认领：这声回执才算真正送到了网关。
           outbox.ack(sent.requestId);
+          settleRequestTimeout(sent.requestId);
           if (voiceCreateRequestRef.current && sent.requestId === voiceCreateRequestRef.current) {
             voiceCreateRequestRef.current = null;
             if (sent.sessionId) {
@@ -806,6 +849,8 @@ function AppBody() {
         case 'session-created': {
           const created = frame as { sessionId: string; requestId?: string };
           setCreating(false);
+          creatingRequestRef.current = null;
+          settleRequestTimeout(created.requestId);
           setActive({
             sessionId: created.sessionId,
             updatedAt: Date.now(),
@@ -845,6 +890,8 @@ function AppBody() {
             requestId?: string;
           };
           setCreating(false);
+          creatingRequestRef.current = null;
+          settleRequestTimeout(failure.requestId);
           const text = `${failure.code ?? 'error'}：${failure.message ?? ''}`;
           // 被整个拒收、连回执都等不到的待发消息：标失败，交给会话页给重试/移除。
           outbox.fail(failure.requestId, text);
@@ -893,6 +940,7 @@ function AppBody() {
       applyTitle,
       client,
       notifyPet,
+      settleRequestTimeout,
       startControl,
       rescueVoiceDraft,
       takeVoiceDraft,
@@ -1028,13 +1076,29 @@ function AppBody() {
     if (!connected) return;
     setCreating(true);
     setError(null);
+    const requestId = randomUUID();
+    creatingRequestRef.current = requestId;
+    // 回包丢了（网关吞帧/半开连接）不能让「正在新建」永远挂着：超时撤掉并提示重试。
+    armRequestTimeout(requestId, () => {
+      if (creatingRequestRef.current !== requestId) return;
+      creatingRequestRef.current = null;
+      setCreating(false);
+      setError('建会话超时了，再点一次「新建会话」');
+      notifyPet('建会话超时，重试一下');
+    });
     // 选中工作区就开在里面；没选就让宿主用默认目录，不去猜。
-    client.send({
+    const sent = client.send({
       type: 'session-create',
-      requestId: randomUUID(),
+      requestId,
       ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
     });
-  }, [client, connected, currentWorkspaceId]);
+    if (!sent) {
+      settleRequestTimeout(requestId);
+      creatingRequestRef.current = null;
+      setCreating(false);
+      setError('连接已断开，重连后再试');
+    }
+  }, [armRequestTimeout, client, connected, currentWorkspaceId, notifyPet, settleRequestTimeout]);
 
   /** 按住语音球：录到谁、上限、提示、复位都在共享的 useVoiceInput 里。 */
   const holdVoiceOrb = useCallback(
@@ -1107,8 +1171,22 @@ function AppBody() {
     setDirPicker(false);
     setCreating(true);
     setError(null);
-    client.send({ type: 'session-create', requestId: randomUUID(), cwd });
-  }, [client, connected, dirListing]);
+    const requestId = randomUUID();
+    creatingRequestRef.current = requestId;
+    armRequestTimeout(requestId, () => {
+      if (creatingRequestRef.current !== requestId) return;
+      creatingRequestRef.current = null;
+      setCreating(false);
+      setError('建会话超时了，再点一次「新建会话」');
+      notifyPet('建会话超时，重试一下');
+    });
+    if (!client.send({ type: 'session-create', requestId, cwd })) {
+      settleRequestTimeout(requestId);
+      creatingRequestRef.current = null;
+      setCreating(false);
+      setError('连接已断开，重连后再试');
+    }
+  }, [armRequestTimeout, client, connected, dirListing, notifyPet, settleRequestTimeout]);
 
   const createActions = useMemo<SheetAction[]>(
     () => [
@@ -1195,6 +1273,7 @@ function AppBody() {
               const rest = await removeGateway(gateway.id);
               setGateways(rest);
               void removeJson(sessionsCacheKey(gateway.id));
+              dropCachedGateway(gateway.id);
               if (gateway.id !== savedRef.current?.id) return;
               // 删掉的正好是当前网关：断开并退回到列表/扫码页。
               clearApprovalFocus();

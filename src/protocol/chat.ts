@@ -752,27 +752,9 @@ export function formatTokens(count: number): string {
   return `${(count / 1_000_000).toFixed(1)}M`;
 }
 
-function seqOf(message: ChatMessage): number | undefined {
+/** 取消息身上的 seq；本地生成的行（无 seq）返回 undefined。 */
+export function seqOf(message: ChatMessage): number | undefined {
   return 'seq' in message && typeof message.seq === 'number' ? message.seq : undefined;
-}
-
-/**
- * 把更早一页历史并到列表前面。
- * 服务端分页是排他游标，理论上不会重叠，但重连/重试可能重发同一页，所以按 seq 去重。
- */
-export function prependHistory(current: ChatMessage[], older: HistoryEvent[]): ChatMessage[] {
-  if (older.length === 0) return current;
-  const seen = new Set<number>();
-  for (const message of current) {
-    const seq = seqOf(message);
-    if (seq !== undefined) seen.add(seq);
-  }
-  const fresh = mapHistory(older).filter((message) => {
-    const seq = seqOf(message);
-    return seq === undefined || !seen.has(seq);
-  });
-  if (fresh.length === 0) return current;
-  return [...fresh, ...current];
 }
 
 /**

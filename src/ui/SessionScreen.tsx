@@ -29,7 +29,7 @@ import {
 import {
   applyRealtime,
   mergeSnapshot,
-  prependHistory,
+  seqOf,
   splitThinkTags,
   type ApprovalRecord,
   type ChatMessage,
@@ -100,6 +100,7 @@ import { FileDownloader } from '../transport/file-download';
 import { FileUploader, type UploadState } from '../transport/file-upload';
 import { loadDraft, saveDraft } from '../storage/drafts';
 import { outbox, type OutboxDisplayItem } from '../transport/outbox';
+import { cacheHistory, getCachedHistory } from '../transport/history-cache';
 import type { GatewayClient } from '../transport/gateway-client';
 import { ActionSheet, type SheetAction } from './ActionSheet';
 import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
@@ -243,6 +244,8 @@ const TIME_ZONE = (() => {
 
 /** 按住多久才真正开麦：轻点不该误触发录音（和首页宠物同一个手感）。 */
 const VOICE_HOLD_MS = 200;
+/** 首屏历史兜底：15s 没回来就撤 spinner 给重试空态（12–30s 区间取中，私网公网不分档）。 */
+const FIRST_SCREEN_TIMEOUT_MS = 15000;
 /** 上滑多少 dp 算取消，同样对齐首页宠物。 */
 const VOICE_CANCEL_DY = -60;
 
@@ -269,7 +272,11 @@ export function SessionScreen({
   const styles = useThemedStyles(makeStyles);
   const canDownloadFiles = capabilities.includes('file-downloads');
   const canPickPreset = capabilities.includes('session-agent-preset');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // 进会话先摆 L1 缓存（模块级，跨重挂载存活）：首帧就有内容、不进 spinner；
+  // 新鲜 history 随后回来，走 mergeSnapshot 对账，不整体替换。
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    () => getCachedHistory(gatewayId, session.sessionId) ?? [],
+  );
   const [draft, setDraft] = useState('');
   /** 转写回来要和「此刻」的草稿合并，而 handleFrame 不订阅 draft，只能走 ref。 */
   const draftRef = useRef(draft);
@@ -279,7 +286,10 @@ export function SessionScreen({
   /** 松手即发：send 声明在后面，handleFrame 通过 ref 取最新版本。 */
   const sendRef = useRef<(text: string) => void>(() => undefined);
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 有缓存就不进 spinner：对账期间直接读缓存内容（缓存为空 = 没有可摆的，照旧转圈）
+  const [loading, setLoading] = useState(messages.length === 0);
+  /** 首屏历史没回来（超时/被拒/断线）：撤 spinner 后给「重试」空态，不能永远转圈。 */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
    * 同会话可能同时挂多条审批。单值会让后到的把先到的覆盖掉，先到的就再也批不了；
@@ -518,6 +528,44 @@ export function SessionScreen({
   const prependAnchorRef = useRef<{ height: number; offset: number } | null>(null);
   /** 非 null 表示「这次 history 请求是翻页」，回来的那一帧要并到前面而不是整体替换。 */
   const olderRequestRef = useRef<number | null>(null);
+  /** 在途的首屏历史请求（带 requestId，npm 网关会回显）；非 null = 单飞守卫占用中。 */
+  const firstScreenRequestRef = useRef<string | null>(null);
+
+  /**
+   * 首屏一把梭：subscribe + history（带 requestId 便于归位）+ 轻量查询。
+   * 单飞：在途未落地时再点重试直接忽略，避免重试堆叠。
+   */
+  const requestFirstScreen = useCallback(() => {
+    if (firstScreenRequestRef.current !== null) return;
+    const requestId = randomUUID();
+    firstScreenRequestRef.current = requestId;
+    const sent =
+      client.send({ type: 'subscribe', sessionId: session.sessionId, assistantStream: true }) &&
+      client.send({
+        type: 'history',
+        requestId,
+        sessionId: session.sessionId,
+        view: 'conversation',
+        historyFormatVersion: HISTORY_FORMAT_VERSION,
+      });
+    client.send({ type: 'session-stats', sessionId: session.sessionId });
+    client.send({ type: 'tasks', sessionId: session.sessionId });
+    client.send({ type: 'goal', sessionId: session.sessionId });
+    if (!sent) {
+      // socket 都没写进去（断线）：别等 15s，直接落地给重试空态。
+      firstScreenRequestRef.current = null;
+      setLoading(false);
+      setLoadFailed(true);
+      setError('连接已断开，重连后会自动加载历史');
+    }
+  }, [client, session.sessionId]);
+
+  const retryFirstScreen = useCallback(() => {
+    setError(null);
+    setLoadFailed(false);
+    setLoading(true);
+    requestFirstScreen();
+  }, [requestFirstScreen]);
 
   const handleFrame = useCallback(
     (frame: ServerFrame) => {
@@ -542,20 +590,27 @@ export function SessionScreen({
           const limits = mapImageLimits(values.imageLimits);
           if (limits) imageLimitsRef.current = { ...DEFAULT_IMAGE_LIMITS, ...limits };
         }
+        const oldestBefore = oldestSeqRef.current;
         if (events.length) {
           const pageMin = Math.min(...events.map((event) => event.seq));
           if (pageMin < oldestSeqRef.current) oldestSeqRef.current = pageMin;
         }
         if (paging) {
-          // 记下插入前的视口位置，等布局完再补回来（RN 的 maintainVisibleContentPosition
-          // 在 Android 上会把位置钉死，导致列表根本划不动）。
-          const anchor = { ...metricsRef.current };
-          prependAnchorRef.current = anchor;
-          // 万一这一页全是重复内容（没引起内容高度变化），别让锚点留到下一帧去误补偿。
-          setTimeout(() => {
-            if (prependAnchorRef.current === anchor) prependAnchorRef.current = null;
-          }, 800);
-          setMessages((current) => prependHistory(current, events));
+          // 补洞页别并到最前：缓存块和新鲜窗口之间有洞时，这一页的 seq 可能比缓存新，
+          // mergeSnapshot 会按 seq 把它插回正确位置。只有整页都比已加载的最早还早，
+          // 插入才真的发生在列表头顶——这时记下插入前的视口，等布局完再补回来
+          // （RN 的 maintainVisibleContentPosition 在 Android 上会把位置钉死，导致列表根本划不动）；
+          // 插回中间的页落在视口下方，补偿反而会把正在阅读的用户往下推。
+          const pageMax = events.length ? Math.max(...events.map((event) => event.seq)) : undefined;
+          if (pageMax !== undefined && pageMax < oldestBefore) {
+            const anchor = { ...metricsRef.current };
+            prependAnchorRef.current = anchor;
+            // 万一这一页全是重复内容（没引起内容高度变化），别让锚点留到下一帧去误补偿。
+            setTimeout(() => {
+              if (prependAnchorRef.current === anchor) prependAnchorRef.current = null;
+            }, 800);
+          }
+          setMessages((current) => mergeSnapshot(current, events));
           nextBeforeRef.current = next;
         } else {
           // 重连补的是「最新一页」，已经翻出来的更早历史要留着，不能整体替换。
@@ -566,6 +621,9 @@ export function SessionScreen({
         setHasOlder(!reachedStartRef.current && typeof nextBeforeRef.current === 'number');
         setLoadingOlder(false);
         setLoading(false);
+        // 首屏在途标记落地：不回显 requestId 的老网关下，任何 history 帧都算回包。
+        firstScreenRequestRef.current = null;
+        setLoadFailed(false);
         // 历史能正常拉回来，说明之前的报错（比如格式版本不对）已经不影响这次请求了。
         setError(null);
         return;
@@ -589,6 +647,8 @@ export function SessionScreen({
           if (pageMin < oldestSeqRef.current) oldestSeqRef.current = pageMin;
         }
         setLoading(false);
+        // 快照能到说明链路是活的：首屏若有重试空态，撤掉（内容已可见，缺的页码可手动翻）。
+        setLoadFailed(false);
         return;
       }
       if (kind === 'speech-transcript') {
@@ -886,6 +946,16 @@ export function SessionScreen({
             return next;
           });
         }
+        if (
+          failure.requestType === 'history' &&
+          firstScreenRequestRef.current !== null &&
+          (failure.requestId === undefined || failure.requestId === firstScreenRequestRef.current)
+        ) {
+          // 首屏历史被拒（如 history-format-mismatch）：撤 spinner 给重试空态，不能永远转圈。
+          firstScreenRequestRef.current = null;
+          setLoading(false);
+          setLoadFailed(true);
+        }
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
@@ -894,9 +964,12 @@ export function SessionScreen({
 
   useEffect(() => {
     const off = client.onFrame(handleFrame);
+    // 缓存感知的重置：命中 L1 就摆缓存（不转圈），否则照旧 spinner 等网络；对账统一交给 mergeSnapshot。
+    const cached = getCachedHistory(gatewayId, session.sessionId);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话 key 变化时同步清空本地状态，历史/订阅随后补回
-    setLoading(true);
-    setMessages([]);
+    setLoading(cached === undefined);
+    setLoadFailed(false);
+    setMessages(cached ?? []);
     setStreaming(null);
     setError(null);
     setApprovals([]);
@@ -909,8 +982,10 @@ export function SessionScreen({
     setTrustedDirs([]);
     setPendingSends([]);
     setApprovalLog([]);
-    // 切会话后必须回到最新消息；否则在 A 会话翻过历史后切到 B，B 会停在顶部。
-    pinnedOnceRef.current = false;
+    // pinnedOnceRef 不在挂载 effect 里重置：闸门挂在组件实例上，切会话重挂载天然是新 ref；
+    // 而缓存命中时首帧就非空，pin effect（声明在前）已经在挂载前段消耗掉闸门。
+    // 在这里重置等于重新上膛——之后第一次翻页/补消息触发的三连 scrollToEnd
+    // 会无视 followRef，把正在翻旧消息的用户拽回底部。
     followRef.current = true;
     atBottomRef.current = true;
     setShowJump(false);
@@ -918,7 +993,12 @@ export function SessionScreen({
     olderRequestRef.current = null;
     nextBeforeRef.current = undefined;
     reachedStartRef.current = false;
+    // 「已加载最早 seq」要把缓存摆出的内容算进去：翻页时靠它判断补洞页是插头顶还是插中间。
     oldestSeqRef.current = Number.POSITIVE_INFINITY;
+    for (const message of cached ?? []) {
+      const seq = seqOf(message);
+      if (seq !== undefined && seq < oldestSeqRef.current) oldestSeqRef.current = seq;
+    }
     jumpTargetRef.current = null;
     attachmentAskedRef.current.clear();
     setHasOlder(false);
@@ -954,16 +1034,7 @@ export function SessionScreen({
       },
     );
     uploaderRef.current = uploader;
-    client.send({ type: 'subscribe', sessionId: session.sessionId, assistantStream: true });
-    client.send({
-      type: 'history',
-      sessionId: session.sessionId,
-      view: 'conversation',
-      historyFormatVersion: HISTORY_FORMAT_VERSION,
-    });
-    client.send({ type: 'session-stats', sessionId: session.sessionId });
-    client.send({ type: 'tasks', sessionId: session.sessionId });
-    client.send({ type: 'goal', sessionId: session.sessionId });
+    requestFirstScreen();
     if (canPickPresetRef.current) {
       // 预设目录全局一份，会话级状态每次进来都要重查（推送没有回放）。
       client.send({ type: 'agent-presets' });
@@ -977,7 +1048,27 @@ export function SessionScreen({
       if (uploaderRef.current === uploader) uploaderRef.current = null;
       client.send({ type: 'unsubscribe' });
     };
-  }, [client, handleFrame, session.sessionId, setStatusLabel]);
+  }, [client, gatewayId, handleFrame, requestFirstScreen, session.sessionId, setStatusLabel]);
+
+  // 首屏历史兜底：loading 期间没有回包就 15s 后落地（回包/快照把 loading 翻掉时定时器自动撤销）。
+  useEffect(() => {
+    if (!loading) return;
+    const requestId = firstScreenRequestRef.current;
+    if (requestId === null) return;
+    const timer = setTimeout(() => {
+      if (firstScreenRequestRef.current !== requestId) return;
+      firstScreenRequestRef.current = null;
+      setLoading(false);
+      setLoadFailed(true);
+      setError('历史加载超时，点「重试」重新加载');
+    }, FIRST_SCREEN_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  // 历史一变就写回 L1：切走再回来直接摆缓存。存的是不可变替换后的数组引用，零拷贝。
+  useEffect(() => {
+    cacheHistory(gatewayId, session.sessionId, messages);
+  }, [gatewayId, messages, session.sessionId]);
 
   // 断线重连后服务端不再记得我们的订阅，必须重新订阅并补一次历史，
   // 否则回到前台会一直看着断线前的旧内容。
@@ -2223,9 +2314,24 @@ export function SessionScreen({
               </View>
             }
             ListEmptyComponent={
-              <Text style={styles.empty}>
-                {conn === 'ready' ? '还没有消息' : '连接断开，重连后会自动加载历史'}
-              </Text>
+              loadFailed ? (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.empty}>历史没加载出来</Text>
+                  <Pressable
+                    style={styles.retryButton}
+                    onPress={() => {
+                      tapFeedback();
+                      retryFirstScreen();
+                    }}
+                  >
+                    <Text style={styles.retryButtonText}>重试</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Text style={styles.empty}>
+                  {conn === 'ready' ? '还没有消息' : '连接断开，重连后会自动加载历史'}
+                </Text>
+              )
             }
             renderItem={({ item, index }) => {
               const rowTime = (row: StreamRow): number => {
@@ -3001,6 +3107,16 @@ function makeStyles(t: Palette) {
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { paddingHorizontal: 14, paddingBottom: 12 },
   empty: { color: t.text.muted, textAlign: 'center', marginTop: 40 },
+  emptyBox: { alignItems: 'center' },
+  retryButton: {
+    marginTop: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: t.border.default,
+  },
+  retryButtonText: { color: t.text.primary, fontSize: 13 },
   olderWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, minHeight: 44 },
   olderAction: { color: t.text.secondary, fontSize: 13, fontWeight: '600' },
   olderEnd: { color: t.text.muted, fontSize: 12 },

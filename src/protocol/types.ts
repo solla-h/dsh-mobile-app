@@ -435,6 +435,8 @@ export type ClientFrame =
   | { type: 'unsubscribe' }
   | {
       type: 'history';
+      /** 网关 0.11.1 起成功/错误帧都回显它，用来把首屏请求和回包对上（REQ-1）。 */
+      requestId?: string;
       sessionId: string;
       beforeSeq?: number;
       historyFormatVersion?: number;
