@@ -408,3 +408,28 @@ App/网关均无对应帧，修在宿主或新加网关帧；**已提 issue
 
 **下一步**：等 QUEUE-1 issue（`#37`）作者回复 → 第四项发件箱回执关联（顺序与理由见 STATUS §8）。
 
+## 16. 发件箱回执关联：实现 + 真机验证（2026-11-02）
+
+提交 `62469e3`（分支 `fix/approval-integrity`，**未推送**）。实现与验证全文见 STATUS §3.6；
+决策行在 BACKLOG §11（OUTBOX-1 / REQ-1）。
+
+**真机验到的**（本机网关，真断线 = `taskkill //F //PID <webPid>` 停 dsh web）：
+
+- 断线发消息 → 气泡「outboxtest」+「待发送 · 联网后自动重发」+「删除」；
+  网关重启 2~3s 内 App 自动重连并**自动补发一条**（`mobile message accepted text="outboxtest"`，
+  07:44:47.724Z）；`sent` 回执后离线条目消失、变正常回声气泡，agent 侧确认「收到…一份」。
+- 再重连一次无重发（accepted 计数 27 → 27）——已确认的条目不会重复投递。
+
+**下次测离线别踩**：
+
+- **USB 通道配对下 `svc wifi disable` 不是真断线**：socket 走 `adb reverse tcp:3080`，关 WiFi
+  只把 NetInfo 打成离线 → UI 显示「设备已离线/连接已断开」，但发送照样直发成功（第一轮的
+  `outboxofflinetest` 就是这么发出去的）。要造真断线：停网关进程，或撤 adb reverse。
+- 那个离线横幅**还不会自愈**（探活成功不把状态打回 ready，只有 hello 会）——真重连一次才清；
+  已记 CONN-3（BACKLOG §11）。
+
+**环境**：本机网关已 detached nohup 重启（webPid 73544 → **30192**，日志追加到
+`C:\tmp\mobile-gateway.log`，起法见 STATUS §6.3）；手机 WiFi 已恢复；App 连接正常（USB 通道）。
+
+**下一步**：QUEUE-1 issue `#37` 等作者回复；第五项 HIST-1（L1 内存缓存，STATUS §8）。
+
