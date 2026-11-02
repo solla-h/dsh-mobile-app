@@ -60,6 +60,8 @@ export class GatewayClient {
   /** 网络状态监听；断网/恢复时立刻调整重连节奏。 */
   private unwatchNetwork: { remove: () => void } | null = null;
   private online = true;
+  /** 第一次网络回调只是建立基线；之后任何 online 事件都可能是 WiFi↔5G/换 AP。 */
+  private networkInitialized = false;
   /** 前后台监听；后台期间 JS 定时器会被挂起，回前台不能拿旧时间戳判假死。 */
   private unwatchAppState: { remove: () => void } | null = null;
   /** 最近一次广播的连接状态；订阅前就能查询（onState 不回放当前状态）。 */
@@ -308,19 +310,26 @@ export class GatewayClient {
    */
   private watchNetwork(): void {
     if (this.unwatchNetwork) return;
+    this.networkInitialized = false;
     try {
       this.unwatchNetwork = Network.addNetworkStateListener((state) => {
         const online = state.isConnected !== false && state.isInternetReachable !== false;
         const wasOnline = this.online;
         this.online = online;
         if (this.stopped) return;
+        if (!this.networkInitialized) {
+          this.networkInitialized = true;
+          if (!online) this.emitState('error', '设备已离线，等待网络恢复');
+          return;
+        }
         if (!online) {
           this.clearNetworkTimer();
           if (wasOnline) this.emitState('error', '设备已离线，等待网络恢复');
           return;
         }
-        // 第一次回调通常就是「在线」，不触发重连；只在从离线恢复时动作。
-        if (wasOnline) return;
+        // 第一次回调只建立基线；之后任何 online 事件都当成一次网络切换。
+        // WiFi→5G 时 isConnected 可能一直是 true，不能只看 offline→online；
+        // 也不能只看 type（WiFi 断开后 type 可能仍是 WIFI）。
         this.clearNetworkTimer();
         this.networkTimer = setTimeout(() => {
           this.networkTimer = null;
