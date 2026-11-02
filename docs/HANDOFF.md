@@ -394,7 +394,9 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 `kick()` 的 finally 只在 `wakeRequested` 门闩时才唤醒，而该门闩只在 abort 信号已置位后
 **又来了新消息**时才上闩——所以取消后队列一直搁着，直到用户再发一条才触发。
 **排队不打包**：`claim()` 一次只取一条 next-turn 消息，每条各自成为一个独立回合。
-App/网关均无对应帧，修在宿主或新加网关帧；已记 BACKLOG QUEUE-1，诊断全文在 STATUS §3.5。
+App/网关均无对应帧，修在宿主或新加网关帧；**已提 issue
+`Clarklevis1995/dsh-plugin-mobile-gateway#37`**（2026-11-02，含复现步骤、协议时间线与源码定位）。
+诊断全文在 STATUS §3.5，记录在 BACKLOG QUEUE-1。
 
 **环境残留（接手先看）**：
 
@@ -404,5 +406,5 @@ App/网关均无对应帧，修在宿主或新加网关帧；已记 BACKLOG QUEU
   测试 wav 已清。
 - Metro（`NODE_OPTIONS=--max-old-space-size=8192 npx expo start --port 8081`）与本机网关仍在跑。
 
-**下一步**：QUEUE-1 上报宿主/网关作者 → 第四项发件箱回执关联（顺序与理由见 STATUS §8）。
+**下一步**：等 QUEUE-1 issue（`#37`）作者回复 → 第四项发件箱回执关联（顺序与理由见 STATUS §8）。
 
