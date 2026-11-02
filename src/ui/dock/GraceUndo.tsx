@@ -6,18 +6,17 @@ import { MONO, useTheme } from '../theme';
 interface Props {
   /** 已经落地的动作，比如「已批准」「已拦截」 */
   label: string;
-  /** 快照标识，例如 cp-8f91a */
-  checkpointId?: string;
   onUndo: () => void;
   onExpire: () => void;
 }
 
 /**
- * 4.5 秒静默悔棋胶囊（§3.3 Grace Undo & Checkpoint Rewind）：
- * 拍板后不弹确认框，浮现一枚静默胶囊「已存快照 cp-8f91a · [撤回拍板 (4.0s)]」。
+ * 4.5 秒静默悔棋胶囊：
+ * 拍板后不弹确认框，浮现一枚静默胶囊「已批准 · [撤回拍板 (4.5s)]」。
  * 倒计时归零才真正把决定发给网关，撤回就是取消这次发送。
+ * 它只是延迟发送，不是文件系统快照；不要承诺可以回滚已经执行的命令。
  */
-export function GraceUndo({ label, checkpointId, onUndo, onExpire }: Props) {
+export function GraceUndo({ label, onUndo, onExpire }: Props) {
   const t = useTheme();
   const [left, setLeft] = useState<number>(MOTION.undoMs);
   const doneRef = useRef(false);
@@ -50,7 +49,6 @@ export function GraceUndo({ label, checkpointId, onUndo, onExpire }: Props) {
           <View style={[styles.dot, { backgroundColor: t.semantic.gateAmberText }]} />
           <Text style={[styles.text, { color: t.text.primary }]} numberOfLines={1}>
             {label}
-            {checkpointId ? ` · 快照 ${checkpointId}` : ''}
           </Text>
         </View>
         <Pressable

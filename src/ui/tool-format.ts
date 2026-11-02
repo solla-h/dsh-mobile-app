@@ -1,5 +1,34 @@
 /** 工具调用的展示层格式化：参数压成一行摘要、取 shell 命令、提取内联 diff、判断失败。 */
 
+/**
+ * 需要把「完整命令」当作审批对象的工具。
+ * DSH 宿主在 Linux 上用 bash，在 Windows 上用 pwsh；其他 exec 类工具也按 shell 处理。
+ */
+const SHELL_TOOLS = new Set([
+  'bash',
+  'shell',
+  'sh',
+  'zsh',
+  'pwsh',
+  'powershell',
+  'exec',
+  'terminal',
+  'run_command',
+  'run-command',
+]);
+
+export function isShellTool(name?: string): boolean {
+  return Boolean(name && SHELL_TOOLS.has(name.toLowerCase()));
+}
+
+/** 审批的「目录信任」要同时支持 POSIX 和 Windows 路径；统一成 / 方便比较和显示。 */
+export function dirOf(path?: string): string | undefined {
+  if (!path) return undefined;
+  const normalized = path.replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  return index > 0 ? normalized.slice(0, index) : undefined;
+}
+
 export function parseArgs(args?: string): Record<string, any> | null {
   if (!args) return null;
   try {
@@ -18,6 +47,12 @@ export function describeTool(name: string, args?: string): string {
   switch (name) {
     case 'bash':
     case 'shell':
+    case 'sh':
+    case 'zsh':
+    case 'pwsh':
+    case 'powershell':
+    case 'exec':
+    case 'terminal':
       return pick('description') ?? pick('command')?.split('\n')[0] ?? '';
     case 'read':
     case 'write':
@@ -37,9 +72,9 @@ export function describeTool(name: string, args?: string): string {
 }
 
 export function toolCommand(name: string, args?: string): string | undefined {
-  if (name !== 'bash' && name !== 'shell') return undefined;
+  if (!isShellTool(name)) return undefined;
   const parsed = parseArgs(args);
-  const command = parsed?.command;
+  const command = parsed?.command ?? parsed?.cmd ?? parsed?.script;
   return typeof command === 'string' ? command.trim() : undefined;
 }
 

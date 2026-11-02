@@ -9,8 +9,12 @@ interface Props {
   reason?: string;
   diff?: string;
   nextCommand?: string;
+  /** shell/exec 类审批必须看到命令；拿不到时禁止批准 */
+  commandRequired?: boolean;
   highRisk?: boolean;
   busy?: boolean;
+  /** 上一次提交失败的原因；展开态也要能看到 */
+  error?: string | null;
   trusted?: boolean;
   dir?: string;
   onToggleTrust?: () => void;
@@ -30,8 +34,10 @@ export function TriageSheet({
   reason,
   diff,
   nextCommand,
+  commandRequired,
   highRisk,
   busy,
+  error,
   trusted,
   dir,
   onToggleTrust,
@@ -41,6 +47,7 @@ export function TriageSheet({
   onQuote,
 }: Props) {
   const t = useTheme();
+  const commandBlocked = Boolean(commandRequired && !nextCommand?.trim());
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -119,8 +126,17 @@ export function TriageSheet({
 
             <Section index="03" title="后续动作 (批准后自动执行)" palette={t}>
               <View style={[styles.cardBox, { backgroundColor: t.bg.subtle, borderColor: t.border.subtle }]}>
-                <Text style={[styles.command, { color: t.text.secondary }]}>
-                  {nextCommand?.trim() || '应用该变更并继续执行当前会话中的后续工具队列'}
+                <Text
+                  style={[
+                    styles.command,
+                    { color: commandBlocked ? t.semantic.dangerText : t.text.secondary },
+                  ]}
+                >
+                  {nextCommand?.trim()
+                    ? nextCommand
+                    : commandBlocked
+                      ? '命令详情不可用。请到 Web UI 确认这条命令后再批准。'
+                      : '应用该变更并继续执行当前会话中的后续工具队列'}
                 </Text>
               </View>
             </Section>
@@ -146,6 +162,12 @@ export function TriageSheet({
             ) : null}
           </ScrollView>
 
+          {error ? (
+            <Text style={[styles.sheetError, { color: t.semantic.dangerText }]} numberOfLines={2}>
+              {error}
+            </Text>
+          ) : null}
+
           <View style={[styles.footer, { borderTopColor: t.border.default }]}>
             <Pressable
               style={[
@@ -161,10 +183,10 @@ export function TriageSheet({
             <Pressable
               style={[styles.big, styles.approve, { backgroundColor: t.action.primaryBg }]}
               onPress={onApprove}
-              disabled={busy}
+              disabled={busy || commandBlocked}
             >
               <Text style={[styles.bigText, { color: t.action.primaryText }]}>
-                {busy ? '处理中…' : '✓ 批准并继续队列'}
+                {commandBlocked ? '命令不可见 · 无法批准' : busy ? '处理中…' : '✓ 批准并继续队列'}
               </Text>
             </Pressable>
           </View>
@@ -254,6 +276,7 @@ const styles = StyleSheet.create({
   },
   trustLabel: { ...TYPE.mono, fontFamily: MONO, flex: 1 },
   trustCheck: { ...TYPE.mono, fontFamily: MONO, fontWeight: '700' },
+  sheetError: { ...TYPE.caption, paddingHorizontal: 16, paddingBottom: 4 },
   footer: {
     flexDirection: 'row',
     gap: 10,

@@ -69,7 +69,6 @@ const KICK_DX = 46;
 const HEAD_LINES = ['别摸头啦，头发会乱', '唔…在听呢', '帽子要掉了'];
 const BODY_LINES = ['在呢在呢', '摸鱼中，别戳', '叫我干嘛'];
 const TAIL_LINES = ['痒！别碰尾巴', '再戳就生气了', '尾巴不能摸'];
-const LAUNCH_LINES = ['收到！', '这就去', '好嘞'];
 
 interface Props {
   /** 服务器语音是否就绪；没就绪时只播动画、不开麦 */
@@ -546,9 +545,9 @@ export function PetStage({
         cancelHold();
 
         if ((wasArmed || elapsed >= HOLD_MS) && api.voiceReady) {
+          // 不在这里说「收到」：真正的发送结果由 App 在 sent/error 后通知，
+          // 否则离线时也会先报一个假成功。
           api.onVoiceLaunch();
-          api.showBubble(LAUNCH_LINES[Math.floor(Math.random() * LAUNCH_LINES.length)], 1200);
-          api.reactWith('happy', 1500);
           return;
         }
 

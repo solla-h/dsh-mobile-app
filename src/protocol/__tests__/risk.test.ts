@@ -1,4 +1,4 @@
-import { assessRisk } from '../risk';
+import { approvalRisk, assessRisk } from '../risk';
 
 describe('assessRisk', () => {
   it('普通补丁不算高危', () => {
@@ -18,5 +18,25 @@ describe('assessRisk', () => {
 
   it('空文本不炸', () => {
     expect(assessRisk('')).toEqual({ level: 'normal', labels: [] });
+  });
+
+  it('PowerShell 的递归删除、磁盘操作、关机也算高危', () => {
+    expect(assessRisk('Remove-Item -Recurse -Force .\\build').labels).toContain('递归删除');
+    expect(assessRisk('del /s /q C:\\temp').labels).toContain('递归删除');
+    expect(assessRisk('Format-Volume -DriveLetter D').level).toBe('high');
+    expect(assessRisk('Stop-Computer -Force').level).toBe('high');
+  });
+
+  it('审批风险会读取真实命令，而不是只看 reason', () => {
+    const approval = {
+      rpcId: 'r1',
+      sessionId: 's1',
+      approvalId: 'a1',
+      toolName: 'bash',
+      reason: '清理构建产物',
+    };
+    expect(approvalRisk(approval).level).toBe('normal');
+    expect(approvalRisk(approval, 'rm -rf build').level).toBe('high');
+    expect(approvalRisk(approval, 'rm -rf build').labels).toContain('递归删除');
   });
 });

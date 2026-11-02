@@ -38,6 +38,21 @@ export interface PendingApproval {
   replay?: boolean;
 }
 
+/** 同会话的审批队列：后到不覆盖先到，重复 rpcId 不重复入队。 */
+export function enqueueApproval(
+  queue: PendingApproval[],
+  request: PendingApproval,
+): PendingApproval[] {
+  if (queue.some((item) => item.rpcId === request.rpcId)) return queue;
+  return [...queue, request];
+}
+
+/** 从队列里移除已经 resolved / 已失效的那一条；保留其余顺序。 */
+export function removeApproval(queue: PendingApproval[], rpcId: string): PendingApproval[] {
+  if (!queue.some((item) => item.rpcId === rpcId)) return queue;
+  return queue.filter((item) => item.rpcId !== rpcId);
+}
+
 export interface QuestionAnswer {
   id: string;
   selected: string[];

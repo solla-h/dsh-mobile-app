@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   FlatList,
   Image,
   Keyboard,
@@ -48,7 +49,7 @@ import { ActivityGroup } from './stream/ActivityGroup';
 import { ThinkPill } from './stream/ThinkPill';
 import { TrajectoryView } from './stream/TrajectoryView';
 import { ToolGroup } from './stream/ToolGroup';
-import { extractToolDiff, parseArgs, toolCommand } from './tool-format';
+import { dirOf, extractToolDiff, isShellTool, parseArgs, toolCommand } from './tool-format';
 import {
   filterCommands,
   insertTextOf,
@@ -59,7 +60,11 @@ import {
   type CommandOption,
 } from '../protocol/commands';
 import { imageMediaType } from '../protocol/image';
-import { pickDisplayReason } from '../protocol/interactions';
+import {
+  enqueueApproval,
+  pickDisplayReason,
+  removeApproval,
+} from '../protocol/interactions';
 import type {
   PendingApproval,
   PendingQuestion,
@@ -129,6 +134,9 @@ interface Props {
   onForked: (sessionId: string) => void;
   /** 跳到另一个会话（比如分叉的来源） */
   onOpenSession: (sessionId: string) => void;
+  /** 首页语音说「同意」后只打开审批卡，不代替用户拍板 */
+  focusApprovalRpcId?: string | null;
+  onApprovalFocusHandled?: () => void;
 }
 
 interface StreamingDraft {
@@ -242,6 +250,8 @@ export function SessionScreen({
   onRunningChange,
   onForked,
   onOpenSession,
+  focusApprovalRpcId,
+  onApprovalFocusHandled,
 }: Props) {
   const t = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -259,7 +269,12 @@ export function SessionScreen({
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [approval, setApproval] = useState<PendingApproval | null>(null);
+  /**
+   * 同会话可能同时挂多条审批。单值会让后到的把先到的覆盖掉，先到的就再也批不了；
+   * 这里用 FIFO，界面只展示队首，其余用「还有 N 条」提示。
+   */
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const approval = approvals[0] ?? null;
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const [interactionError, setInteractionError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -274,6 +289,8 @@ export function SessionScreen({
   const [trustedDirs, setTrustedDirs] = useState<string[]>([]);
   /** 已经拍板、等网关回执的那一条：按钮先禁用，回执来了 approval 一换自动复位 */
   const [decidedId, setDecidedId] = useState<string | null>(null);
+  /** 本机已经拍过板的 rpcId；用来区分「自己批的 resolved」和「别的端处理的 resolved」 */
+  const decidedRpcRef = useRef<string | null>(null);
   /** 悔棋窗提示文案；非空时审批坞让位给胶囊 */
   const [graceLabel, setGraceLabel] = useState<string | null>(null);
   /** 悔棋窗里压着还没发的决定 */
@@ -631,13 +648,20 @@ export function SessionScreen({
         if (request.sessionId !== session.sessionId) return;
         if (settledRef.current.has(request.rpcId)) return;
         setInteractionError(null);
-        setApproval(request);
+        setApprovals((current) => enqueueApproval(current, request));
         return;
       }
       if (kind === 'approval-resolved') {
         const resolved = frame as unknown as { rpcId: string; outcome?: string };
         settledRef.current.add(resolved.rpcId);
-        setApproval((current) => (current && current.rpcId === resolved.rpcId ? null : current));
+        setApprovals((current) => removeApproval(current, resolved.rpcId));
+        if (decidedRpcRef.current === resolved.rpcId) {
+          decidedRpcRef.current = null;
+        } else if (resolved.outcome === 'cancelled' || resolved.outcome === 'unavailable') {
+          showToast('这条审批已撤回或无人应答');
+        } else {
+          showToast('这条审批已在其他端处理');
+        }
         return;
       }
       if (kind === 'approval-response') {
@@ -647,9 +671,14 @@ export function SessionScreen({
           // 真实的结论等重拉历史时由审计记录给出，别在轨迹里留一条反向的假记录。
           loggedApprovalsRef.current.delete(receipt.rpcId);
           setApprovalLog((current) => current.filter((item) => item.id !== `approval-${receipt.rpcId}`));
-          setInteractionError(
-            receipt.reason === 'not-pending' ? '这次审批已经失效（可能已在别的端处理）' : '审批提交被拒绝，请重试',
-          );
+          setDecidedId(null);
+          if (receipt.reason === 'not-pending') {
+            setApprovals((current) => removeApproval(current, receipt.rpcId));
+            setInteractionError(null);
+            showToast('这次审批已经失效（可能已在别的端处理）');
+          } else {
+            setInteractionError('审批提交被拒绝，请重试');
+          }
         }
         return;
       }
@@ -838,7 +867,7 @@ export function SessionScreen({
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [client, session.sessionId, setStatusLabel],
+    [client, session.sessionId, setStatusLabel, showToast],
   );
 
   useEffect(() => {
@@ -847,9 +876,22 @@ export function SessionScreen({
     setMessages([]);
     setStreaming(null);
     setError(null);
-    setApproval(null);
+    setApprovals([]);
     setQuestion(null);
     setInteractionError(null);
+    setGraceLabel(null);
+    setDecidedId(null);
+    decidedRpcRef.current = null;
+    setQuote(null);
+    setTrustedDirs([]);
+    setPendingSends([]);
+    setApprovalLog([]);
+    voiceRequestRef.current = null;
+    // 切会话后必须回到最新消息；否则在 A 会话翻过历史后切到 B，B 会停在顶部。
+    pinnedOnceRef.current = false;
+    followRef.current = true;
+    atBottomRef.current = true;
+    setShowJump(false);
     settledRef.current.clear();
     olderRequestRef.current = null;
     nextBeforeRef.current = undefined;
@@ -1011,6 +1053,18 @@ export function SessionScreen({
     if (requestKey) setSheetHidden(false);
   }, [requestKey]);
 
+  /** 首页语音说「同意」后只把审批卡打开，不替用户拍板。 */
+  useEffect(() => {
+    if (!focusApprovalRpcId || !approval || approval.rpcId !== focusApprovalRpcId) return;
+    // 等本轮渲染落定再开卡，避免在 effect 里同步 setState 触发级联渲染。
+    const timer = setTimeout(() => {
+      setTriageOpen(true);
+      setSheetHidden(false);
+      onApprovalFocusHandled?.();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [approval, focusApprovalRpcId, onApprovalFocusHandled]);
+
   /** 把某一条审批的决定真正发给网关。 */
   const sendApproval = useCallback(
     (target: PendingApproval, outcome: ApprovalOutcome, via?: string) => {
@@ -1026,9 +1080,11 @@ export function SessionScreen({
         // 更不能在轨迹里留一条网关从没收到过的结论。
         setGraceLabel(null);
         setDecidedId(null);
+        decidedRpcRef.current = null;
         setInteractionError('离线：这次审批没发出去，重连后请重新拍板');
         return;
       }
+      decidedRpcRef.current = target.rpcId;
       // 轨迹页那行审批的即时回显：宿主会把审批写成审计事件对，但那要等下一次重拉历史
       // 才回得来，刚拍完板这一段本来就该看得见。callId 是给去重用的——历史记录一到，
       // 同一 callId 的回显就让位（见下面的 trajectoryApprovals）。
@@ -1101,15 +1157,29 @@ export function SessionScreen({
     }
   }, [blockedSessionIds, onOpenSession, sendApproval, session.sessionId, showToast]);
 
-  /** 会话页被卸载时别再等倒计时，直接把还没发的决定发出去。 */
-  useEffect(
-    () => () => {
-      const pending = graceRef.current;
-      graceRef.current = null;
-      if (pending) sendApproval(pending.approval, pending.outcome);
-    },
-    [sendApproval],
-  );
+  /**
+   * 把悔棋窗里已经做出的决定立刻发出去。
+   * 切会话、进后台、锁屏之后用户已经看不到倒计时，也不该再等 JS 定时器；
+   * 提交比丢失好，撤回仍然只在用户还看着屏幕时有效。
+   */
+  const flushGrace = useCallback(() => {
+    const pending = graceRef.current;
+    if (!pending) return;
+    graceRef.current = null;
+    setGraceLabel(null);
+    sendApproval(pending.approval, pending.outcome);
+  }, [sendApproval]);
+
+  /** 会话页被卸载（切会话/切网关/返回）时别再等倒计时。 */
+  useEffect(() => () => flushGrace(), [flushGrace]);
+
+  /** 进后台/锁屏时定时器可能被系统挂起，先把决定送出去。 */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') flushGrace();
+    });
+    return () => sub.remove();
+  }, [flushGrace]);
 
   const toggleTrustedDir = useCallback((dir: string | undefined) => {
     if (!dir) return;
@@ -1506,7 +1576,12 @@ export function SessionScreen({
       const requestId = randomUUID();
       voiceRequestRef.current = requestId;
       setTranscribing(true);
-      client.send({ type: 'speech-transcribe', requestId, audioBase64: clip.base64 });
+      const sent = client.send({ type: 'speech-transcribe', requestId, audioBase64: clip.base64 });
+      if (!sent) {
+        voiceRequestRef.current = null;
+        setTranscribing(false);
+        setStatusLabel('连接已断开，录音没发出去');
+      }
     } catch (failure) {
       setStatusLabel(failure instanceof Error ? failure.message : '读不到这段录音');
     }
@@ -1814,9 +1889,11 @@ export function SessionScreen({
   /** 审批面板要展示的东西：目标文件、diff（含 edit 工具合成 diff）、推理动机、后续命令、风险等级。 */
   const approvalInfo = useMemo(() => {
     if (!approval) return null;
+    // 没有 callId 或工具调用已不在当前历史窗口时，宁可显示「无法定位」，
+    // 也不要猜「最后一条工具」——猜错会把审批对象指向错的命令/文件。
     const call = approval.callId
       ? messages.find((message) => message.kind === 'tool' && message.callId === approval.callId)
-      : [...messages].reverse().find((message) => message.kind === 'tool');
+      : undefined;
     const args = call && call.kind === 'tool' ? parseArgs(call.args) : null;
     const diffData =
       call && call.kind === 'tool'
@@ -1837,19 +1914,22 @@ export function SessionScreen({
     const displayReason = pickDisplayReason(approval.displayReason, approval.reason);
     return {
       target: filePath ?? approval.toolName ?? '工具调用',
-      dir: filePath ? filePath.replace(/\/[^/]*$/, '') : undefined,
+      dir: dirOf(filePath),
       detail: displayReason || (lastReasoning ? lastReasoning.split('\n')[0] : undefined),
       diff: diffData?.diff,
       additions: diffData?.additions,
       deletions: diffData?.deletions,
       nextCommand: cmd,
-      risk: approvalRisk(approval),
+      /** shell/exec 类审批必须看到真实命令，不能只靠 reason 文案。 */
+      commandRequired: isShellTool(approval.toolName),
+      risk: approvalRisk(approval, cmd),
     };
   }, [approval, messages]);
 
   // 目录级信任：同目录、低风险的后续补丁直接放行，不再打断（§3.4）。
   useEffect(() => {
     if (!approval || !approvalInfo) return;
+    if (approvalInfo.commandRequired && !approvalInfo.nextCommand?.trim()) return;
     if (approvalInfo.risk.level !== 'normal') return;
     if (!approvalInfo.dir || !trustedDirs.includes(approvalInfo.dir)) return;
     if (autoApprovedRef.current.has(approval.approvalId)) return;
@@ -2244,8 +2324,10 @@ export function SessionScreen({
           reason={approvalInfo?.detail}
           diff={approvalInfo?.diff}
           nextCommand={approvalInfo?.nextCommand}
+          commandRequired={approvalInfo?.commandRequired}
           highRisk={approvalInfo?.risk.level === 'high'}
           busy={Boolean(approval && decidedId === approval.approvalId)}
+          error={interactionError}
           trusted={Boolean(approvalInfo?.dir && trustedDirs.includes(approvalInfo.dir))}
           dir={approvalInfo?.dir}
           onToggleTrust={() => toggleTrustedDir(approvalInfo?.dir)}
@@ -2357,18 +2439,17 @@ export function SessionScreen({
         />
 
         {graceLabel ? (
-          <GraceUndo
-            label={graceLabel}
-            checkpointId={`cp-${session.sessionId.slice(0, 5)}`}
-            onUndo={undoDecision}
-            onExpire={expireGrace}
-          />
+          <GraceUndo label={graceLabel} onUndo={undoDecision} onExpire={expireGrace} />
         ) : null}
 
         {approval && approvalInfo && !graceLabel ? (
           <ApprovalDock
             target={approvalInfo.target}
             detail={approvalInfo.detail}
+            command={approvalInfo.nextCommand}
+            commandRequired={approvalInfo.commandRequired}
+            queueCount={approvals.length}
+            error={interactionError}
             additions={approvalInfo.additions}
             deletions={approvalInfo.deletions}
             highRisk={approvalInfo.risk.level === 'high'}

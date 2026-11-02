@@ -34,8 +34,6 @@ import {
   transcriptText,
   type SpeechCatalog,
 } from './src/protocol/speech';
-import { soleApproval } from './src/protocol/pending';
-import { matchDecision } from './src/protocol/voice-decision';
 import { useVoiceCapture } from './src/ui/voice/useVoiceCapture';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
 import { PluginsView } from './src/ui/plugins/PluginsView';
@@ -157,7 +155,14 @@ function AppBody() {
   /** handleFrame 里要读最新的待办，但不想因为待办变化重建回调 */
   const pendingRef = useRef<PendingMap>({});
   /** 刚用语音发了一条「新会话」消息，等 sent 回来就跳进去 */
-  const voiceCreatePendingRef = useRef(false);
+  const voiceCreateRequestRef = useRef<string | null>(null);
+  /** 首页语音发给已有会话的消息，等 sent/error 按 requestId 归位 */
+  const voiceMessagePendingRef = useRef<string | null>(null);
+  /** 语音只打开审批卡，不代替用户拍板；rpcId 用来让 SessionScreen 定位到那一条 */
+  const [approvalFocus, setApprovalFocus] = useState<string | null>(null);
+  const approvalFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 会话列表的 ref：语音回调里要按 sessionId 找目标，不想把它放进 handleFrame 依赖 */
+  const sessionsRef = useRef<SessionItem[]>([]);
   /** 已知会话 id：收到未知会话的状态推送时要补一次列表 */
   const knownSessionsRef = useRef<Set<string>>(new Set());
   /** 未读会话：比上次看到的 updatedAt 更新，且不是当前打开的 */
@@ -294,12 +299,19 @@ function AppBody() {
     pendingRef.current = pending;
   }, [pending]);
 
+  /** 清空待办时同步清 ref：语音转写可能紧接着到达，不能等下一次渲染。 */
+  const clearPending = useCallback(() => {
+    pendingRef.current = {};
+    setPending({});
+  }, []);
+
   useEffect(() => {
     activeIdRef.current = active?.sessionId ?? null;
   }, [active?.sessionId]);
 
   useEffect(() => {
     knownSessionsRef.current = new Set(sessions.map((item) => item.sessionId));
+    sessionsRef.current = sessions;
   }, [sessions]);
 
   // control 通道只关心审批/提问；hello 表示重连成功，先清空再让服务端回放，
@@ -307,7 +319,7 @@ function AppBody() {
   useEffect(() => {
     const off = control.onFrame((frame) => {
       if (frame.kind === 'hello') {
-        setPending({});
+        clearPending();
         // 定时任务目录只在 control 通道上给；连上就问一次。
         control.send({ type: 'schedule-catalog' });
         return;
@@ -321,10 +333,15 @@ function AppBody() {
         control.send({ type: 'schedule-catalog' });
         return;
       }
-      setPending((current) => applyPendingFrame(current, frame) ?? current);
+      // 同步更新 ref：语音转写回来时要立刻看到最新待办，不能等 effect。
+      const next = applyPendingFrame(pendingRef.current, frame);
+      if (next) {
+        pendingRef.current = next;
+        setPending(next);
+      }
     });
     return off;
-  }, [control]);
+  }, [clearPending, control]);
 
   /** 标题是列表级元数据，WebUI 改了也要立刻反映到卡片和会话页。 */
   const applyTitle = useCallback((sessionId: string, title: string) => {
@@ -352,6 +369,40 @@ function AppBody() {
       return next;
     });
   }, []);
+
+  /** 按 sessionId 打开会话；语音回调只拿到 id，列表里可能已经没有这个对象。 */
+  const openSessionById = useCallback(
+    (sessionId: string) => {
+      const target = sessionsRef.current.find((item) => item.sessionId === sessionId);
+      if (target) {
+        openSession(target);
+        return;
+      }
+      setActive({ sessionId, updatedAt: Date.now(), running: false, blank: false });
+      setUnreadIds((current) => {
+        if (!current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
+    },
+    [openSession],
+  );
+
+  const clearApprovalFocus = useCallback(() => {
+    setApprovalFocus(null);
+    if (approvalFocusTimerRef.current) {
+      clearTimeout(approvalFocusTimerRef.current);
+      approvalFocusTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (approvalFocusTimerRef.current) clearTimeout(approvalFocusTimerRef.current);
+    },
+    [],
+  );
 
   const handleFrame = useCallback(
     (frame: ServerFrame) => {
@@ -565,47 +616,87 @@ function AppBody() {
             break;
           }
           if (job.target.kind === 'session') {
-            const approval = soleApproval(pendingRef.current, job.target.sessionId);
-            if (approval) {
-              const decision = matchDecision(text);
-              if (!decision) {
-                notifyPet(`听到「${text}」，没匹配到同意或拒绝`);
-                break;
-              }
-              if (!approval.approvalId) {
-                notifyPet('这条审批没法语音批，请进会话处理');
-                break;
-              }
-              client.send({
-                type: 'approval-response',
-                rpcId: approval.rpcId,
-                sessionId: job.target.sessionId,
-                approvalId: approval.approvalId,
-                outcome: decision === 'approve' ? 'allowed-once' : 'rejected',
-              });
+            // control 断线时首页的待办可能是旧的：这时连「有没有审批」都不知道，
+            // 不能把一句「同意」当成普通消息发进去，先打开会话让用户看现场。
+            if (control.state !== 'ready') {
+              openSessionById(job.target.sessionId);
+              notifyPet('待办状态还没同步，已打开会话');
               break;
             }
-            client.send({ type: 'message', sessionId: job.target.sessionId, text });
+            // 会话里有任何待处理项（审批/提问）时，语音只负责把用户带到现场，
+            // 不替用户拍板：首页拿不到工具的完整命令，盲批的代价不可逆。
+            const items = pendingItems(pendingRef.current, job.target.sessionId);
+            if (items.length > 0) {
+              const only = items.length === 1 ? items[0] : undefined;
+              const approval = only?.kind === 'approval' ? only : undefined;
+              const heard = text.length > 18 ? text.slice(0, 18) + '…' : text;
+              openSessionById(job.target.sessionId);
+              if (approval) {
+                setApprovalFocus(approval.rpcId);
+                notifyPet(`听到「${heard}」，请在审批卡上确认`);
+                if (approvalFocusTimerRef.current) clearTimeout(approvalFocusTimerRef.current);
+                approvalFocusTimerRef.current = setTimeout(() => {
+                  setApprovalFocus((current) => (current === approval.rpcId ? null : current));
+                  approvalFocusTimerRef.current = null;
+                }, 5000);
+              } else {
+                notifyPet(`听到「${heard}」，这个会话在等你处理`);
+              }
+              break;
+            }
+            const requestId = randomUUID();
+            const sent = client.send({
+              type: 'message',
+              requestId,
+              sessionId: job.target.sessionId,
+              text,
+            });
+            if (!sent) {
+              notifyPet('没发出去，检查网络后再试');
+              break;
+            }
+            voiceMessagePendingRef.current = requestId;
             break;
           }
           // 新会话：一条 message 就够，网关会先建会话再发。
-          voiceCreatePendingRef.current = true;
-          client.send({
-            type: 'message',
-            text,
-            ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
-          });
+          {
+            const requestId = randomUUID();
+            const sent = client.send({
+              type: 'message',
+              requestId,
+              text,
+              ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
+            });
+            if (!sent) {
+              notifyPet('没发出去，检查网络后再试');
+              break;
+            }
+            voiceCreateRequestRef.current = requestId;
+          }
           break;
         }
         case 'sent': {
-          // 语音新建的会话：网关会先建再发，sent 里带着新 sessionId。
-          // 不跳过去的话，用户说完话看不到任何反应。
-          if (!voiceCreatePendingRef.current) break;
-          voiceCreatePendingRef.current = false;
-          const sent = frame as unknown as { sessionId?: string };
-          if (sent.sessionId) {
-            setActive({ sessionId: sent.sessionId, updatedAt: Date.now(), running: false, blank: false });
-            client.send({ type: 'sessions' });
+          // 只认自己这次语音请求的回执；不能用布尔值等「任意一条 sent」。
+          const sent = frame as unknown as { requestId?: string; sessionId?: string };
+          if (voiceCreateRequestRef.current && sent.requestId === voiceCreateRequestRef.current) {
+            voiceCreateRequestRef.current = null;
+            if (sent.sessionId) {
+              setActive({
+                sessionId: sent.sessionId,
+                updatedAt: Date.now(),
+                running: false,
+                blank: false,
+              });
+              client.send({ type: 'sessions' });
+              notifyPet('已发出');
+            } else {
+              notifyPet('已发出，但没拿到会话 id');
+            }
+            break;
+          }
+          if (voiceMessagePendingRef.current && sent.requestId === voiceMessagePendingRef.current) {
+            voiceMessagePendingRef.current = null;
+            notifyPet('已发出');
           }
           break;
         }
@@ -672,9 +763,27 @@ function AppBody() {
           break;
         }
         case 'error': {
-          const failure = frame as { code?: string; message?: string; requestType?: string };
+          const failure = frame as {
+            code?: string;
+            message?: string;
+            requestType?: string;
+            requestId?: string;
+          };
           setCreating(false);
           const text = `${failure.code ?? 'error'}：${failure.message ?? ''}`;
+          if (failure.requestType === 'speech-transcribe') {
+            voiceJobRef.current = null;
+            setTranscribing(false);
+            notifyPet(failure.code === 'speech/unavailable' ? '网关没有可用的语音服务' : '没听清或转写失败，再试一次');
+          }
+          if (voiceMessagePendingRef.current && failure.requestId === voiceMessagePendingRef.current) {
+            voiceMessagePendingRef.current = null;
+            notifyPet('没发出去，检查网络后再试');
+          }
+          if (voiceCreateRequestRef.current && failure.requestId === voiceCreateRequestRef.current) {
+            voiceCreateRequestRef.current = null;
+            notifyPet('没发出去，检查网络后再试');
+          }
           // 目录读失败就留在选择器里显示，别把用户弹回列表页。
           if (failure.requestType === 'directories') {
             setDirLoading(false);
@@ -697,7 +806,7 @@ function AppBody() {
           break;
       }
     },
-    [applyTitle, client, currentWorkspaceId, notifyPet, startControl],
+    [applyTitle, client, control, currentWorkspaceId, notifyPet, openSessionById, startControl],
   );
 
   useEffect(() => {
@@ -867,13 +976,18 @@ function AppBody() {
       const requestId = randomUUID();
       voiceJobRef.current = { requestId, target: job.target };
       setTranscribing(true);
-      client.send({
+      const sent = client.send({
         type: 'speech-transcribe',
         requestId,
         providerId: speechCatalog?.providerId,
         language: speechCatalog?.language,
         audioBase64: clip.base64,
       });
+      if (!sent) {
+        voiceJobRef.current = null;
+        setTranscribing(false);
+        notifyPet('连接已断开，录音没发出去');
+      }
     } catch (failure) {
       setTranscribing(false);
       notifyPet(failure instanceof Error ? failure.message : '读不到这段录音');
@@ -1006,12 +1120,13 @@ function AppBody() {
     async (gateway: SavedGateway) => {
       setGatewaySheet(false);
       if (gateway.id === savedRef.current?.id && connected) return;
+      clearApprovalFocus();
       client.disconnect();
       control.disconnect();
       setSessions([]);
       setQueues({});
       setActive(null);
-      setPending({});
+      clearPending();
       setHello(null);
       setError(null);
       setArchived([]);
@@ -1020,7 +1135,7 @@ function AppBody() {
       await activateGateway(gateway.id).catch(() => undefined);
       await connectWith(gateway);
     },
-    [client, connected, connectWith, control],
+    [clearApprovalFocus, clearPending, client, connected, connectWith, control],
   );
 
   const forgetGateway = useCallback(
@@ -1038,6 +1153,7 @@ function AppBody() {
               void removeJson(sessionsCacheKey(gateway.id));
               if (gateway.id !== savedRef.current?.id) return;
               // 删掉的正好是当前网关：断开并退回到列表/扫码页。
+              clearApprovalFocus();
               client.disconnect();
               control.disconnect();
               savedRef.current = null;
@@ -1057,7 +1173,7 @@ function AppBody() {
         },
       ]);
     },
-    [client, connectWith, control],
+    [clearApprovalFocus, clearPending, client, connectWith, control],
   );
 
   const submitRename = useCallback(() => {
@@ -1141,7 +1257,7 @@ function AppBody() {
               setSessions([]);
               setActive(null);
               setError(null);
-              setPending({});
+              clearPending();
               setGateways([]);
               setQueues({});
             })();
@@ -1212,10 +1328,11 @@ function AppBody() {
           </Pressable>
         ) : null}
 
-        {/* 会话页只要选中了就别卸载：断线时保留历史和草稿，只让顶部提示 + 输入框变灰。
-            卸载会让本地状态（附件、草稿、滚动位置）全丢，还会掉回「配对」页。 */}
+        {/* 断线时不卸载（保留历史/草稿/附件）；只有切换 sessionId 才重挂载，
+            让引用、目录信任、待发回显、语音请求和滚动锚点跟着上一会话一起结束。 */}
         {active ? (
           <SessionScreen
+            key={active.sessionId}
             client={client}
             session={active}
             queued={queues[active.sessionId] ?? []}
@@ -1252,6 +1369,8 @@ function AppBody() {
               });
               client.send({ type: 'sessions' });
             }}
+            focusApprovalRpcId={approvalFocus}
+            onApprovalFocusHandled={clearApprovalFocus}
           />
         ) : connected || saved ? (
           // 已经配过网关就别再退回「扫码配对」：断线时保留列表，顶部提示重连，

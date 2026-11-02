@@ -9,6 +9,14 @@ interface Props {
   target: string;
   /** 一句话说明（为什么弹这个） */
   detail?: string;
+  /** shell 类的真实命令；审批帧本身不带，必须从同 callId 的工具调用里取 */
+  command?: string;
+  /** 这个工具必须看到命令才能批准（shell/exec） */
+  commandRequired?: boolean;
+  /** 同会话里还有几条待审批（含当前这条） */
+  queueCount?: number;
+  /** 上一次提交失败的原因 */
+  error?: string | null;
   additions?: number;
   deletions?: number;
   highRisk?: boolean;
@@ -29,6 +37,10 @@ interface Props {
 export function ApprovalDock({
   target,
   detail,
+  command,
+  commandRequired,
+  queueCount,
+  error,
   additions,
   deletions,
   highRisk,
@@ -41,6 +53,7 @@ export function ApprovalDock({
   onExpand,
 }: Props) {
   const t = useTheme();
+  const blocked = Boolean(commandRequired && !command?.trim());
   const [fill] = useState(() => new Animated.Value(0));
   const [pct, setPct] = useState(0);
   const firedRef = useRef(false);
@@ -64,7 +77,7 @@ export function ApprovalDock({
   };
 
   const startHold = () => {
-    if (busy) return;
+    if (busy || blocked) return;
     firedRef.current = false;
     chargeStartFeedback();
     clearPulse();
@@ -124,6 +137,7 @@ export function ApprovalDock({
             {highRisk ? '高危命令: ' : '待批复: '}
             {target}
             {additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}
+            {queueCount && queueCount > 1 ? ` · 还有 ${queueCount - 1} 条` : ''}
           </Text>
           <Text style={[styles.gateMore, { color: t.text.secondary }]}>点开放大 ↗</Text>
         </Pressable>
@@ -150,9 +164,27 @@ export function ApprovalDock({
         </Pressable>
       </View>
 
+      {command?.trim() ? (
+        <Text
+          style={[styles.command, { color: t.text.primary, backgroundColor: t.bg.subtle }]}
+          numberOfLines={2}
+        >
+          {command}
+        </Text>
+      ) : null}
+      {blocked ? (
+        <Text style={[styles.commandWarn, { color: t.semantic.dangerText }]} numberOfLines={2}>
+          命令详情不可用，请到 Web UI 确认后再批准
+        </Text>
+      ) : null}
       {detail ? (
         <Text style={[styles.detail, { color: t.text.secondary }]} numberOfLines={2}>
           {detail}
+        </Text>
+      ) : null}
+      {error ? (
+        <Text style={[styles.error, { color: t.semantic.dangerText }]} numberOfLines={2}>
+          {error}
         </Text>
       ) : null}
 
@@ -174,7 +206,7 @@ export function ApprovalDock({
             style={[styles.approve, { backgroundColor: t.action.primaryBg }]}
             onPressIn={startHold}
             onPressOut={cancelHold}
-            disabled={busy}
+            disabled={busy || blocked}
             accessibilityRole="button"
             accessibilityLabel="长按半秒放行高危命令"
           >
@@ -185,11 +217,13 @@ export function ApprovalDock({
               ]}
             />
             <Text style={[styles.approveText, { color: t.action.primaryText }]}>
-              {busy
-                ? '处理中…'
-                : pct > 0
-                  ? `长按确认中 ${pct}%`
-                  : `长按 0.5s 放行${riskLabels?.length ? ' · ' + riskLabels[0] : '高危命令'}`}
+              {blocked
+                ? '命令不可见 · 请展开'
+                : busy
+                  ? '处理中…'
+                  : pct > 0
+                    ? `长按确认中 ${pct}%`
+                    : `长按 0.5s 放行${riskLabels?.length ? ' · ' + riskLabels[0] : '高危命令'}`}
             </Text>
           </Pressable>
         ) : (
@@ -200,12 +234,14 @@ export function ApprovalDock({
               pressed ? styles.pressed : null,
             ]}
             onPress={onApprove}
-            disabled={busy}
+            disabled={busy || blocked}
           >
             <Text style={[styles.approveText, { color: t.action.primaryText }]}>
-              {busy
-                ? '处理中…'
-                : `✓ 快速批准${additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}`}
+              {blocked
+                ? '命令不可见 · 请展开'
+                : busy
+                  ? '处理中…'
+                  : `✓ 快速批准${additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}`}
             </Text>
           </Pressable>
         )}
@@ -246,6 +282,15 @@ const styles = StyleSheet.create({
   },
   trustText: { ...TYPE.pill, fontFamily: MONO, fontWeight: '600' },
   detail: { ...TYPE.caption, paddingHorizontal: 2 },
+  command: {
+    ...TYPE.mono,
+    fontFamily: MONO,
+    paddingHorizontal: 2,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  commandWarn: { ...TYPE.caption, paddingHorizontal: 2 },
+  error: { ...TYPE.caption, paddingHorizontal: 2 },
   actions: { flexDirection: 'row', gap: 8 },
   reject: {
     flex: 2,
