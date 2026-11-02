@@ -530,6 +530,8 @@ export function SessionScreen({
   const olderRequestRef = useRef<number | null>(null);
   /** 在途的首屏历史请求（带 requestId，npm 网关会回显）；非 null = 单飞守卫占用中。 */
   const firstScreenRequestRef = useRef<string | null>(null);
+  /** 最近一次渲染的流式行：回合结束要按「最后一条用户消息」的索引回滚，索引只能从渲染产物拿。 */
+  const rowsRef = useRef<StreamRow[]>([]);
 
   /**
    * 首屏一把梭：subscribe + history（带 requestId 便于归位）+ 轻量查询。
@@ -566,6 +568,22 @@ export function SessionScreen({
     setLoading(true);
     requestFirstScreen();
   }, [requestFirstScreen]);
+
+  /**
+   * 回合结束的锚定落位：把「最后一条用户消息」滚到视口第一行，
+   * 接着依次是折叠的活动胶囊和本回合正文——收官位置一眼就能从头读。
+   * 只在人还贴着底部（跟随状态）时调用；正在翻历史的人不许动。
+   */
+  const anchorTurn = useCallback(() => {
+    const list = rowsRef.current;
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const row = list[index];
+      if (row.kind === 'message' && row.message.kind === 'user') {
+        listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: false });
+        return;
+      }
+    }
+  }, []);
 
   const handleFrame = useCallback(
     (frame: ServerFrame) => {
@@ -684,6 +702,14 @@ export function SessionScreen({
           setStreaming(null);
           // 中断/出错的提示统一由 applyRealtime 生成的 outcome 行承担
           // （见 protocol/chat.ts outcomeOf），这里再补一条就是同一件事写两遍。
+          if (atBottomRef.current) {
+            // 一直跟着看完的这一轮：结束时把最后一条用户消息锚到视口第一行，
+            // 否则终答正文会被折线切在屏幕外（停在距底约 1/3 屏的位置）。
+            // 两枪：大代码块测量晚，300ms 再锚一次收掉漂移。
+            [80, 300].forEach((ms) => {
+              setTimeout(() => anchorTurn(), ms);
+            });
+          }
         }
         setMessages((current) => applyRealtime(current, eventFrame.event as Record<string, any>, eventFrame.seq, eventFrame.time));
         return;
@@ -697,8 +723,9 @@ export function SessionScreen({
         const inner = streamFrame.frame;
         if (inner.type === 'start') {
           onRunningChangeRef.current(true);
-          // 新回合开始就是要看最新进展；真翻历史的人会在拖动时把跟随关掉。
-          followRef.current = true;
+          // 每步都会发一次 start：只有人还贴着底部时才续跟随。停在历史中间的
+          // 读者是在主动寻找定位，别把他拽回底部（拖动留下的 follow=false 要保住）。
+          if (atBottomRef.current) followRef.current = true;
           setStreaming({
             attemptId: String(inner.attemptId ?? ''),
             text: '',
@@ -959,7 +986,7 @@ export function SessionScreen({
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [client, handleVoiceFailure, handleVoiceFrame, session.sessionId, setStatusLabel, showToast],
+    [anchorTurn, client, handleVoiceFailure, handleVoiceFrame, session.sessionId, setStatusLabel, showToast],
   );
 
   useEffect(() => {
@@ -2062,6 +2089,11 @@ export function SessionScreen({
     // 连续的 tool 调用合并成一组，其余消息原样透传。
     return groupMessages([...baseRows, ...extras], { running });
   }, [baseRows, offlineItems, pendingSends, queued, running]);
+
+  // 帧回调里要按索引回滚到「最后一条用户消息」，只能读渲染后的 rows。
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   /** 最后一个活动胶囊的 id：只有它会在「实时一轮刚收拢」时播放收拢动画。 */
   const lastActivityId = useMemo(() => {
