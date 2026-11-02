@@ -382,9 +382,9 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 
 - 快速松手 ×2 → 「太短啦」→ 状态复位 → 立刻能再录：✅
 - 按住 3 秒说真话 → 真 ASR → 消息发出、新会话建成（zstd 会话日志里查到 `user/message`）：✅
-- 按住 21 秒 → 录中 caption「我在听 0:12 / 0:20」、最后 10 秒转琥珀、到点自动停、状态复位：✅
-  （但那次是静音，转写成空走了「没听清」——**真实说话到上限的投递落点（文字进输入框不发送）
-  还没真机跑过，需要用户按住说满一次**。）
+- 按住 21 秒（静音）→ 录中 caption「我在听 0:12 / 0:20」、最后 10 秒转琥珀、到点自动停、
+  状态复位：✅
+- 按住说满 20 秒（真实说话）→ 自动停后文字落进输入框且不发送：✅（用户 2026-11-02 复验）
 - 震动：`dumpsys vibrator_manager` 确认 expo-haptics 波形已发出，但 MIUI 把所有 App 振动标成
   `ignored_for_settings`（系统触感是关的）——不是 App bug，用户要开系统「触感反馈」才摸得到。
 
@@ -398,12 +398,11 @@ App/网关均无对应帧，修在宿主或新加网关帧；已记 BACKLOG QUEU
 
 **环境残留（接手先看）**：
 
-- 本机网关 `~/.dsh/profiles/web/cordis.patch.yml` 仍挂着 `maxDurationSeconds: 20` 测试补丁
-  （备份 `.bak-before-voice-test`）——用户复验完要按 STATUS §6.5 的命令还原并重启。
+- 本机网关语音测试补丁（`maxDurationSeconds: 20`）**已还原并重启**（webPid 8900 → 73544，
+  端点 `POST /mgw/tools/restart-web`）；备份 `.bak-before-voice-test` 留着备用。
 - `adb reverse` 保留 8081（Metro）与 3080（网关 USB 路径）；8090 已撤，临时 http 服务与
   测试 wav 已清。
 - Metro（`NODE_OPTIONS=--max-old-space-size=8192 npx expo start --port 8081`）与本机网关仍在跑。
 
-**下一步**：VOICE-1 真实说话复验 → QUEUE-1 上报宿主/网关作者 → 第四项发件箱回执关联
-（顺序与理由见 STATUS §8）。
+**下一步**：QUEUE-1 上报宿主/网关作者 → 第四项发件箱回执关联（顺序与理由见 STATUS §8）。
 
