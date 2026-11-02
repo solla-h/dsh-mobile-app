@@ -38,7 +38,7 @@ import {
 import { ApprovalDock } from './dock/ApprovalDock';
 import { ModelPermissionBar } from './session/ModelPermissionBar';
 import { TextSelectionSheet } from './TextSelectionSheet';
-import { useVoiceCapture } from './voice/useVoiceCapture';
+import { useVoiceInput } from './voice/useVoiceInput';
 import { GraceUndo } from './dock/GraceUndo';
 import { TriageSheet } from './dock/TriageSheet';
 import { ContextHairline, StatusPill } from './nav/AmbientContext';
@@ -106,7 +106,7 @@ import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
 import { FileCards, type FileUiState } from './FileCards';
 import { MOTION, type Palette } from '../theme/tokens';
 import { useTheme, useThemedStyles } from './theme';
-import { transcriptText } from '../protocol/speech';
+import { formatClock, type SpeechCatalog } from '../protocol/speech';
 import { tapFeedback } from './haptics';
 import { InteractionSheet } from './InteractionSheet';
 import { MarkdownView } from './Markdown';
@@ -137,6 +137,12 @@ interface Props {
   /** 首页语音说「同意」后只打开审批卡，不代替用户拍板 */
   focusApprovalRpcId?: string | null;
   onApprovalFocusHandled?: () => void;
+  /** 语音目录：语音的上限与就绪判断和首页共用同一份（App 那条连接上拉的） */
+  speechCatalog?: SpeechCatalog | null;
+  /** 首页语音到上限的文字：合并进输入框，不管页面是刚挂载还是已经开着 */
+  voiceDelivery?: { key: string; sessionId: string; text: string } | null;
+  /** 已合并进草稿；App 据此清掉这条投递（避免切走再回来重复合并） */
+  onVoiceDeliveryTaken?: (key: string) => void;
 }
 
 interface StreamingDraft {
@@ -252,6 +258,9 @@ export function SessionScreen({
   onOpenSession,
   focusApprovalRpcId,
   onApprovalFocusHandled,
+  speechCatalog = null,
+  voiceDelivery = null,
+  onVoiceDeliveryTaken,
 }: Props) {
   const t = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -353,12 +362,33 @@ export function SessionScreen({
     },
     [],
   );
-  // ---- 语音输入：点麦克风开始/结束，转写结果回填输入框 ----
-  const voice = useVoiceCapture();
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [recordSec, setRecordSec] = useState(0);
-  const voiceRequestRef = useRef<string | null>(null);
+  // ---- 语音输入：按住说话，转写结果回填输入框 ----
+  // 录音竞态、时长上限、失败复位都在 useVoiceInput 里（和首页语音球共用同一份）。
+  const voice = useVoiceInput({
+    client,
+    catalog: speechCatalog,
+    onNotice: (next) => setStatusLabel(next),
+    onTranscript: (text, reason) => {
+      const merged = draftRef.current.trim() ? draftRef.current + ' ' + text : text;
+      // 到上限自动停的那一段：文字放回输入框，改完再发，不代发半句话。
+      if (reason === 'cap') {
+        setDraft(merged);
+        setStatusLabel('到上限了，文字已放回输入框');
+        composerRef.current?.focus();
+        return;
+      }
+      // 松手就是一次发送：转写结果直接走发送，不再停在输入框等用户再点一下。
+      setDraft(merged);
+      sendRef.current(merged);
+    },
+  });
+  const {
+    recording,
+    transcribing,
+    // 帧处理器单独取出来：引用稳定，放进 handleFrame 的依赖不会让帧监听器反复重订阅。
+    handleTranscript: handleVoiceFrame,
+    handleTranscribeFailure: handleVoiceFailure,
+  } = voice;
   const [voiceGlow] = useState(() => new Animated.Value(0));
   /** 按住还没到开麦时间的定时器。 */
   const voiceHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -375,6 +405,8 @@ export function SessionScreen({
   const [offlineItems, setOfflineItems] = useState<OutboxItem[]>(() => outbox.list(session.sessionId));
   /** 草稿是否已经从磁盘读回来了，读完之前不许写盘。 */
   const draftReadyRef = useRef(false);
+  /** 草稿还没读完就先到的外部语音投递，等 loadDraft 回来一起合并。 */
+  const pendingDeliveryRef = useRef<{ key: string; text: string } | null>(null);
   /** 任务列表与当前目标；asOfSeq 只允许变大，避免旧推送覆盖新查询。 */
   const [todos, setTodos] = useState<TodoItem[] | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
@@ -555,19 +587,8 @@ export function SessionScreen({
         return;
       }
       if (kind === 'speech-transcript') {
-        const received = frame as unknown as { requestId?: string };
-        if (!voiceRequestRef.current || received.requestId !== voiceRequestRef.current) return;
-        voiceRequestRef.current = null;
-        setTranscribing(false);
-        const text = transcriptText(frame) ?? '';
-        if (!text) {
-          setStatusLabel('没听清，再说一次试试');
-          return;
-        }
-        // 松手就是一次发送：转写结果直接走发送，不再停在输入框等用户再点一下。
-        const merged = draftRef.current.trim() ? draftRef.current + ' ' + text : text;
-        setDraft(merged);
-        sendRef.current(merged);
+        // requestId 匹配、复位、提示都在 useVoiceInput 里，这里只把帧递进去。
+        handleVoiceFrame(frame);
         return;
       }
       if (kind === 'attachment') {
@@ -837,11 +858,7 @@ export function SessionScreen({
         };
         // 目录没拉到就允许下次再试，别让一次失败把 / 菜单永久关掉。
         if (failure.requestType === 'commands') commandRequestedRef.current = false;
-        if (failure.requestType === 'speech-transcribe') {
-          voiceRequestRef.current = null;
-          setTranscribing(false);
-          setStatusLabel(failure.code === 'speech/unavailable' ? '网关没有可用的语音服务' : '转写失败，再试一次');
-        }
+        handleVoiceFailure(failure);
         if (failure.requestType === 'select-agent-preset') {
           // 乐观改过的本地状态要退回去：以服务端为准重查一次。
           client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
@@ -867,7 +884,7 @@ export function SessionScreen({
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [client, session.sessionId, setStatusLabel, showToast],
+    [client, handleVoiceFailure, handleVoiceFrame, session.sessionId, setStatusLabel, showToast],
   );
 
   useEffect(() => {
@@ -887,7 +904,6 @@ export function SessionScreen({
     setTrustedDirs([]);
     setPendingSends([]);
     setApprovalLog([]);
-    voiceRequestRef.current = null;
     // 切会话后必须回到最新消息；否则在 A 会话翻过历史后切到 B，B 会停在顶部。
     pinnedOnceRef.current = false;
     followRef.current = true;
@@ -1516,16 +1532,6 @@ export function SessionScreen({
   const uploadingFiles = pickedFiles.some(
     (item) => item.state.status === 'hashing' || item.state.status === 'uploading',
   );
-  // 录音计时（每 0.5s 刷新；清零放在 toggle 里，避免 effect 同步 setState）
-  useEffect(() => {
-    if (!recording) return;
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      setRecordSec(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
-    }, 500);
-    return () => clearInterval(timer);
-  }, [recording]);
-
   // 淡绿光晕缓慢呼吸（Native 驱动，轻而不闪）
   useEffect(() => {
     if (!recording) {
@@ -1542,84 +1548,17 @@ export function SessionScreen({
     return () => loop.stop();
   }, [recording, voiceGlow]);
 
-  // 离开页面时放弃未结束的录音，并清掉还没到点的开麦定时器
+  // 离开页面时清掉还没到点的开麦定时器；进行中的录音由 useVoiceInput 自己收尾。
   useEffect(
     () => () => {
       if (voiceHoldRef.current) clearTimeout(voiceHoldRef.current);
-      voice.cancel();
     },
-    [voice],
+    [],
   );
 
-  /** 按住开麦。轻点不开麦（见 VOICE_HOLD_MS），所以不叫 toggle 了。 */
-  const beginVoice = useCallback(async () => {
-    if (recording || transcribing) return;
-    try {
-      await voice.start();
-      setRecordSec(0);
-      setRecording(true);
-      setStatusLabel(null);
-    } catch (failure) {
-      setStatusLabel(failure instanceof Error ? failure.message : '没法开始录音');
-    }
-  }, [recording, transcribing, voice, setStatusLabel]);
-
-  /** 松手：结束录音并送转写。 */
-  const endVoice = useCallback(async () => {
-    if (!recording) return;
-    setRecording(false);
-    try {
-      const clip = await voice.stop();
-      if (!clip) return;
-      if (clip.duration < 0.4) {
-        setStatusLabel('太短啦，按住多说一会儿');
-        return;
-      }
-      const requestId = randomUUID();
-      voiceRequestRef.current = requestId;
-      setTranscribing(true);
-      const sent = client.send({ type: 'speech-transcribe', requestId, audioBase64: clip.base64 });
-      if (!sent) {
-        voiceRequestRef.current = null;
-        setTranscribing(false);
-        setStatusLabel('连接已断开，录音没发出去');
-      }
-    } catch (failure) {
-      setStatusLabel(failure instanceof Error ? failure.message : '读不到这段录音');
-    }
-  }, [client, recording, voice, setStatusLabel]);
-
-  /** 取消：录音中丢弃整段录音；转写中撤回已发出的转写请求。 */
-  const cancelVoice = useCallback(() => {
-    setVoiceWillCancel(false);
-    if (recording) {
-      voice.cancel();
-      setRecording(false);
-      setRecordSec(0);
-      setStatusLabel('已取消录音');
-      return;
-    }
-    if (transcribing && voiceRequestRef.current) {
-      client.send({
-        type: 'speech-cancel',
-        requestId: randomUUID(),
-        targetRequestId: voiceRequestRef.current,
-      });
-      voiceRequestRef.current = null;
-      setTranscribing(false);
-      setStatusLabel('已取消转写');
-    }
-  }, [client, recording, setStatusLabel, transcribing, voice]);
-
-  // PanResponder 只建一次，处理器从 ref 取最新的——直接在 create 里闭包会读到旧状态。
-  // 写 ref 放进 effect（无依赖 = 每次渲染后同步一次），渲染期写 ref 会被 lint 拦。
-  const voiceApiRef = useRef({ begin: beginVoice, end: endVoice, cancel: cancelVoice });
-  useEffect(() => {
-    voiceApiRef.current = { begin: beginVoice, end: endVoice, cancel: cancelVoice };
-  });
-
-  // 和首页 PetStage 同一个形状：手势只建一次，处理器从 ref 取最新状态。
-  // 用 useRef 而不是 useMemo：依赖一变就重建 responders 会把进行中的手势丢掉。
+  // 和首页 PetStage 同一个形状：手势只建一次。
+  // useRef 而不是 useMemo：依赖一变就重建 responders 会把进行中的手势丢掉；
+  // useVoiceInput 的方法都是稳定引用，闭包捕获第一份也不会过期。
   const voicePanRef = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -1632,7 +1571,7 @@ export function SessionScreen({
         if (voiceHoldRef.current) clearTimeout(voiceHoldRef.current);
         voiceHoldRef.current = setTimeout(() => {
           voiceHoldRef.current = null;
-          void voiceApiRef.current.begin();
+          voice.begin();
         }, VOICE_HOLD_MS);
       },
       onPanResponderMove: (_event, gesture) => {
@@ -1650,15 +1589,16 @@ export function SessionScreen({
           setStatusLabel('按住说话，松手发送 · 上滑取消');
           return;
         }
-        if (voiceCancelRef.current) voiceApiRef.current.cancel();
-        else void voiceApiRef.current.end();
+        // 上滑取消 = 丢掉这一段；松手 = 交给 useVoiceInput 收录音并发转写。
+        if (voiceCancelRef.current) voice.cancel('已取消录音');
+        else voice.end();
       },
       onPanResponderTerminate: () => {
         if (voiceHoldRef.current) {
           clearTimeout(voiceHoldRef.current);
           voiceHoldRef.current = null;
         }
-        voiceApiRef.current.cancel();
+        voice.cancel('已取消录音');
       },
     }),
   );
@@ -2030,13 +1970,34 @@ export function SessionScreen({
     let cancelled = false;
     void loadDraft(session.sessionId).then((text) => {
       if (cancelled) return;
-      setDraft(text);
+      const delivery = pendingDeliveryRef.current;
+      pendingDeliveryRef.current = null;
+      setDraft(delivery ? (text.trim() ? text + ' ' + delivery.text : delivery.text) : text);
       draftReadyRef.current = true;
+      if (delivery) {
+        composerRef.current?.focus();
+        onVoiceDeliveryTaken?.(delivery.key);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [session.sessionId]);
+  }, [session.sessionId, onVoiceDeliveryTaken]);
+
+  // 首页语音到上限的文字投递：本会话的才收。页面还开着就直接合并；
+  // 草稿还没读完就先记账，交给上面的 loadDraft 一起合并（先合并会被读盘覆盖掉）。
+  useEffect(() => {
+    if (!voiceDelivery || voiceDelivery.sessionId !== session.sessionId) return;
+    if (!draftReadyRef.current) {
+      pendingDeliveryRef.current = { key: voiceDelivery.key, text: voiceDelivery.text };
+      return;
+    }
+    setDraft((current) =>
+      current.trim() ? current + ' ' + voiceDelivery.text : voiceDelivery.text,
+    );
+    composerRef.current?.focus();
+    onVoiceDeliveryTaken?.(voiceDelivery.key);
+  }, [onVoiceDeliveryTaken, session.sessionId, voiceDelivery]);
 
   // 草稿改动落盘（内部已做防抖）。没加载完之前不写，避免把空值覆盖掉磁盘上的草稿。
   useEffect(() => {
@@ -2618,14 +2579,16 @@ export function SessionScreen({
                   recording
                     ? voiceWillCancel
                       ? '松手取消'
-                      : '正在聆听 ' + formatSec(recordSec)
+                      : `正在聆听 ${formatClock(voice.elapsed)} / ${formatClock(voice.limit)}`
                     : '发消息…'
                 }
                 placeholderTextColor={
                   recording
                     ? voiceWillCancel
                       ? t.semantic.dangerText
-                      : t.semantic.diffAddText
+                      : voice.almostUp
+                        ? t.semantic.gateAmberText
+                        : t.semantic.diffAddText
                     : t.text.muted
                 }
                 // 空白会话（双击鲸鱼新建出来的）直接把键盘叫起来，省一次点击
@@ -2638,7 +2601,7 @@ export function SessionScreen({
                   style={styles.voiceCancel}
                   onPress={() => {
                     tapFeedback();
-                    cancelVoice();
+                    voice.cancelTranscription();
                   }}
                   accessibilityRole="button"
                   accessibilityLabel="取消"
@@ -2717,13 +2680,6 @@ export function SessionScreen({
       </KeyboardAvoidingView>
     </View>
   );
-}
-
-/** 录音计时：12 → 0:12 */
-function formatSec(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m > 0 ? m + ':' + String(s).padStart(2, '0') : '0:' + String(s).padStart(2, '0');
 }
 
 /** 128000 → 128k，1500 → 1.5k，方便塞进一行统计条。 */

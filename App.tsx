@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import { randomUUID } from 'expo-crypto';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,11 +30,9 @@ import { selectFocusSessions } from './src/protocol/focus';
 import {
   hasReadyProvider,
   mapSpeechCatalog,
-  maxRecordSeconds,
-  transcriptText,
   type SpeechCatalog,
 } from './src/protocol/speech';
-import { useVoiceCapture } from './src/ui/voice/useVoiceCapture';
+import { useVoiceInput, type VoiceStopReason } from './src/ui/voice/useVoiceInput';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
 import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
@@ -143,14 +142,20 @@ function AppBody() {
   const [outlines, setOutlines] = useState<OutlineMap>({});
   /** 服务器语音目录：provider、语言、音频上限都在这里 */
   const [speechCatalog, setSpeechCatalog] = useState<SpeechCatalog | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const voice = useVoiceCapture();
-  /** 正在等哪条转写结果，以及结果要发给谁；迟到的结果按 requestId 丢掉 */
-  const voiceJobRef = useRef<{
-    requestId: string;
-    target: { kind: 'new' } | { kind: 'session'; sessionId: string };
+  /** 这一次语音球说给谁听；转写回来时按它决定发给哪个会话 */
+  const voiceTargetRef = useRef<{ kind: 'new' } | { kind: 'session'; sessionId: string } | null>(null);
+  /** 到上限自动停、要新建会话的那句话：按 session-create 的 requestId 认领，失败/断线退剪贴板 */
+  const voiceDraftRef = useRef<{ requestId: string; text: string } | null>(null);
+  /** 到上限的那句话投递给已有会话的会话页；会话页合并进草稿后回调清掉 */
+  const [voiceDelivery, setVoiceDelivery] = useState<{
+    key: string;
+    sessionId: string;
+    text: string;
   } | null>(null);
+  /** 会话页消费完投递后清场；只清自己那份（键对不上说明是更新的投递） */
+  const clearVoiceDelivery = useCallback((key: string) => {
+    setVoiceDelivery((current) => (current && current.key === key ? null : current));
+  }, []);
   /** handleFrame 里要读最新的待办，但不想因为待办变化重建回调 */
   const pendingRef = useRef<PendingMap>({});
   /** 刚用语音发了一条「新会话」消息，等 sent 回来就跳进去 */
@@ -396,12 +401,140 @@ function AppBody() {
     }
   }, []);
 
+  /** 认领挂在 voiceDraftRef 的语音草稿：requestId 给了就必须对上（老网关不带时才按先到先得）。 */
+  const takeVoiceDraft = useCallback((requestId?: string) => {
+    const held = voiceDraftRef.current;
+    if (!held) return null;
+    if (requestId !== undefined && held.requestId !== requestId) return null;
+    voiceDraftRef.current = null;
+    return held.text;
+  }, []);
+
+  /** 这段语音草稿没地方可送了（建会话失败、断线）：退到剪贴板，别让这句话凭空消失。 */
+  const rescueVoiceDraft = useCallback(
+    (notice: string) => {
+      const lost = takeVoiceDraft();
+      if (!lost) return;
+      void Clipboard.setStringAsync(lost);
+      notifyPet(notice);
+    },
+    [notifyPet, takeVoiceDraft],
+  );
+
+  /** 转写结果回来了：按「说给谁」分流。录音、上限、失败复位都在 useVoiceInput 里。 */
+  const handleVoiceTranscript = useCallback(
+    (text: string, reason: VoiceStopReason) => {
+      const target = voiceTargetRef.current;
+      voiceTargetRef.current = null;
+      if (!target) return;
+      // 到上限自动停：不代发，把文字放回输入框，改完再发。
+      if (reason === 'cap') {
+        if (target.kind === 'session') {
+          // 投递给会话页合并进输入框：不管它已经在屏幕上还是马上挂载，
+          // 走同一条路（往里写草稿再靠挂载时读取，页面已经开着就永远读不到）。
+          setVoiceDelivery({ key: randomUUID(), sessionId: target.sessionId, text });
+          openSessionById(target.sessionId);
+          notifyPet('到上限了，文字已放进输入框');
+          return;
+        }
+        // 新会话：先把文字挂起来，等 session-created 回来再投递。
+        const requestId = randomUUID();
+        voiceDraftRef.current = { requestId, text };
+        const created = client.send({
+          type: 'session-create',
+          requestId,
+          ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
+        });
+        if (!created) {
+          // 会话建不出来就退到剪贴板，别让这句话凭空消失。
+          voiceDraftRef.current = null;
+          void Clipboard.setStringAsync(text);
+          notifyPet('连接已断开，文字已复制到剪贴板');
+          return;
+        }
+        notifyPet('到上限了，正在新建会话');
+        return;
+      }
+      if (target.kind === 'session') {
+        // control 断线时首页的待办可能是旧的：这时连「有没有审批」都不知道，
+        // 不能把一句「同意」当成普通消息发进去，先打开会话让用户看现场。
+        if (control.state !== 'ready') {
+          openSessionById(target.sessionId);
+          notifyPet('待办状态还没同步，已打开会话');
+          return;
+        }
+        // 会话里有任何待处理项（审批/提问）时，语音只负责把用户带到现场，
+        // 不替用户拍板：首页拿不到工具的完整命令，盲批的代价不可逆。
+        const items = pendingItems(pendingRef.current, target.sessionId);
+        if (items.length > 0) {
+          const only = items.length === 1 ? items[0] : undefined;
+          const approval = only?.kind === 'approval' ? only : undefined;
+          const heard = text.length > 18 ? text.slice(0, 18) + '…' : text;
+          openSessionById(target.sessionId);
+          if (approval) {
+            setApprovalFocus(approval.rpcId);
+            notifyPet(`听到「${heard}」，请在审批卡上确认`);
+            if (approvalFocusTimerRef.current) clearTimeout(approvalFocusTimerRef.current);
+            approvalFocusTimerRef.current = setTimeout(() => {
+              setApprovalFocus((current) => (current === approval.rpcId ? null : current));
+              approvalFocusTimerRef.current = null;
+            }, 5000);
+          } else {
+            notifyPet(`听到「${heard}」，这个会话在等你处理`);
+          }
+          return;
+        }
+        const requestId = randomUUID();
+        const sent = client.send({
+          type: 'message',
+          requestId,
+          sessionId: target.sessionId,
+          text,
+        });
+        if (!sent) {
+          notifyPet('没发出去，检查网络后再试');
+          return;
+        }
+        voiceMessagePendingRef.current = requestId;
+        return;
+      }
+      // 新会话：一条 message 就够，网关会先建会话再发。
+      const requestId = randomUUID();
+      const sent = client.send({
+        type: 'message',
+        requestId,
+        text,
+        ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
+      });
+      if (!sent) {
+        notifyPet('没发出去，检查网络后再试');
+        return;
+      }
+      voiceCreateRequestRef.current = requestId;
+    },
+    [client, control, currentWorkspaceId, notifyPet, openSessionById],
+  );
+
+  const voiceInput = useVoiceInput({
+    client,
+    catalog: speechCatalog,
+    onNotice: notifyPet,
+    onTranscript: handleVoiceTranscript,
+  });
+
   useEffect(
     () => () => {
       if (approvalFocusTimerRef.current) clearTimeout(approvalFocusTimerRef.current);
     },
     [],
   );
+
+  // 帧处理器单独取出来：引用稳定，放进 handleFrame 的依赖不会让帧监听器反复重订阅
+  // （整个 voiceInput 对象每 0.5s 录音计时换一次引用，直接依赖它会每次重挂监听）。
+  const {
+    handleTranscript: handleVoiceFrame,
+    handleTranscribeFailure: handleVoiceFailure,
+  } = voiceInput;
 
   const handleFrame = useCallback(
     (frame: ServerFrame) => {
@@ -603,75 +736,9 @@ function AppBody() {
           break;
         }
         case 'speech-transcript': {
-          const job = voiceJobRef.current;
-          const received = frame as unknown as { requestId?: string };
-          // 只认当前这条请求；切页/重录之后的迟到结果一律丢。
-          if (!job || job.requestId !== received.requestId) break;
-          voiceJobRef.current = null;
-          setTranscribing(false);
-          const text = transcriptText(frame) ?? '';
-          if (!text) {
-            notifyPet('没听清，再说一次试试');
-            break;
-          }
-          if (job.target.kind === 'session') {
-            // control 断线时首页的待办可能是旧的：这时连「有没有审批」都不知道，
-            // 不能把一句「同意」当成普通消息发进去，先打开会话让用户看现场。
-            if (control.state !== 'ready') {
-              openSessionById(job.target.sessionId);
-              notifyPet('待办状态还没同步，已打开会话');
-              break;
-            }
-            // 会话里有任何待处理项（审批/提问）时，语音只负责把用户带到现场，
-            // 不替用户拍板：首页拿不到工具的完整命令，盲批的代价不可逆。
-            const items = pendingItems(pendingRef.current, job.target.sessionId);
-            if (items.length > 0) {
-              const only = items.length === 1 ? items[0] : undefined;
-              const approval = only?.kind === 'approval' ? only : undefined;
-              const heard = text.length > 18 ? text.slice(0, 18) + '…' : text;
-              openSessionById(job.target.sessionId);
-              if (approval) {
-                setApprovalFocus(approval.rpcId);
-                notifyPet(`听到「${heard}」，请在审批卡上确认`);
-                if (approvalFocusTimerRef.current) clearTimeout(approvalFocusTimerRef.current);
-                approvalFocusTimerRef.current = setTimeout(() => {
-                  setApprovalFocus((current) => (current === approval.rpcId ? null : current));
-                  approvalFocusTimerRef.current = null;
-                }, 5000);
-              } else {
-                notifyPet(`听到「${heard}」，这个会话在等你处理`);
-              }
-              break;
-            }
-            const requestId = randomUUID();
-            const sent = client.send({
-              type: 'message',
-              requestId,
-              sessionId: job.target.sessionId,
-              text,
-            });
-            if (!sent) {
-              notifyPet('没发出去，检查网络后再试');
-              break;
-            }
-            voiceMessagePendingRef.current = requestId;
-            break;
-          }
-          // 新会话：一条 message 就够，网关会先建会话再发。
-          {
-            const requestId = randomUUID();
-            const sent = client.send({
-              type: 'message',
-              requestId,
-              text,
-              ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
-            });
-            if (!sent) {
-              notifyPet('没发出去，检查网络后再试');
-              break;
-            }
-            voiceCreateRequestRef.current = requestId;
-          }
+          // 转写结果的 requestId 匹配、状态复位、提示都在 useVoiceInput 里，
+          // 这里只接收结果（发给谁由 handleVoiceTranscript 决定）。
+          handleVoiceFrame(frame);
           break;
         }
         case 'sent': {
@@ -735,7 +802,7 @@ function AppBody() {
           break;
         }
         case 'session-created': {
-          const created = frame as { sessionId: string };
+          const created = frame as { sessionId: string; requestId?: string };
           setCreating(false);
           setActive({
             sessionId: created.sessionId,
@@ -743,6 +810,13 @@ function AppBody() {
             running: false,
             blank: true,
           });
+          // 到上限自动停下来的那句话：只认自己那次 session-create 的响应，
+          // 会话页挂载后由投递把它合并进输入框。
+          const held = takeVoiceDraft(created.requestId);
+          if (held) {
+            setVoiceDelivery({ key: randomUUID(), sessionId: created.sessionId, text: held });
+            notifyPet('到上限了，文字已放进输入框');
+          }
           break;
         }
         case 'session-renamed': {
@@ -770,11 +844,7 @@ function AppBody() {
           };
           setCreating(false);
           const text = `${failure.code ?? 'error'}：${failure.message ?? ''}`;
-          if (failure.requestType === 'speech-transcribe') {
-            voiceJobRef.current = null;
-            setTranscribing(false);
-            notifyPet(failure.code === 'speech/unavailable' ? '网关没有可用的语音服务' : '没听清或转写失败，再试一次');
-          }
+          handleVoiceFailure(failure);
           if (voiceMessagePendingRef.current && failure.requestId === voiceMessagePendingRef.current) {
             voiceMessagePendingRef.current = null;
             notifyPet('没发出去，检查网络后再试');
@@ -782,6 +852,16 @@ function AppBody() {
           if (voiceCreateRequestRef.current && failure.requestId === voiceCreateRequestRef.current) {
             voiceCreateRequestRef.current = null;
             notifyPet('没发出去，检查网络后再试');
+          }
+          // 到上限那句语音卡在「等新会话」上：建会话失败就退剪贴板，
+          // 别让它挂在 ref 里、被之后随便哪次新建的会话消费掉。
+          if (
+            voiceDraftRef.current &&
+            failure.requestType === 'session-create' &&
+            (failure.requestId === undefined ||
+              failure.requestId === voiceDraftRef.current.requestId)
+          ) {
+            rescueVoiceDraft('会话没建成，文字已复制到剪贴板');
           }
           // 目录读失败就留在选择器里显示，别把用户弹回列表页。
           if (failure.requestType === 'directories') {
@@ -805,7 +885,17 @@ function AppBody() {
           break;
       }
     },
-    [applyTitle, client, control, currentWorkspaceId, notifyPet, openSessionById, startControl],
+    [
+      applyTitle,
+      client,
+      notifyPet,
+      startControl,
+      rescueVoiceDraft,
+      takeVoiceDraft,
+      // 帧处理器是稳定引用（见上面的解构注释），放进来不会让帧监听器重订阅。
+      handleVoiceFailure,
+      handleVoiceFrame,
+    ],
   );
 
   useEffect(() => {
@@ -816,6 +906,9 @@ function AppBody() {
         setError(null);
         // 断线期间写下的消息在重连后补发，顺序按写入先后。
         outbox.flush((frame) => client.send(frame));
+      } else {
+        // 等 session-created 的那句语音草稿等不到了：重连后网关也不会重放响应。
+        rescueVoiceDraft('连接断了，文字已复制到剪贴板');
       }
     });
     const offFrame = client.onFrame(handleFrame);
@@ -823,7 +916,7 @@ function AppBody() {
       offState();
       offFrame();
     };
-  }, [client, handleFrame]);
+  }, [client, handleFrame, rescueVoiceDraft]);
 
   const connectWith = useCallback(
     async (gateway: SavedGateway, pairingCode?: string) => {
@@ -935,63 +1028,17 @@ function AppBody() {
     });
   }, [client, connected, currentWorkspaceId]);
 
-  /** 按住开始录音；target 决定转写结果发给谁。 */
-  const beginVoice = useCallback(
-    async (target: { kind: 'new' } | { kind: 'session'; sessionId: string }) => {
-      if (!voiceReady) {
-            notifyPet('语音还在准备，稍等一下');
-            return;
-      }
-      if (recording || transcribing) return;
-      try {
-        await voice.start();
-        voiceJobRef.current = target === null ? null : { requestId: '', target };
-        setRecording(true);
-      } catch (failure) {
-        notifyPet(failure instanceof Error ? failure.message : '没法开始录音');
-      }
+  /** 按住语音球：录到谁、上限、提示、复位都在共享的 useVoiceInput 里。 */
+  const holdVoiceOrb = useCallback(
+    (target: { kind: 'new' } | { kind: 'session'; sessionId: string }) => {
+      // 按住被拒（上一段还在收尾/转写）时不能改目标：转写回来会按新的目标分发，
+      // 上一句话就发进别的会话了。
+      if (!voiceInput.begin()) return;
+      voiceTargetRef.current = target;
     },
-    [notifyPet, recording, transcribing, voice, voiceReady],
+    [voiceInput],
   );
 
-  /** 松手：结束录音并发起转写。 */
-  const finishVoice = useCallback(async () => {
-    if (!recording) return;
-    const job = voiceJobRef.current;
-    setRecording(false);
-    voiceJobRef.current = null;
-    if (!job) {
-      voice.cancel();
-      return;
-    }
-    try {
-      const clip = await voice.stop();
-      if (!clip) return;
-      // 太短的多半是误触，别浪费一次往返；用气泡说一声，不弹窗打断。
-      if (clip.duration < 0.4) {
-        notifyPet('太短啦，按住多说完再松手');
-        return;
-      }
-      const requestId = randomUUID();
-      voiceJobRef.current = { requestId, target: job.target };
-      setTranscribing(true);
-      const sent = client.send({
-        type: 'speech-transcribe',
-        requestId,
-        providerId: speechCatalog?.providerId,
-        language: speechCatalog?.language,
-        audioBase64: clip.base64,
-      });
-      if (!sent) {
-        voiceJobRef.current = null;
-        setTranscribing(false);
-        notifyPet('连接已断开，录音没发出去');
-      }
-    } catch (failure) {
-      setTranscribing(false);
-      notifyPet(failure instanceof Error ? failure.message : '读不到这段录音');
-    }
-  }, [client, notifyPet, recording, speechCatalog, voice]);
 
   /** 换当前工作区：只影响之后新建的会话，历史会话一个都不动。 */
   const pickWorkspace = useCallback((id: string) => {
@@ -1333,6 +1380,11 @@ function AppBody() {
             session={active}
             queued={queues[active.sessionId] ?? []}
             capabilities={hello?.capabilities ?? []}
+            // 会话页的语音上限/就绪判断要和首页同一份目录，不能各猜各的
+            speechCatalog={speechCatalog}
+            // 首页语音到上限的文字：由会话页合并进输入框（挂载中/刚挂载都算）
+            voiceDelivery={voiceDelivery}
+            onVoiceDeliveryTaken={clearVoiceDelivery}
             running={Boolean(active.running)}
             sessions={visibleSessions}
             blockedSessionIds={sessions
@@ -1407,16 +1459,15 @@ function AppBody() {
                   if (target) openSession(target);
                 }}
                 onCreate={handleCreate}
-                onHoldOrb={() => void beginVoice({ kind: 'new' })}
-                onHoldCard={(sessionId) => void beginVoice({ kind: 'session', sessionId })}
-                onRelease={() => void finishVoice()}
-                onCancelVoice={() => {
-                  voice.cancel();
-                  voiceJobRef.current = null;
-                  setRecording(false);
-                }}
-                recording={recording}
-                transcribing={transcribing}
+                onHoldOrb={() => holdVoiceOrb({ kind: 'new' })}
+                onHoldCard={(sessionId) => holdVoiceOrb({ kind: 'session', sessionId })}
+                onRelease={() => voiceInput.end()}
+                onCancelVoice={() => voiceInput.cancel()}
+                recording={voiceInput.recording}
+                transcribing={voiceInput.transcribing}
+                voiceElapsed={voiceInput.elapsed}
+                voiceLimit={voiceInput.limit}
+                voiceAlmostUp={voiceInput.almostUp}
               />
             ) : tab === 'schedules' ? (
               <SchedulesView

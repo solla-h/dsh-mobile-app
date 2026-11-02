@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { formatClock } from '../../protocol/speech';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 
@@ -75,6 +76,11 @@ interface Props {
   voiceReady: boolean;
   recording: boolean;
   transcribing: boolean;
+  /** 已录秒数 / 有效上限（秒）：录音时写在说明行里 */
+  voiceElapsed: number;
+  voiceLimit: number;
+  /** 剩余不到 10 秒：说明行转琥珀色 */
+  voiceAlmostUp: boolean;
   /** 首页整体的状态：有人等着 / 有任务在跑 / 都闲着 */
   mood: 'alert' | 'working' | 'idle';
   /** 外部提示（识别失败、录音太短…）：token 变了就冒一次气泡，不弹窗 */
@@ -90,6 +96,9 @@ export function PetStage({
   voiceReady,
   recording,
   transcribing,
+  voiceElapsed,
+  voiceLimit,
+  voiceAlmostUp,
   mood,
   notice,
   onVoiceStart,
@@ -612,7 +621,7 @@ export function PetStage({
     : transcribing
       ? '服务端识别中…'
       : recording
-        ? '我在听… 松手发送'
+        ? `我在听 ${formatClock(voiceElapsed)} / ${formatClock(voiceLimit)}`
         : voiceReady
           ? '按住和我说 · 双击新建会话'
           : '双击新建会话 · 语音未启用';
@@ -698,7 +707,7 @@ export function PetStage({
         ) : null}
       </View>
       <Text
-        style={styles.caption}
+        style={[styles.caption, recording && voiceAlmostUp ? styles.captionAlmostUp : null]}
         maxFontSizeMultiplier={1.3}
         numberOfLines={1}
         pointerEvents="none"
@@ -762,4 +771,6 @@ const makeStyles = (t: Palette) =>
       letterSpacing: 0.3,
       textAlign: 'center',
     },
+    // 快到上限：只换文字颜色，不加图标/弹窗
+    captionAlmostUp: { color: t.semantic.gateAmberText },
   });

@@ -1,6 +1,9 @@
 import { requestRecordingPermissionsAsync, useAudioStream } from 'expo-audio';
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
+import { randomUUID } from 'expo-crypto';
 import { useCallback, useMemo } from 'react';
+
+import { clampWav } from '../../protocol/speech';
 
 /**
  * 按住说话用的录音器。
@@ -19,8 +22,11 @@ export interface VoiceClip {
 
 export interface VoiceCapture {
   start: () => Promise<void>;
-  /** 结束录音并编码成 base64；没在录时返回 null */
-  stop: () => Promise<VoiceClip | null>;
+  /**
+   * 结束录音并编码成 base64；没在录时返回 null。
+   * maxSeconds 给了就保证返回的片段不超过它（超了就地截断）。
+   */
+  stop: (maxSeconds?: number) => Promise<VoiceClip | null>;
   /** 放弃这次录音（上滑取消、切页） */
   cancel: () => void;
 }
@@ -32,11 +38,22 @@ export function useVoiceCapture(): VoiceCapture {
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) throw new Error('没有麦克风权限');
     await stream.start();
-    // 必须在 start() 之后才能开文件录制。
-    await stream.startFileRecordingAsync({ format: 'wav' });
+    try {
+      // 必须在 start() 之后才能开文件录制。
+      await stream.startFileRecordingAsync({ format: 'wav' });
+    } catch (failure) {
+      // 文件录制没开起来（缓存目录不可写等）也要把流关掉：
+      // 调用方的「停录」只看得到自己的状态，流开着没人会再来关，麦克风会一直亮。
+      try {
+        stream.stop();
+      } catch {
+        // 已经停了就算了
+      }
+      throw failure;
+    }
   }, [stream]);
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (maxSeconds?: number) => {
     if (!stream.isStreaming) return null;
     const result = await stream.stopFileRecordingAsync();
     stream.stop();
@@ -47,12 +64,29 @@ export function useVoiceCapture(): VoiceCapture {
         `录音格式不对：${result.sampleRate}Hz / ${result.channels} 声道 / ${result.encoding}`,
       );
     }
-    const base64 = await new File(result.uri).base64();
+    let duration = result.duration;
+    let base64: string;
+    if (maxSeconds !== undefined && result.duration > maxSeconds) {
+      // 到点的定时器被卡顿拖过头了：直接发会被服务端按时长整段拒收，
+      // 截到上限再发，前面的内容还能用。
+      const clamped = new File(Paths.cache, `voice-clamped-${randomUUID()}.wav`);
+      clamped.create({ overwrite: true });
+      await clamped.write(clampWav(await new File(result.uri).bytes(), maxSeconds));
+      base64 = await clamped.base64();
+      try {
+        clamped.delete();
+      } catch {
+        // 缓存文件，删不掉也不碍事
+      }
+      duration = maxSeconds;
+    } else {
+      base64 = await new File(result.uri).base64();
+    }
     return {
       base64,
       sampleRate: result.sampleRate,
       channels: result.channels,
-      duration: result.duration,
+      duration,
     };
   }, [stream]);
 

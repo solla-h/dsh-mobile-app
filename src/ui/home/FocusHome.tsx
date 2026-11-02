@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useThemedStyles } from '../theme';
 import { PetStage } from './PetStage';
@@ -35,6 +35,11 @@ interface Props {
   onCancelVoice: () => void;
   recording: boolean;
   transcribing: boolean;
+  /** 已录秒数 / 有效上限（秒），录音时写在宠物脚下那行 */
+  voiceElapsed: number;
+  voiceLimit: number;
+  /** 剩余不到 10 秒：那行转琥珀色 */
+  voiceAlmostUp: boolean;
   /** 首页整体状态：有人等着 / 有任务在跑 / 都闲着——宠物跟着变 */
   mood: 'alert' | 'working' | 'idle';
   /** 未读会话（有新消息但还没点进去） */
@@ -58,6 +63,9 @@ export function FocusHome({
   onCancelVoice,
   recording,
   transcribing,
+  voiceElapsed,
+  voiceLimit,
+  voiceAlmostUp,
   mood,
   unreadIds,
   notice,
@@ -102,6 +110,7 @@ export function FocusHome({
               onOpen={onOpen}
               onHold={onHoldCard}
               onRelease={onRelease}
+              onCancelVoice={onCancelVoice}
               voiceReady={voiceReady}
               unread={unreadIds.has(item.sessionId)}
             />
@@ -114,6 +123,9 @@ export function FocusHome({
           voiceReady={voiceReady}
           recording={recording}
           transcribing={transcribing}
+          voiceElapsed={voiceElapsed}
+          voiceLimit={voiceLimit}
+          voiceAlmostUp={voiceAlmostUp}
           mood={mood}
           notice={notice}
           onVoiceStart={onHoldOrb}
@@ -133,6 +145,7 @@ function FocusCard({
   onOpen,
   onHold,
   onRelease,
+  onCancelVoice,
   voiceReady,
   unread,
 }: {
@@ -141,18 +154,44 @@ function FocusCard({
   onOpen: (sessionId: string) => void;
   onHold: (sessionId: string) => void;
   onRelease: () => void;
+  onCancelVoice: () => void;
   voiceReady: boolean;
   unread: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
   const waiting = item.pendingCount > 0;
   const dir = shortDir(item.cwd);
+  /** 正按着这张卡（长按已触发）。 */
+  const heldRef = useRef(false);
+  // onCancelVoice 每帧都是新箭头函数，只能走 ref：进依赖数组会让清理每帧跑一次，
+  // 把刚开的录音立刻取消掉。
+  const cancelRef = useRef(onCancelVoice);
+  useEffect(() => {
+    cancelRef.current = onCancelVoice;
+  });
+  // 按住期间卡片被列表重排挤出网格时，Pressable 卸载后 onPressOut 不会再来，
+  // 没人收尾的录音会一直录到上限。卸载时自己放弃这一段。
+  useEffect(
+    () => () => {
+      if (heldRef.current) {
+        heldRef.current = false;
+        cancelRef.current();
+      }
+    },
+    [],
+  );
   return (
     <Pressable
       style={[styles.card, waiting ? styles.cardWaiting : styles.cardRunning]}
       onPress={() => onOpen(item.sessionId)}
-      onLongPress={() => onHold(item.sessionId)}
-      onPressOut={onRelease}
+      onLongPress={() => {
+        heldRef.current = true;
+        onHold(item.sessionId);
+      }}
+      onPressOut={() => {
+        heldRef.current = false;
+        onRelease();
+      }}
       delayLongPress={600}
       accessibilityHint={waiting ? '长按可以直接语音回复' : '正在进行中'}
     >
