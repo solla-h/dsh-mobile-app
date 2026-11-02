@@ -366,3 +366,44 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
   带 `/mode`、`/log`（连接时间线）、`/pair`（配对码），专门用来造连接层的故障；
   用法与全部真机命令见 `docs/STATUS-2026-11-02.md` §6。
 
+## 15. 语音健壮性 + 队列诊断（2026-11-02）
+
+分支仍是 `fix/approval-integrity`，两个新提交，**都没推送**：
+
+- `70c278e` 删除未接线的语音决策 `matchDecision`（语音不代批，死代码清掉）；
+- `66909a1` 语音健壮性（8 个文件，+1018/−298）：启动竞态（utterance token + finishing 互斥）、
+  按 `speech-catalog` 上限自动停、失败统一复位与提示、首页/会话页两个入口共用一套状态机
+  （`src/ui/voice/useVoiceInput.ts`）。
+
+**用户拍板的三个决定**：到上限 → 转写后放回输入框**不发送**；提示 → 「已用/上限」+ 最后 10 秒
+变色震动；验证网关 → 本机（没用 dsh-host 生产机）。
+
+**真机验证（本机网关 + 20s 上限测试补丁）**：
+
+- 快速松手 ×2 → 「太短啦」→ 状态复位 → 立刻能再录：✅
+- 按住 3 秒说真话 → 真 ASR → 消息发出、新会话建成（zstd 会话日志里查到 `user/message`）：✅
+- 按住 21 秒 → 录中 caption「我在听 0:12 / 0:20」、最后 10 秒转琥珀、到点自动停、状态复位：✅
+  （但那次是静音，转写成空走了「没听清」——**真实说话到上限的投递落点（文字进输入框不发送）
+  还没真机跑过，需要用户按住说满一次**。）
+- 震动：`dumpsys vibrator_manager` 确认 expo-haptics 波形已发出，但 MIUI 把所有 App 振动标成
+  `ignored_for_settings`（系统触感是关的）——不是 App bug，用户要开系统「触感反馈」才摸得到。
+
+**QUEUE-1：取消回合后排队的消息不自动续跑**（用户报的）。源码定位在宿主
+`@deepseek-ai/dsh-agent-loop`：`sessions.cancel()` → `agent.cancel({keepInbox:true})` 保留队列；
+正常回合结束靠 `turn()` 尾部 `inbox.hasPending` 自动续跑，abort 路径抛异常跳过尾部；
+`kick()` 的 finally 只在 `wakeRequested` 门闩时才唤醒，而该门闩只在 abort 信号已置位后
+**又来了新消息**时才上闩——所以取消后队列一直搁着，直到用户再发一条才触发。
+**排队不打包**：`claim()` 一次只取一条 next-turn 消息，每条各自成为一个独立回合。
+App/网关均无对应帧，修在宿主或新加网关帧；已记 BACKLOG QUEUE-1，诊断全文在 STATUS §3.5。
+
+**环境残留（接手先看）**：
+
+- 本机网关 `~/.dsh/profiles/web/cordis.patch.yml` 仍挂着 `maxDurationSeconds: 20` 测试补丁
+  （备份 `.bak-before-voice-test`）——用户复验完要按 STATUS §6.5 的命令还原并重启。
+- `adb reverse` 保留 8081（Metro）与 3080（网关 USB 路径）；8090 已撤，临时 http 服务与
+  测试 wav 已清。
+- Metro（`NODE_OPTIONS=--max-old-space-size=8192 npx expo start --port 8081`）与本机网关仍在跑。
+
+**下一步**：VOICE-1 真实说话复验 → QUEUE-1 上报宿主/网关作者 → 第四项发件箱回执关联
+（顺序与理由见 STATUS §8）。
+
