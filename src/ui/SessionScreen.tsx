@@ -2324,12 +2324,13 @@ export function SessionScreen({
                 }
               }
               metricsRef.current = { height, offset: metricsRef.current.offset };
-              if (followRef.current) {
-                // scrollToEnd 在高度是估算值时会算短（大代码块尤其明显），
-                // 直接按这次量到的真实内容高度滚到底。
+              if (followRef.current || atBottomRef.current) {
+                // scrollToEnd / scrollToOffset 里没给 offset 时，用的都是 JS 侧滞后的
+                // 内容高度当目标，落地常常差几十像素——atBottom 被这种「差一点」误判成
+                // 假之后，本轮剩下的生长就全不再跟，终答就停在折线下方（真机 trace：
+                // 目标按滞后高度算，dist=86 触发误判，后续 500+px 生长一动不动）。
+                // 直接拿这次量到的真实高度当 offset（超出会被原生钳到真底），落地即精确到底。
                 listRef.current?.scrollToOffset({ offset: height, animated: false });
-              } else if (atBottomRef.current) {
-                listRef.current?.scrollToEnd({ animated: true });
               }
             }}
             ListHeaderComponent={
