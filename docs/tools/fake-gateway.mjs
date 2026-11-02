@@ -1,6 +1,11 @@
 // 测试用假网关：制造「不 hello」「半开」「正常」三种连接，并记录连接时间线。
-// 用法: node .scratch/fake-gateway.mjs
-// 页面: /pair?host=usb|lan  /mode?value=normal|no-hello|half-open  /log
+// 另带一个假会话（sessions/history），message 有三种回执模式：
+//   normal=回 sent 并回显 user/message 实时事件；no-ack=收下不回执（测「未确认/重试」）；
+//   reject=回 error 帧（测「失败」）。
+// REQ-1 用：session-create 会回 session-created（带 requestId 回显）；
+//   no-history=吞掉 history 请求、no-create=吞掉 session-create（测首屏/建会话的 15s 超时）。
+// 用法: node docs/tools/fake-gateway.mjs
+// 页面: /pair?host=usb|lan  /mode?value=normal|no-hello|half-open|no-ack|reject|no-history|no-create  /log
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,6 +34,17 @@ const PORT = Number(process.env.PORT || 3999);
 const LAN_HOST = process.env.LAN_HOST || '192.168.1.10';
 let mode = 'normal';
 const events = [];
+
+// 一个假会话：让 App 能进到会话页里发消息（发件箱边界复现用）。
+// updatedAt 用固定值——每次启动都变会把会话标成「有更新」。
+const FAKE_SESSION_ID = 'fake-session-1';
+const FAKE_EVENTS = [
+  { seq: 1, time: 1730000000001, type: 'user/message', data: { content: [{ type: 'text', text: '假网关会话，用来测发件箱边界。' }] } },
+  { seq: 2, time: 1730000000002, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '在。' }] } } },
+];
+let echoSeq = 1000; // 实时回显的 seq 起点，避开历史里的 1/2
+const createdSessions = []; // session-create 建出来的会话，让列表页看得到
+let createdCount = 0;
 
 function record(event, extra = {}) {
   events.push({ at: new Date().toISOString(), event, ...extra });
@@ -96,7 +112,50 @@ wss.on('connection', (ws, req) => {
     if (msg.type === 'ping') record('ping', { id, channel });
     if (mode === 'half-open') return;
     if (msg.type === 'ping') ws.send(JSON.stringify({ kind: 'pong' }));
-    if (msg.type === 'sessions') ws.send(JSON.stringify({ kind: 'sessions', items: [] }));
+    if (msg.type === 'sessions') ws.send(JSON.stringify({ kind: 'sessions', items: [{
+      sessionId: FAKE_SESSION_ID, updatedAt: 1730000000000, running: false, blank: false,
+      cwd: 'C:/fake', projections: { asOfSeq: 2, values: { title: '假网关会话' } },
+    }, ...createdSessions] }));
+    if (msg.type === 'history') {
+      record('history', { id, channel, mode, sessionId: msg.sessionId, beforeSeq: msg.beforeSeq, requestId: msg.requestId });
+      if (mode === 'no-history') return; // 吞掉不回：测 REQ-1 的首屏 15s 超时
+      ws.send(JSON.stringify({
+        kind: 'history', sessionId: msg.sessionId, view: msg.view ?? 'conversation',
+        historyFormatVersion: msg.historyFormatVersion ?? 4,
+        // 真网关会回显 requestId；假网关跟上，验证 App 的归位逻辑不靠「碰巧」
+        ...(typeof msg.requestId === 'string' ? { requestId: msg.requestId } : {}),
+        // 翻页请求（带 beforeSeq）没有更早的内容可给；session-create 出来的新会话也是空的
+        events: msg.beforeSeq || msg.sessionId !== FAKE_SESSION_ID ? [] : FAKE_EVENTS,
+        hasMore: false, cursor: echoSeq - 1,
+      }));
+    }
+    if (msg.type === 'session-create') {
+      record('session-create', { id, channel, mode, requestId: msg.requestId, cwd: msg.cwd });
+      if (mode === 'no-create') return; // 吞掉不回：测 REQ-1 的建会话 15s 超时
+      createdCount += 1;
+      const sessionId = 'fake-created-' + createdCount;
+      createdSessions.push({
+        sessionId, updatedAt: 1730000000000 + createdCount, running: false, blank: true,
+        cwd: msg.cwd ?? 'C:/fake', projections: { asOfSeq: 0, values: { title: '新建的假会话' } },
+      });
+      ws.send(JSON.stringify({
+        kind: 'session-created', sessionId, requestId: msg.requestId,
+        updatedAt: Date.now(), running: false, blank: true,
+      }));
+    }
+    if (msg.type === 'message') {
+      // 跨网关跳过验证靠这条记录：网关 B 的日志里不应该出现任何 message。
+      record('message', { id, channel, mode, sessionId: msg.sessionId, text: msg.text, requestId: msg.requestId, files: msg.files });
+      if (mode === 'no-ack') return; // 收下但不回执：App 20s 后标「未确认」，可手动重试
+      if (mode === 'reject') {
+        ws.send(JSON.stringify({ kind: 'error', code: 'session-not-found', message: 'fake reject', requestType: 'message', sessionId: msg.sessionId, requestId: msg.requestId }));
+        return;
+      }
+      ws.send(JSON.stringify({ kind: 'sent', requestId: msg.requestId, sessionId: msg.sessionId }));
+      // 回显实时 user/message，让 App 的本地回显被服务端版本替换（和真网关行为一致）。
+      echoSeq += 1;
+      ws.send(JSON.stringify({ kind: 'event', sessionId: msg.sessionId, seq: echoSeq, time: 1730000000000 + echoSeq, event: { type: 'user/message', source: 'user', text: String(msg.text ?? '') } }));
+    }
     if (msg.type === 'workspaces') ws.send(JSON.stringify({ kind: 'workspaces', items: [], archivedSessionIds: [] }));
     if (msg.type === 'speech-catalog') ws.send(JSON.stringify({ kind: 'speech-catalog', available: false, providers: [] }));
   });
