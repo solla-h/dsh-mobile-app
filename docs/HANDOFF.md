@@ -340,7 +340,7 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
 - **`Reasoning and tool use` 胶囊的收纳与折叠逻辑还有问题**。用户观察到的现象记在这里，
   明天再深入：收起/展开的触发时机、嵌套层级、以及和下面 AnswerCard 的关系要一起捋。
   主要看 `src/ui/stream/ActivityGroup.tsx`、`ThinkPill.tsx`、`ToolGroup.tsx`，
-  组装逻辑在 `src/ui/stream/group.ts`。
+  组装逻辑在 `src/ui/stream/group.ts`。→ **已实现（FLOW-1，见 §17），真机看观感**。
 
 ### 2026-11-02 补充：审批与连接两项已实现并真机验证
 
@@ -432,4 +432,28 @@ App/网关均无对应帧，修在宿主或新加网关帧；**已提 issue
 `C:\tmp\mobile-gateway.log`，起法见 STATUS §6.3）；手机 WiFi 已恢复；App 连接正常（USB 通道）。
 
 **下一步**：QUEUE-1 issue `#37` 等作者回复；第五项 HIST-1（L1 内存缓存，STATUS §8）。
+
+## 17. HIST-1 + 评审修复 + REQ-1 + FLOW-1：实现完成，待真机（2026-11-02）
+
+三项开发全部落地（桌面侧），**全都没过真机**——手机在用户手里，回来一起验。全量：
+26 suites / 240 tests、tsc 0、lint 0。全文见 STATUS §3.7~§3.9；决策行在 BACKLOG §11。
+
+- **HIST-1（L1 缓存）**：切会话/断线重进首帧直接有历史；上了一轮对抗性评审 workflow
+  （5 条发现去重后 3 类，全部确认+修复）：pinnedOnceRef 重上膛、缓存-新鲜窗口有洞时翻页错序
+  （翻页改用 `mergeSnapshot` 按 seq 落位）、在途工具行幽灵转圈（不写缓存）。
+  **删了 `prependHistory`**（唯一调用点改 mergeSnapshot）。
+- **REQ-1**：首屏历史/会话新建/语音新建 15s 超时 + 重试空态；session-stats 不做；不自动重试。
+  协议按 npm 0.11.1 核实（`history` 回显 requestId、`session-create` 强制带）。
+- **FLOW-1**：胶囊中文摘要（`思考 N 段 · 调用 … 等 N 步 · N 次失败` + 红点），**不带时长**
+  （历史无思考起止，Codex 结论）；`ToolGroup defaultOpen` 消除套娃；收拢动画补 create/delete。
+- **假网关**（`docs/tools/fake-gateway.mjs`）：新增 `no-history`/`no-create` 吞帧模式 +
+  `session-create` 支持（requestId 回显），冒烟 14/14 PASS（`.scratch/fake-gw-smoke.mjs`）。
+
+**真机验证清单**（回手机后按此走，完整版 `.llmdoc-tmp/hist1-scenarios.md`）：
+HIST-1 J1（切会话回来首帧有历史）/ J2（断线重进看缓存+待发）/ J3（冷启动记录）；
+评审修复回归（缓存重进后翻页不被拽底、无幽灵工具行）；第四项四景（reject/no-ack/重试/跨网关）；
+REQ-1（断线空态、no-history 15s 超时、no-create 15s 超时、单飞）；FLOW-1（摘要文案、一次点开、收拢观感、轨迹页）。
+**注意手机安装的 bundle 要先 reload**（Metro 在跑：8081）。
+
+**环境**：假网关现在在跑（3999，本会话后台起的）；本机网关按 STATUS §6.3 起。
 
