@@ -341,3 +341,28 @@ d5c775c feat: 按产品规范重做会话页 UI（三阶段流、审批拇指坞
   明天再深入：收起/展开的触发时机、嵌套层级、以及和下面 AnswerCard 的关系要一起捋。
   主要看 `src/ui/stream/ActivityGroup.tsx`、`ThinkPill.tsx`、`ToolGroup.tsx`，
   组装逻辑在 `src/ui/stream/group.ts`。
+
+### 2026-11-02 补充：审批与连接两项已实现并真机验证
+
+§14 那个胶囊问题还没解决，仍在待办里。但**另外两件事已经做完并过了真机**：
+
+- **分支**：`fix/approval-integrity`（基线 `master` @ `0a7bac5`），四个提交，**都还没推送**：
+  - `8d69235` 审批目标绑定 + 命令可见 + 会话隔离 + 语音不代批；
+  - `5e63e1c` 12s 握手截止 + 旧 socket 守卫 + 5s 回前台探活 + 4003 停止重连；
+  - `602426c` 网络切换改成「按事件探活」（真机测出来的：expo-network 的 `type` 在 WiFi↔5G 时不可靠）；
+  - `027ff29` lint 基线清零（5 → 0）。
+- **完整记录**（复核结论、已完成/未做清单、验证数据、可复用工具、决策记录）：
+  `docs/STATUS-2026-11-02.md`。
+- **验收结论**：
+  - 真审批（`pwsh` 申请 `danger-full-access`）已走通：折叠坞显示真实命令与「递归删除」高危标签，
+    按住 0.3s 松开填充回退（未误批），点「拦截」后网关收到 `approval-resolved outcome=rejected`，
+    测试目录未被删除。
+  - 连接层：4003 撤销设备后不再重连风暴；12s 握手截止实测 12.001~12.015s；半开连接回前台
+    5.118s 断开、1.009s 后重连；WiFi 开关后 2.3s 探活、5s 断开、1s 重连。
+- **环境坑**：全局 `@deepseek-ai/dsh`（0.2.1-rc.5）缺 `js-yaml` 的 `dist/js-yaml.mjs` 和
+  `semver`，直接跑会 `ERR_MODULE_NOT_FOUND`；本机网关改用
+  `npx -y @deepseek-ai/dsh@0.2.1-rc.3 web --no-open` 启动（§14 里的 `dsh` 命令暂时用不了）。
+- **新工具**：`docs/tools/fake-gateway.mjs` —— 可切 `no-hello` / `half-open` / `normal` 的假网关，
+  带 `/mode`、`/log`（连接时间线）、`/pair`（配对码），专门用来造连接层的故障；
+  用法与全部真机命令见 `docs/STATUS-2026-11-02.md` §6。
+
