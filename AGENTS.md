@@ -212,6 +212,17 @@ npx expo lint
   `adb shell "input text 'a b c'"`。
 - 坐标换算按**原图 1200×2670**：缩略图（780 宽）坐标 × 1200/780 ≈ ×1.54 才是 `input tap/swipe`
   的坐标（按 1080 算会偏 10%，点不中还被误当成 MIUI 丢单点）。
+- **单点坐标先像素定位再点**：目测缩略图容易偏几十像素（实测差过 73px）；PIL 找目标区域深色像素
+  的 bbox 取圆心最稳，别急着怪 MIUI 丢单点。
+- **`adb shell "input text '<中文>'"` 会 NPE**（`java.lang.NullPointerException`，sendText null array）——
+  设备侧中文只能手打；探针消息用英文，并避开 `'` 等需转义的字符。
+- **快速动效（淡入淡出/收拢/滚动）不能用 1 帧/秒连拍**（本机模型几百 tok/s，整回合可能就 2 秒）。
+  用 `adb shell screenrecord` 录（VFR，活跃段源帧可达 100fps+），再
+  `ffmpeg -i rec.mp4 -fps_mode passthrough -vf scale=... out/f%04d.png` 全帧抽取后逐帧差分；
+  注意 ffmpeg 默认的 CFR 输出会抽稀帧，且 9.x 已移除老参数 `-vsync`（用 `-fps_mode passthrough`）。
+- **Git Bash（MSYS）会改写 `/sdcard/...` 参数**：`adb pull /sdcard/x.png`、`screenrecord ... /sdcard/x.mp4`
+  会报 “Must specify output file / failed to stat”。解：远程路径放进整条引号内命令
+  （`adb shell "screenrecord --time-limit 30 /sdcard/x.mp4"`）或 `MSYS_NO_PATHCONV=1 adb pull ...`。
 - `adb input swipe` 会把手势发到**当前前台的任何 App**：设备回归的最后一拍之前先确认
   手机还在测试手上（用户中途拿走用过微信，滑屏落在人家聊天界面里）；发现后就地停手，
   删掉拍到用户隐私的截图。
