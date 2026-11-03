@@ -249,6 +249,8 @@ const VOICE_HOLD_MS = 200;
 const FIRST_SCREEN_TIMEOUT_MS = 15000;
 /** 上滑多少 dp 算取消，同样对齐首页宠物。 */
 const VOICE_CANCEL_DY = -60;
+/** 收拢落地行淡入时长（Android 下替代 LayoutAnimation 的自行动画，见 RowFadeIn）。 */
+const FADE_IN_MS = 240;
 
 export function SessionScreen({
   client,
@@ -289,18 +291,36 @@ export function SessionScreen({
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
   /** 最近一次已提交的流式草稿：帧回调是长命闭包，拿不到最新的 streaming，上膛判定要读它。 */
   const streamingRef = useRef<StreamingDraft | null>(null);
+  /**
+   * 草稿行的正文是否**画上过屏幕**（按提交后的渲染状态记账）。
+   * 不能用帧处理时的 live 状态判：正式消息和它前面的 text-delta 常在同一批到达，
+   * 批内 live.text 已经有字、但那次提交根本没画出来——按 live 判会把该淡入的换行漏掉。
+   */
+  const draftBodyPaintedRef = useRef(false);
+  /** 草稿行折叠淡入的起点（ms）：240ms 窗口内到来的换行要接着淡，不能瞬切。 */
+  const foldFadeAtRef = useRef(0);
   useEffect(() => {
     streamingRef.current = streaming;
+    if (streaming && splitThinkTags(streaming.text).text.trim()) draftBodyPaintedRef.current = true;
   }, [streaming]);
   /** 本次流式尝试是否已给收拢动画上过膛（`start` 时复位，一次折叠只上膛一次）。 */
   const collapseArmedRef = useRef(false);
   /**
-   * 正在「落地」的正式行 id：流式草稿行被它整行替换的那一次提交。
+   * 正在「落地」的正式行 id：流式草稿行被它整行替换（或草稿行原地折叠）的那一次提交。
    * Android Fabric 默认不开 LayoutAnimation（RN 0.88 enableLayoutAnimationsOnAndroid=false，
    * configureNext 是静默 no-op），收拢的「出现侧」只能自己用 Animated 补 240ms 淡入；
-   * 判定只在引起换行的那一次提交里生效，渲染后立即清掉。
+   * 销账由 consumeLanding 在淡入真正开始时完成（不能按提交次数清，见 consumeLanding）。
    */
   const landingRowIdRef = useRef<string | null>(null);
+  /**
+   * 淡入真正开始后销账（RowFadeIn 启动动画时回调）。
+   * 不能在 rows 变化的 effect 里清：虚拟化列表渲染新行会晚于这次提交（实测
+   * row-render 落后于 rows-effect 一拍），提前清掉 = 落地行永远是瞬切。
+   * 销账放在这里也保证后续的虚拟化重挂载/滚动回收不会重播淡入。
+   */
+  const consumeLanding = useCallback(() => {
+    landingRowIdRef.current = null;
+  }, []);
   // 有缓存就不进 spinner：对账期间直接读缓存内容（缓存为空 = 没有可摆的，照旧转圈）
   const [loading, setLoading] = useState(messages.length === 0);
   /** 首屏历史没回来（超时/被拒/断线）：撤 spinner 后给「重试」空态，不能永远转圈。 */
@@ -722,7 +742,7 @@ export function SessionScreen({
           // 一次提交里的「删旧行 + 建新行」：动画必须在这次提交**之前**上膛，
           // 挂载后（换行出来的新组件）再 configure 已永远太晚。
           const live = streamingRef.current;
-          if (live && !collapseArmedRef.current) {
+          if (live) {
             const event = eventFrame.event as Record<string, any>;
             const finishKind = (event.finish as { kind?: string } | undefined)?.kind;
             const failed =
@@ -730,13 +750,22 @@ export function SessionScreen({
             const body =
               typeof event.text === 'string' && splitThinkTags(event.text).text.trim().length > 0;
             // 有一行「思考」要收 + 新消息有正文（没有正文就不换行，不该上膛）。
-            if ((live.reasoning !== '' || splitThinkTags(live.text).reasoning) && (body || failed)) {
+            if (
+              !collapseArmedRef.current &&
+              (live.reasoning !== '' || splitThinkTags(live.text).reasoning) &&
+              (body || failed)
+            ) {
               collapseArmedRef.current = true;
               armCollapseAnimation();
             }
-            // 落地行淡入（Android 下 LayoutAnimation 无效的替代）：草稿行还在、
-            // 且可见正文仍为空——这次提交它就会被 r{seq} 整行换掉。
-            if (!splitThinkTags(live.text).text.trim()) {
+            // 落地行淡入（Android 下 LayoutAnimation 无效的替代）：草稿行被
+            // r{seq} 整行换掉时补「出现侧」。两种触发：正文从未画上屏幕（同批
+            // 到达，见 draftBodyPaintedRef），或草稿行刚为折叠起的淡入还没走完
+            // 就被换行（本机分提交时序）——后者用 foldFadeAtRef 的窗口判定。
+            if (
+              !draftBodyPaintedRef.current ||
+              Date.now() - foldFadeAtRef.current < FADE_IN_MS + 160
+            ) {
               landingRowIdRef.current = `r${eventFrame.seq}`;
             }
           }
@@ -773,6 +802,7 @@ export function SessionScreen({
           // 读者是在主动寻找定位，别把他拽回底部（拖动留下的 follow=false 要保住）。
           if (atBottomRef.current) followRef.current = true;
           collapseArmedRef.current = false;
+          draftBodyPaintedRef.current = false;
           setStreaming({
             attemptId: String(inner.attemptId ?? ''),
             text: '',
@@ -797,6 +827,22 @@ export function SessionScreen({
           ) {
             collapseArmedRef.current = true;
             armCollapseAnimation();
+          }
+          // 同一折叠的 Android 替代（草稿行原地收拢）：这次提交把草稿行内容整块
+          // 换掉（展开思考 → 34pt 胶囊 + 正文卡片），但没有换行事件，给草稿行记
+          // 一次淡入并留下时间戳——若紧接着（240ms 内）正式行才换行，换行侧接着
+          // 淡（见 assistant/message 分支）。判定对齐 answerStarted：首个 delta
+          // 只有空白不算（那次不折叠），所以用 trim 判「首个可见正文」。
+          if (
+            chunk.type === 'text-delta' &&
+            typeof chunk.text === 'string' &&
+            live &&
+            !live.text.trim() &&
+            live.reasoning !== '' &&
+            chunk.text.trim()
+          ) {
+            landingRowIdRef.current = `stream-${live.attemptId}`;
+            foldFadeAtRef.current = Date.now();
           }
           setStreaming((current) => {
             if (!current) return current;
@@ -1846,9 +1892,17 @@ export function SessionScreen({
       atBottomRef.current = true;
       followRef.current = true;
       setShowJump(false);
-      // 贴底不在这里自己滚：入箱插入的新行会触发 onContentSizeChange 的
-      // 贴底分支（followRef 已置真），用「本次量到的真实高度」落地，不会像
-      // scrollToEnd 那样按滞后高度算、落短一截把 atBottom 误判成假。
+      // 贴底第一枪交给 onContentSizeChange 的贴底分支（followRef 已置真，用
+      // 「本次量到的真实高度」落地，不像 scrollToEnd 按滞后高度算、落短一截）。
+      // 但待发行和「发送方式」条是同一批上屏的：一个加内容高度、一个减视口
+      // 高度，那一枪偶尔量到条挂载前的高度——真机实测：回显慢时自己这条停在
+      // 视口下沿只露个顶。照键盘弹起的补枪口径，等布局落定后按真实高度再落。
+      setTimeout(() => {
+        if (followRef.current) pinToBottom(false);
+      }, 60);
+      setTimeout(() => {
+        if (followRef.current) pinToBottom(false);
+      }, 280);
     } else if (files.length > 0) {
       // 收据绑在连接上，离线重发没有意义，直接告诉用户等联网再发。
       setError('文件需要在线发送，等连接恢复后再试');
@@ -2134,9 +2188,6 @@ export function SessionScreen({
   // 帧回调里要按索引回滚到「最后一条用户消息」，只能读渲染后的 rows。
   useEffect(() => {
     rowsRef.current = rows;
-    // 换行提交已经渲染过（新行挂载时读的 ref 已完成使命），随后的挂载
-    //（虚拟化重挂载、滚动回收）不再重播淡入。
-    landingRowIdRef.current = null;
   }, [rows]);
 
   /** 最后一个活动胶囊的 id：只有它会在「实时一轮刚收拢」时播放收拢动画。 */
@@ -2465,7 +2516,10 @@ export function SessionScreen({
                     // 流式草稿行刚被这条正式行换掉时（landingRowIdRef 命中）：
                     // 出现侧补 240ms 淡入——Android Fabric 下 LayoutAnimation
                     // 默认关闭，这是 FLOW-1 ③ 收拢观感的替代修法。
-                    <RowFadeIn enabled={item.id === landingRowIdRef.current}>
+                    <RowFadeIn
+                      enabled={item.id === landingRowIdRef.current}
+                      onConsumed={consumeLanding}
+                    >
                       <MessageRow
                         message={item.message}
                         attachmentCache={attachmentCache}
@@ -2952,12 +3006,24 @@ function offlineStatusText(
  * 怎么调时机都不会画（iOS 默认开启，所以 collapse.ts 的上膛保留）。
  * 诚实的缺口：删除侧（旧展开行消失）仍是瞬没——不保留旧节点没法淡出。
  */
-function RowFadeIn({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+function RowFadeIn({
+  enabled,
+  onConsumed,
+  children,
+}: {
+  enabled: boolean;
+  onConsumed?: () => void;
+  children: ReactNode;
+}) {
   const [opacity] = useState(() => new Animated.Value(enabled ? 0 : 1));
   useEffect(() => {
     if (!enabled) return;
-    Animated.timing(opacity, { toValue: 1, duration: 240, useNativeDriver: true }).start();
-  }, [enabled, opacity]);
+    // 新挂载的行（换行落地）从 0 开始；已挂载的行（草稿行原地折叠）重置回 0 再放。
+    // 两种情况都是「内容整块换掉」的出现侧，用同一条 240ms 淡入补上。
+    opacity.setValue(0);
+    Animated.timing(opacity, { toValue: 1, duration: FADE_IN_MS, useNativeDriver: true }).start();
+    onConsumed?.();
+  }, [enabled, opacity, onConsumed]);
   // 恒定包一层：enabled 后续从 true 变 false 时不能换树形，否则整行会被重挂载。
   return <Animated.View style={{ opacity }}>{children}</Animated.View>;
 }
