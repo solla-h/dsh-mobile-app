@@ -226,6 +226,17 @@ npx expo lint
 - `adb input swipe` 会把手势发到**当前前台的任何 App**：设备回归的最后一拍之前先确认
   手机还在测试手上（用户中途拿走用过微信，滑屏落在人家聊天界面里）；发现后就地停手，
   删掉拍到用户隐私的截图。
+- **Android 新架构下 LayoutAnimation 默认是死的**：RN 0.88 `enableLayoutAnimationsOnAndroid=false`
+  （C++/Kotlin/JS 三处默认一致），`configureNext` 全部静默 no-op；`setLayoutAnimationEnabledExperimental`
+  在 Bridgeless 下也是死代码。要动效只能手写 `Animated`（参考 `SessionScreen.tsx` 的 `RowFadeIn`）；
+  已知波及 `ThinkPill`/`ActivityGroup`/`ToolGroup`/`TrajectoryView` 的折叠动画（记 BACKLOG，待修）。
+  iOS 默认开启，那边照常。
+- **录屏的绝对时间不能从状态栏读**（只有分钟精度）：先用服务端事件戳（网关会话
+  jsonl 的 `time`）减帧 `pts_time` 反推录屏 t0，再下「几点几分发生了什么」的因果结论——
+  曾把 14:52:12 起的录屏当成 14:52:00，误判出一条不存在的「15.5s 发送延迟」。
+- **慢回显/不回显的 UI 用假网关 `no-ack` 造**（`docs/tools/fake-gateway.mjs`，
+  `curl 'http://127.0.0.1:3999/mode?value=no-ack'`）：消息收下但不回执不回显，真机难复现的慢窗口
+  （发送后贴底、待发行呈现、20s 未确认翻转）都能确定性复验；验完切回 `normal` 或停进程。
 
 
 ## 文件上传（file-upload-v1）
