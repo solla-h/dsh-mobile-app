@@ -32,27 +32,15 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
   const [open, setOpen] = useState(false);
   const mountedRef = useRef(false);
 
-  // 首次挂载（正文刚开始输出时由展开态变成胶囊）做一次柔和的收拢动画与触感。
-  // 只在 animateIn 时播：冷启动读历史、loadOlder、FlatList 虚拟化重新挂载
+  // 首次挂载（正文刚开始输出时由展开态变成胶囊）只做一次柔触反馈：
+  // 收拢动画由父组件在引起折叠的提交**之前**上膛（armCollapseAnimation），
+  // 在这里 configure 已经是提交之后，落不到这次折叠上（真机瞬切的根因之一）。
+  // 触感只在 animateIn 时播：冷启动读历史、loadOlder、FlatList 虚拟化重新挂载
   // 都会触发 mount，无条件播的话历史里每个胶囊都震一下，串成一串。
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
       if (!animateIn) return;
-      LayoutAnimation.configureNext({
-        duration: 240,
-        update: { type: LayoutAnimation.Types.spring, springDamping: 1 },
-        // 收拢是「展开的步骤行删掉、34pt 胶囊出现」：不配 create/delete 的话
-        // 首字到达瞬间尺寸直接跳变（FLOW-1 的视口跳动来源），配了才是淡入淡出。
-        create: {
-          type: LayoutAnimation.Types.easeInEaseOut,
-          property: LayoutAnimation.Properties.opacity,
-        },
-        delete: {
-          type: LayoutAnimation.Types.easeInEaseOut,
-          property: LayoutAnimation.Properties.opacity,
-        },
-      });
       softFeedback();
     }
   }, [animateIn]);

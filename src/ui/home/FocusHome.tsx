@@ -14,6 +14,8 @@ import type { FocusEntry } from '../../protocol/focus';
 export interface FocusItem extends FocusEntry {
   /** 会话的 cwd，用来在卡片角上标一行短目录名 */
   cwd: string;
+  /** 发件箱里这个会话还没确认的消息数（断线待发 / 未确认 / 失败，与全部会话 tab 同口径） */
+  outboxCount: number;
 }
 
 interface Props {
@@ -200,6 +202,11 @@ function FocusCard({
         <Text style={styles.cardDir} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {dir}
         </Text>
+        {item.outboxCount > 0 ? (
+          <Text style={styles.outboxTag} maxFontSizeMultiplier={1.2}>
+            待发送 {item.outboxCount}
+          </Text>
+        ) : null}
         <Text
           style={[
             styles.cardTag,
@@ -350,6 +357,17 @@ const makeStyles = (t: Palette) =>
       backgroundColor: t.semantic.live,
     },
     cardDir: { flex: 1, color: t.text.muted, fontSize: 10 },
+    // 待发送徽标：与「全部会话」tab 的 tagWarn 同色（琥珀胶囊），断线消息不只在暗处
+    outboxTag: {
+      color: t.semantic.gateAmberText,
+      backgroundColor: t.semantic.gateAmberBg,
+      fontSize: 9.5,
+      fontWeight: '600',
+      paddingHorizontal: 6,
+      paddingVertical: 1.5,
+      borderRadius: 999,
+      overflow: 'hidden',
+    },
     cardTag: { fontSize: 10, fontWeight: '700' },
     tagWaiting: { color: t.semantic.gateAmberText },
     tagRunning: { color: t.text.secondary },

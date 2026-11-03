@@ -23,6 +23,11 @@ export interface OutboxItem {
   sessionId: string;
   text: string;
   images?: OutgoingImage[];
+  /**
+   * 已上传文件的收据（只有「连着发但没等到回执」的条目才有）。
+   * 收据绑在创建它的连接上：断线后重试多半会被网关拒（回执过期），失败会照常展示。
+   */
+  files?: { receiptId: string }[];
   mode?: 'queue' | 'steer';
   createdAt: number;
   /** 随 message 帧发给网关；sent/error 回执按它归位 */
@@ -66,6 +71,12 @@ export function normalizeOutboxItem(raw: unknown): OutboxItem | null {
     sessionId: item.sessionId,
     text: item.text,
     images: Array.isArray(item.images) ? (item.images as OutgoingImage[]) : undefined,
+    files: Array.isArray(item.files)
+      ? item.files.filter(
+          (entry): entry is { receiptId: string } =>
+            Boolean(entry) && typeof (entry as { receiptId?: unknown }).receiptId === 'string',
+        )
+      : undefined,
     mode: item.mode === 'steer' || item.mode === 'queue' ? item.mode : undefined,
     createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
     // 「发出即删」时代的遗留条目没有这两个字段：补一个 requestId 并按待发处理。
@@ -165,6 +176,38 @@ export class OutboxStore {
     return item;
   }
 
+  /**
+   * 连着发（帧已写进 socket）的条目：直接以「等回执」状态入箱。
+   * 与 add 的区别只是起点——同样靠 `sent` 回执删除、超时转「未确认」、可手动重试。
+   * 这样「TCP 活着但网关对该消息静默」时不会永远停在「发送中…」，退回列表也有待发标记。
+   */
+  track(input: {
+    sessionId: string;
+    text: string;
+    images?: OutgoingImage[];
+    files?: { receiptId: string }[];
+    mode?: 'queue' | 'steer';
+    gatewayId?: string;
+    requestId: string;
+  }): OutboxItem {
+    const item: OutboxItem = {
+      id: randomUUID(),
+      gatewayId: input.gatewayId,
+      sessionId: input.sessionId,
+      text: input.text,
+      images: input.images,
+      files: input.files,
+      mode: input.mode,
+      createdAt: Date.now(),
+      requestId: input.requestId,
+      status: 'sending',
+      sentAt: Date.now(),
+    };
+    this.items = [...this.items, item];
+    this.commit();
+    return item;
+  }
+
   remove(id: string): void {
     const next = this.items.filter((item) => item.id !== id);
     if (next.length === this.items.length) return;
@@ -246,6 +289,7 @@ export class OutboxStore {
         text: base.text,
         mode: base.mode ?? 'queue',
         images: base.images,
+        files: base.files,
       });
       if (ok) {
         sent += 1;

@@ -141,6 +141,53 @@ describe('OutboxStore 回执闭环', () => {
     expect(messageFrame(again.frames[0]).requestId).toBe(fresh.requestId);
   });
 
+  it('track：连着发的条目直接以「等回执」入箱，用调用方的 requestId，flush 不重发', () => {
+    const item = store.track({
+      sessionId: 's1',
+      text: '连着发',
+      gatewayId: 'gw-a',
+      requestId: 'req-1',
+    });
+    expect(item.status).toBe('sending');
+    expect(item.sentAt).toBeGreaterThan(0);
+    expect(store.countFor('s1')).toBe(1);
+
+    // 在等回执：不该被 flush 再发一遍（重复发送会出重复消息）
+    const { frames, send } = recorder();
+    expect(store.flush(send, 'gw-a').sent).toBe(0);
+    expect(frames).toHaveLength(0);
+
+    // 回执按调用方给的 requestId 归位
+    expect(store.ack('req-1')).toBe(true);
+    expect(store.countFor('s1')).toBe(0);
+  });
+
+  it('track 带文件收据：重试后随 flush 帧透传，读盘校验保住合法收据', () => {
+    const files = [{ receiptId: 'r-1' }, { receiptId: 'r-2' }];
+    const item = store.track({
+      sessionId: 's1',
+      text: '',
+      files,
+      gatewayId: 'gw-a',
+      requestId: 'req-1',
+    });
+    expect(item.files).toEqual(files);
+
+    // 未确认后用户手动重试：回到 pending，flush 时收据原样进帧
+    store.retry(item.id);
+    const { frames, send } = recorder();
+    store.flush(send, 'gw-a');
+    expect((frames[0] as { files?: unknown }).files).toEqual(files);
+
+    // 落盘再读回：合法收据保留，坏条目丢掉
+    const normalized = normalizeOutboxItem({
+      ...item,
+      status: 'pending',
+      files: [{ receiptId: 'r-1' }, { nope: 1 }, null],
+    });
+    expect(normalized?.files).toEqual([{ receiptId: 'r-1' }]);
+  });
+
   it('旧版本条目读盘时补全字段，flush 时按当前网关收养一次', async () => {
     readJsonMock.mockResolvedValueOnce([
       { id: 'old-1', sessionId: 's1', text: '老消息', createdAt: 1 },

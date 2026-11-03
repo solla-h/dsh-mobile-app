@@ -261,8 +261,13 @@ function AppBody() {
       pending,
       archivedIds: archived,
       outlines,
-    }).map((entry) => ({ ...entry, cwd: byId.get(entry.sessionId)?.cwd ?? '' }));
-  }, [archived, outlines, pending, sessions]);
+    }).map((entry) => ({
+      ...entry,
+      cwd: byId.get(entry.sessionId)?.cwd ?? '',
+      // 待发送徽标与「全部会话」tab 同口径；outboxTick 在依赖里，发件箱一变就重算。
+      outboxCount: outbox.countFor(entry.sessionId),
+    }));
+  }, [archived, outlines, outboxTick, pending, sessions]);
 
   /** 搜索只过滤会话本身；分组在 buildHomeRows 里做，归档默认不进树。 */
   const searchedSessions = useMemo(() => {
@@ -1257,6 +1262,18 @@ function AppBody() {
     if (saved) connectWith(saved);
   }, [connectWith, saved]);
 
+  /**
+   * 把某个网关的会话缓存摆出来（切网关时用）：
+   * 「连接断开」空态只应出现在真的没有任何缓存时，别把刚切过去的网关画成空列表。
+   * 读盘期间用户又切走了就丢弃——缓存不能盖到别的网关头上。
+   */
+  const revealCachedSessions = useCallback(async (gatewayId: string) => {
+    const cached = await readJson<SessionItem[]>(sessionsCacheKey(gatewayId));
+    if (!cached?.length || savedRef.current?.id !== gatewayId) return;
+    // 实时列表已经到了就让它赢：缓存只在当前还空着时垫场。
+    setSessions((current) => (current.length === 0 ? cached : current));
+  }, []);
+
   /** 切到另一台网关：上一个网关的会话/队列都不属于新网关，先清干净再连。 */
   const switchGateway = useCallback(
     async (gateway: SavedGateway) => {
@@ -1274,10 +1291,11 @@ function AppBody() {
       setArchived([]);
       savedRef.current = gateway;
       setSaved(gateway);
+      void revealCachedSessions(gateway.id);
       await activateGateway(gateway.id).catch(() => undefined);
       await connectWith(gateway);
     },
-    [clearApprovalFocus, clearPending, client, connected, connectWith, control],
+    [clearApprovalFocus, clearPending, client, connected, connectWith, control, revealCachedSessions],
   );
 
   const forgetGateway = useCallback(
@@ -1308,6 +1326,7 @@ function AppBody() {
               if (next) {
                 savedRef.current = next;
                 setSaved(next);
+                void revealCachedSessions(next.id);
                 await activateGateway(next.id).catch(() => undefined);
                 await connectWith(next);
               }
@@ -1316,7 +1335,7 @@ function AppBody() {
         },
       ]);
     },
-    [clearApprovalFocus, clearPending, client, connectWith, control],
+    [clearApprovalFocus, clearPending, client, connectWith, control, revealCachedSessions],
   );
 
   const submitRename = useCallback(() => {

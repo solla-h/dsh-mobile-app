@@ -44,22 +44,11 @@ export function ThinkPill({ text, streaming, answerStarted, startedAt, elapsed }
   const prevThinkingRef = useRef(activelyThinking);
   const [liveSec, setLiveSec] = useState(0);
 
-  // 当从 Stage 01 (正在思考) 切换到 Stage 03 (正式回答开始) 时，主动触发过阻尼无回弹折叠与柔触反馈
+  // Stage 01 (正在思考) → Stage 03 (正式回答开始) 的折叠在这里只做触感与状态复位：
+  // 动画由父组件（SessionScreen 的帧回调）在引起这次折叠的提交**之前**上膛
+  // （armCollapseAnimation）——在这里 configure 已属提交之后，动画落不到这次折叠上。
   useEffect(() => {
     if (prevThinkingRef.current && !activelyThinking) {
-      // 过阻尼（springDamping 1）无回弹：锚定在回答卡顶部收成 34pt，不让整页跟着弹。
-      LayoutAnimation.configureNext({
-        duration: 240,
-        update: { type: LayoutAnimation.Types.spring, springDamping: 1 },
-        create: {
-          type: LayoutAnimation.Types.easeInEaseOut,
-          property: LayoutAnimation.Properties.opacity,
-        },
-        delete: {
-          type: LayoutAnimation.Types.easeInEaseOut,
-          property: LayoutAnimation.Properties.opacity,
-        },
-      });
       softFeedback();
       setManual(null);
     }

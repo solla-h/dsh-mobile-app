@@ -46,6 +46,7 @@ import { ArcDial } from './nav/ArcDial';
 import { AnswerCard } from './stream/AnswerCard';
 import { groupMessages, type StreamRow } from './stream/group';
 import { ActivityGroup } from './stream/ActivityGroup';
+import { armCollapseAnimation } from './stream/collapse';
 import { ThinkPill } from './stream/ThinkPill';
 import { TrajectoryView } from './stream/TrajectoryView';
 import { ToolGroup } from './stream/ToolGroup';
@@ -286,6 +287,13 @@ export function SessionScreen({
   /** 松手即发：send 声明在后面，handleFrame 通过 ref 取最新版本。 */
   const sendRef = useRef<(text: string) => void>(() => undefined);
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
+  /** 最近一次已提交的流式草稿：帧回调是长命闭包，拿不到最新的 streaming，上膛判定要读它。 */
+  const streamingRef = useRef<StreamingDraft | null>(null);
+  useEffect(() => {
+    streamingRef.current = streaming;
+  }, [streaming]);
+  /** 本次流式尝试是否已给收拢动画上过膛（`start` 时复位，一次折叠只上膛一次）。 */
+  const collapseArmedRef = useRef(false);
   // 有缓存就不进 spinner：对账期间直接读缓存内容（缓存为空 = 没有可摆的，照旧转圈）
   const [loading, setLoading] = useState(messages.length === 0);
   /** 首屏历史没回来（超时/被拒/断线）：撤 spinner 后给「重试」空态，不能永远转圈。 */
@@ -300,10 +308,6 @@ export function SessionScreen({
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const [interactionError, setInteractionError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
-  /** 本地乐观回显：点发送立刻出现，等服务端确认后再撤掉。 */
-  const [pendingSends, setPendingSends] = useState<
-    { id: string; text: string; localUris: string[]; requestId: string; failed?: boolean }[]
-  >([]);
   const [sendMode, setSendMode] = useState<'queue' | 'steer'>('queue');
   /** 审批抽屉：78% 高的三段式决策卡 */
   const [triageOpen, setTriageOpen] = useState(false);
@@ -501,19 +505,32 @@ export function SessionScreen({
   /** 弧形转盘展开时，底下的消息列表必须停止滚动，否则滑的是轮次不是转盘。 */
   const [dialOpen, setDialOpen] = useState(false);
 
+  /** 列表当前的内容高度/滚动位置，用来在往前插历史时手动补偿偏移。 */
+  const metricsRef = useRef({ height: 0, offset: 0 });
+  /**
+   * 贴底一枪：目标 = 最近一次量到的真实内容高度（超出会被原生钳到真底）。
+   * 普通函数而不是 useCallback：读 metricsRef 要避开编译器对「hook 参数里读的
+   * 可变值」的标记，否则所有 metricsRef 写入都会被 react-hooks/immutability 报错。
+   */
+  const pinToBottom = (animated: boolean) => {
+    listRef.current?.scrollToOffset({ offset: metricsRef.current.height, animated });
+  };
+
   // 流式每来一段就补一次贴底：只靠 onContentSizeChange 时，
   // 高度没变（同一行在长高）不会回调，回答就会被顶到屏幕外。
+  // 贴底用 pinToBottom（目标 = 最近量到的真实高度，超出会被原生钳到真底），
+  // 不用 scrollToEnd——它按 JS 侧滞后的高度算，会落短一截把 atBottom 判假。
   useEffect(() => {
     if (!followRef.current) return;
-    listRef.current?.scrollToEnd({ animated: false });
+    pinToBottom(false);
   }, [streaming?.text.length, streaming?.reasoning?.length]);
 
-  // 首屏历史落地后连滚三枪：大代码块测量得晚，一次 scrollToEnd 常常滚不到位。
+  // 首屏历史落地后连滚三枪：大代码块测量得晚，一枪常常滚不到位。
   useEffect(() => {
     if (pinnedOnceRef.current || messages.length === 0) return;
     pinnedOnceRef.current = true;
     [80, 260, 700].forEach((ms) => {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), ms);
+      setTimeout(() => pinToBottom(false), ms);
     });
   }, [messages.length]);
   /** 历史分页：hasOlder 表示服务端还有更早的事件，nextBeforeRef 是往回翻的游标。 */
@@ -522,8 +539,6 @@ export function SessionScreen({
   const nextBeforeRef = useRef<number | undefined>(undefined);
   /** 已经翻到会话最早一条，重连后不要又显示「加载更早」。 */
   const reachedStartRef = useRef(false);
-  /** 列表当前的内容高度/滚动位置，用来在往前插历史时手动补偿偏移。 */
-  const metricsRef = useRef({ height: 0, offset: 0 });
   /** 非 null 表示「这一帧内容是往前插的」，布局完成后要把视口挪回原处。 */
   const prependAnchorRef = useRef<{ height: number; offset: number } | null>(null);
   /** 非 null 表示「这次 history 请求是翻页」，回来的那一帧要并到前面而不是整体替换。 */
@@ -695,7 +710,26 @@ export function SessionScreen({
           setCancelling(false);
         }
         // 正式消息已落地，撤掉流式草稿，避免同一段文字出现两份。
-        if (type === 'assistant/message') setStreaming(null);
+        if (type === 'assistant/message') {
+          // 这条正式消息会整行换掉流式草稿（展开的思考行 → 34pt 胶囊），换行是
+          // 一次提交里的「删旧行 + 建新行」：动画必须在这次提交**之前**上膛，
+          // 挂载后（换行出来的新组件）再 configure 已永远太晚。
+          const live = streamingRef.current;
+          if (live && !collapseArmedRef.current) {
+            const event = eventFrame.event as Record<string, any>;
+            const finishKind = (event.finish as { kind?: string } | undefined)?.kind;
+            const failed =
+              finishKind === 'error' || finishKind === 'aborted' || event.interrupted === true;
+            const body =
+              typeof event.text === 'string' && splitThinkTags(event.text).text.trim().length > 0;
+            // 有一行「思考」要收 + 新消息有正文（没有正文就不换行，不该上膛）。
+            if ((live.reasoning !== '' || splitThinkTags(live.text).reasoning) && (body || failed)) {
+              collapseArmedRef.current = true;
+              armCollapseAnimation();
+            }
+          }
+          setStreaming(null);
+        }
         if (type === 'turn/end') {
           onRunningChangeRef.current(false);
           setCancelling(false);
@@ -726,6 +760,7 @@ export function SessionScreen({
           // 每步都会发一次 start：只有人还贴着底部时才续跟随。停在历史中间的
           // 读者是在主动寻找定位，别把他拽回底部（拖动留下的 follow=false 要保住）。
           if (atBottomRef.current) followRef.current = true;
+          collapseArmedRef.current = false;
           setStreaming({
             attemptId: String(inner.attemptId ?? ''),
             text: '',
@@ -736,6 +771,21 @@ export function SessionScreen({
         }
         if (inner.type === 'chunk') {
           const chunk = (inner.chunk ?? {}) as Record<string, any>;
+          // 正文首字到达的那次提交里，「展开的思考」立刻收成 34pt 胶囊
+          //（或折出活动胶囊）——上膛必须在 setState 之前，
+          // 这正是「挂载后再 configureNext」永远错过的那次布局。
+          const live = streamingRef.current;
+          if (
+            chunk.type === 'text-delta' &&
+            typeof chunk.text === 'string' &&
+            live &&
+            live.text === '' &&
+            live.reasoning !== '' &&
+            !collapseArmedRef.current
+          ) {
+            collapseArmedRef.current = true;
+            armCollapseAnimation();
+          }
           setStreaming((current) => {
             if (!current) return current;
             if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
@@ -961,18 +1011,8 @@ export function SessionScreen({
           );
           return;
         }
-        if (failure.requestType === 'message') {
-          // 服务端拒收这条消息：把本地回显标成失败，别让它一直显示「发送中…」。
-          setPendingSends((current) => {
-            const index = failure.requestId
-              ? current.findIndex((item) => item.requestId === failure.requestId)
-              : current.findIndex((item) => !item.failed);
-            if (index < 0) return current;
-            const next = [...current];
-            next[index] = { ...next[index], failed: true };
-            return next;
-          });
-        }
+        // 服务端拒收消息的失败标记统一由 App.tsx 的 error 分支落进发件箱
+        //（outbox.fail(requestId, 原因)），会话页的行会按 failed 展示重试/移除。
         if (
           failure.requestType === 'history' &&
           firstScreenRequestRef.current !== null &&
@@ -1007,7 +1047,6 @@ export function SessionScreen({
     decidedRpcRef.current = null;
     setQuote(null);
     setTrustedDirs([]);
-    setPendingSends([]);
     setApprovalLog([]);
     // pinnedOnceRef 不在挂载 effect 里重置：闸门挂在组件实例上，切会话重挂载天然是新 ref；
     // 而缓存命中时首帧就非空，pin effect（声明在前）已经在挂载前段消耗掉闸门。
@@ -1174,15 +1213,15 @@ export function SessionScreen({
     followRef.current = true;
     setShowJump(false);
     // 不用动画：长会话里动画要滚很久，中途还会触发一堆 onScroll 把翻页逻辑带起来。
-    listRef.current?.scrollToEnd({ animated: false });
+    pinToBottom(false);
   }, []);
 
   // 键盘弹出会把列表可视区压小，滚到最底才能看见自己刚打的字。
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidShow', () => {
       // MIUI 的输入法动画拖到 ~300ms，60ms 时量到的还是旧视口，补一枪。
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 280);
+      setTimeout(() => pinToBottom(true), 60);
+      setTimeout(() => pinToBottom(false), 280);
     });
     return () => sub.remove();
   }, []);
@@ -1775,22 +1814,29 @@ export function SessionScreen({
       setPicked([]);
       setPickedFiles([]);
       setQuote(null);
-      setPendingSends((current) => [
-        ...current,
-        {
-          id: requestId,
-          requestId,
-          // 纯图片消息没有文本，用一个占位串当去重键，否则回显永远撤不掉。
-          text: text || IMAGE_ONLY_TEXT,
-          localUris: images.map((item) => item.uri),
-        },
-      ]);
+      // 帧已经写进 socket，但「写进去」不等于「收到了」：进发件箱等 `sent` 回执，
+      // 超时转「未确认 · 可能没送达」可手动重试——与断线路径同一条回执闭环。
+      outbox.track({
+        sessionId: session.sessionId,
+        gatewayId,
+        text,
+        images: images.length
+          ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
+          : undefined,
+        files: files.length
+          ? files.map((item) => ({ receiptId: item.state.receiptId as string }))
+          : undefined,
+        mode: running ? sendMode : 'queue',
+        requestId,
+      });
       onRunningChangeRef.current(true);
       // 自己发消息一定是要看最新进展的。
       atBottomRef.current = true;
       followRef.current = true;
       setShowJump(false);
-      listRef.current?.scrollToEnd({ animated: true });
+      // 贴底不在这里自己滚：入箱插入的新行会触发 onContentSizeChange 的
+      // 贴底分支（followRef 已置真），用「本次量到的真实高度」落地，不会像
+      // scrollToEnd 那样按滞后高度算、落短一截把 atBottom 误判成假。
     } else if (files.length > 0) {
       // 收据绑在连接上，离线重发没有意义，直接告诉用户等联网再发。
       setError('文件需要在线发送，等连接恢复后再试');
@@ -1832,11 +1878,6 @@ export function SessionScreen({
     },
     [client, conn, gatewayId],
   );
-
-  /** 被服务端拒收的本地回显：点「移除」清掉，错误原因留在顶部。 */
-  const discardPending = useCallback((id: string) => {
-    setPendingSends((current) => current.filter((item) => item.id !== id));
-  }, []);
 
   /** 长按菜单里能做什么，取决于这条消息是什么类型。 */
   const messageActions = useMemo(() => {
@@ -1943,24 +1984,23 @@ export function SessionScreen({
     [client, session.sessionId],
   );
 
-  // 服务端确认之后（队列里出现 / 正式消息落地）就撤掉本地回显。
+  // 回执缺失时的兜底：老网关不回 `sent`、只把正文回显时，正式回显出现即视为送达，
+  // 撤掉等确认的条目。只动 'sending' 的——待发/失败的条目重来不会被历史同文本误清；
+  // 纯图片条目（text 为空）不参与文本匹配，等回执或超时由用户拍板。
   useEffect(() => {
-    if (pendingSends.length === 0) return;
+    const sending = outbox
+      .list(session.sessionId)
+      .filter((item) => item.status === 'sending' && item.text);
+    if (sending.length === 0) return;
     const seen = new Set<string>();
     for (const item of queued) if (item.text) seen.add(item.text);
     for (const message of messages) {
-      if (message.kind !== 'user') continue;
-      const key = message.text || (message.images?.length ? IMAGE_ONLY_TEXT : '');
-      if (key) seen.add(key);
+      if (message.kind === 'user' && message.text) seen.add(message.text);
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 服务端确认后清掉本地回显，失败项要保留
-    setPendingSends((current) => {
-      // 失败的那条只让用户手动移除：按文本去重会被别的同文本消息顺手清掉，
-      // 图片更糟——所有图片回显都用同一个占位串。
-      const next = current.filter((item) => item.failed || !seen.has(item.text));
-      return next.length === current.length ? current : next;
-    });
-  }, [messages, pendingSends.length, queued]);
+    for (const item of sending) {
+      if (seen.has(item.text)) outbox.remove(item.id);
+    }
+  }, [messages, queued, session.sessionId, offlineItems]);
 
   /** 审批面板要展示的东西：目标文件、diff（含 edit 工具合成 diff）、推理动机、后续命令、风险等级。 */
   const approvalInfo = useMemo(() => {
@@ -2062,17 +2102,6 @@ export function SessionScreen({
         queueId: item.id,
         placement: item.placement,
       })),
-      ...pendingSends.map((item) => ({
-        id: `pending-${item.id}`,
-        kind: 'queued' as const,
-        text: item.text,
-        time: 0,
-        // 失败回显也用同一个 id 移除，队列里的 id 不会和它冲突。
-        queueId: item.id,
-        pending: true,
-        failed: item.failed,
-        localUris: item.localUris,
-      })),
       ...offlineItems.map((item) => ({
         id: `offline-${item.id}`,
         kind: 'queued' as const,
@@ -2088,7 +2117,7 @@ export function SessionScreen({
     ];
     // 连续的 tool 调用合并成一组，其余消息原样透传。
     return groupMessages([...baseRows, ...extras], { running });
-  }, [baseRows, offlineItems, pendingSends, queued, running]);
+  }, [baseRows, offlineItems, queued, running]);
 
   // 帧回调里要按索引回滚到「最后一条用户消息」，只能读渲染后的 rows。
   useEffect(() => {
@@ -2296,8 +2325,10 @@ export function SessionScreen({
             }}
             scrollEventThrottle={16}
             onLayout={() => {
-              // 键盘/横竖屏改了列表高度时，正在跟随就重新贴底。
-              if (followRef.current) listRef.current?.scrollToEnd({ animated: false });
+              // 键盘/横竖屏（以及 running 翻转引起的「发送方式」行出没）改了列表高度时，
+              // 正在跟随就重新贴底（pinToBottom 用最近量到的真实高度，不用 scrollToEnd
+              // 的滞后目标——那正是「发送瞬间被顶掉 + 回到底部悬挂」的一半成因）。
+              if (followRef.current) pinToBottom(false);
             }}
             onScrollToIndexFailed={(info) => {
               // 目标行还没渲染出来时 FlatList 会失败，先按平均行高估个位置再重试。
@@ -2428,7 +2459,6 @@ export function SessionScreen({
                       canDownloadFiles={canDownloadFiles}
                       onDiscardOffline={discardOffline}
                       onRetryOffline={retryOffline}
-                      onDiscardPending={discardPending}
                       onLongPress={setActionMessage}
                       onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
                     />
@@ -2905,7 +2935,6 @@ function MessageRow({
   canDownloadFiles,
   onDiscardOffline,
   onRetryOffline,
-  onDiscardPending,
   onLongPress,
   onQuoteCode,
 }: {
@@ -2920,7 +2949,6 @@ function MessageRow({
   canDownloadFiles: boolean;
   onDiscardOffline: (id: string) => void;
   onRetryOffline: (id: string) => void;
-  onDiscardPending: (id: string) => void;
   onLongPress: (message: ChatMessage) => void;
   onQuoteCode: (lang: string, code: string) => void;
 }) {
@@ -2967,13 +2995,9 @@ function MessageRow({
             >
               {message.offline
                 ? offlineStatusText(message.offlineStatus, message.offlineError)
-                : message.failed
-                  ? '发送失败'
-                  : message.pending
-                    ? '发送中…'
-                    : steering
-                      ? '插话中 · 下一步生效'
-                      : '排队中'}
+                : steering
+                  ? '插话中 · 下一步生效'
+                  : '排队中'}
             </Text>
             {message.offline ? (
               message.offlineStatus === 'sending' ? null : message.offlineStatus === 'pending' ? (
@@ -2990,11 +3014,7 @@ function MessageRow({
                   </Pressable>
                 </View>
               )
-            ) : message.failed ? (
-              <Pressable hitSlop={8} onPress={() => onDiscardPending(message.queueId)}>
-                <Text style={styles.queuedAction}>移除</Text>
-              </Pressable>
-            ) : message.pending ? null : (
+            ) : (
               <View style={styles.queuedActions}>
                 <Pressable hitSlop={8} onPress={() => onEditQueued(message.queueId, message.text)}>
                   <Text style={styles.queuedAction}>编辑</Text>
