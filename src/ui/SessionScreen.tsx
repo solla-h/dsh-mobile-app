@@ -5,7 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -294,6 +294,13 @@ export function SessionScreen({
   }, [streaming]);
   /** 本次流式尝试是否已给收拢动画上过膛（`start` 时复位，一次折叠只上膛一次）。 */
   const collapseArmedRef = useRef(false);
+  /**
+   * 正在「落地」的正式行 id：流式草稿行被它整行替换的那一次提交。
+   * Android Fabric 默认不开 LayoutAnimation（RN 0.88 enableLayoutAnimationsOnAndroid=false，
+   * configureNext 是静默 no-op），收拢的「出现侧」只能自己用 Animated 补 240ms 淡入；
+   * 判定只在引起换行的那一次提交里生效，渲染后立即清掉。
+   */
+  const landingRowIdRef = useRef<string | null>(null);
   // 有缓存就不进 spinner：对账期间直接读缓存内容（缓存为空 = 没有可摆的，照旧转圈）
   const [loading, setLoading] = useState(messages.length === 0);
   /** 首屏历史没回来（超时/被拒/断线）：撤 spinner 后给「重试」空态，不能永远转圈。 */
@@ -726,6 +733,11 @@ export function SessionScreen({
             if ((live.reasoning !== '' || splitThinkTags(live.text).reasoning) && (body || failed)) {
               collapseArmedRef.current = true;
               armCollapseAnimation();
+            }
+            // 落地行淡入（Android 下 LayoutAnimation 无效的替代）：草稿行还在、
+            // 且可见正文仍为空——这次提交它就会被 r{seq} 整行换掉。
+            if (!splitThinkTags(live.text).text.trim()) {
+              landingRowIdRef.current = `r${eventFrame.seq}`;
             }
           }
           setStreaming(null);
@@ -2122,6 +2134,9 @@ export function SessionScreen({
   // 帧回调里要按索引回滚到「最后一条用户消息」，只能读渲染后的 rows。
   useEffect(() => {
     rowsRef.current = rows;
+    // 换行提交已经渲染过（新行挂载时读的 ref 已完成使命），随后的挂载
+    //（虚拟化重挂载、滚动回收）不再重播淡入。
+    landingRowIdRef.current = null;
   }, [rows]);
 
   /** 最后一个活动胶囊的 id：只有它会在「实时一轮刚收拢」时播放收拢动画。 */
@@ -2447,21 +2462,26 @@ export function SessionScreen({
                       />
                     </View>
                   ) : (
-                    <MessageRow
-                      message={item.message}
-                      attachmentCache={attachmentCache}
-                      onNeedAttachment={requestAttachment}
-                      onRemoveQueued={removeQueued}
-                      onEditQueued={startEditQueued}
-                      onSteerQueued={steerQueued}
-                      fileStates={fileStates}
-                      onOpenFile={openFile}
-                      canDownloadFiles={canDownloadFiles}
-                      onDiscardOffline={discardOffline}
-                      onRetryOffline={retryOffline}
-                      onLongPress={setActionMessage}
-                      onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
-                    />
+                    // 流式草稿行刚被这条正式行换掉时（landingRowIdRef 命中）：
+                    // 出现侧补 240ms 淡入——Android Fabric 下 LayoutAnimation
+                    // 默认关闭，这是 FLOW-1 ③ 收拢观感的替代修法。
+                    <RowFadeIn enabled={item.id === landingRowIdRef.current}>
+                      <MessageRow
+                        message={item.message}
+                        attachmentCache={attachmentCache}
+                        onNeedAttachment={requestAttachment}
+                        onRemoveQueued={removeQueued}
+                        onEditQueued={startEditQueued}
+                        onSteerQueued={steerQueued}
+                        fileStates={fileStates}
+                        onOpenFile={openFile}
+                        canDownloadFiles={canDownloadFiles}
+                        onDiscardOffline={discardOffline}
+                        onRetryOffline={retryOffline}
+                        onLongPress={setActionMessage}
+                        onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
+                      />
+                    </RowFadeIn>
                   )}
                 </View>
               );
@@ -2921,6 +2941,25 @@ function offlineStatusText(
     default:
       return '待发送 · 联网后自动重发';
   }
+}
+
+/**
+ * 落地行淡入（F3 修法，240ms）：流式草稿行被正式行整行换掉的那一次提交，
+ * 正式行挂载时从 0 淡入到 1，补上「收拢」的出现侧观感。
+ *
+ * 为什么不用 LayoutAnimation：RN 0.88 在 Android 新架构（Fabric/Bridgeless）下
+ * enableLayoutAnimationsOnAndroid 默认 false——configureNext 被静默吞掉，
+ * 怎么调时机都不会画（iOS 默认开启，所以 collapse.ts 的上膛保留）。
+ * 诚实的缺口：删除侧（旧展开行消失）仍是瞬没——不保留旧节点没法淡出。
+ */
+function RowFadeIn({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  const [opacity] = useState(() => new Animated.Value(enabled ? 0 : 1));
+  useEffect(() => {
+    if (!enabled) return;
+    Animated.timing(opacity, { toValue: 1, duration: 240, useNativeDriver: true }).start();
+  }, [enabled, opacity]);
+  // 恒定包一层：enabled 后续从 true 变 false 时不能换树形，否则整行会被重挂载。
+  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
 }
 
 function MessageRow({
