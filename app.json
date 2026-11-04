@@ -20,7 +20,14 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,6 +51,12 @@
       "expo-sharing",
       "expo-audio",
       "expo-image"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f6a8cddb-a57a-4a0c-9a6b-5a2cd03930b8"
+      }
+    },
+    "owner": "solla-h"
   }
 }
