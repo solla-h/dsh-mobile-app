@@ -28,7 +28,7 @@
 | D3 | **每设备一把独立随机 key，网关第一次被请求时才生成**，存在设备记录里 | 老设备免迁移；撤销粒度 = 设备；不复用 token 摘要（摘要是鉴权校验值，不该兼任加密根） |
 | D4 | **内容恒加密**（AES-256-GCM），Worker 只存不透明密文 | 用户不承担「云上明文地址」风险 |
 | D5 | **写入需要网关专用写密钥**（Worker 的 `WRITE_SECRET`）；读取只靠 256 位路径 | 防止知道 Worker 域名的人无限创建记录、耗尽免费额度。写密钥**永不下发手机** |
-| D6 | **本地已有地址簿配置时，拒绝静默覆盖**（§7.3 决策表）。换 Worker 地址 = 重新配对 | 用户已拍板。防止被冒充的网关给手机塞一个长期有效的伪造入口 |
+| D6 | **同一 `gatewayId` 下自动迁移，换 `gatewayId` 才拒绝**（§7.3 决策表）。URL 变化来自已认证连接，不重新配对 | 防止被冒充的网关给手机塞伪造入口；同时消除手动→托管/停用再启用/重试部署的死锁 |
 | D7 | **重连与换址由 `GatewayClient` 自己负责**（新增 `refreshUrl` 回调），不在 `App.tsx` 的 `onState` 里另开恢复流程 | 竞态、不可重试错误（4003）、一次性配对码这些判断本来就在 `scheduleReconnect` 里，放这里天然正确 |
 | D8 | **`rev` 取墙钟毫秒并保证单调**：`rev = max(上次rev+1, Date.now())`，无需持久化计数器 | 崩溃/状态文件丢失后序号不会倒退；省掉「先落盘再发布」 |
 | D9 | **清理采用 best-effort**：撤销设备 → 停止发布 + 删一次，不做持久清理队列 | 残留物是一条约 300 字节、无人能解的密文；为它建队列得不偿失 |
@@ -426,7 +426,7 @@ export interface RendezvousConfig {
   在锁内**重新读取**存储里的最新记录再合并；记录不存在返回 `null`、**不新建**；**不改 `ACTIVE_KEY`**。
 - 现有 `App.tsx` 里 hello 补 `gatewayName` 的那处（约 :603-609）改成走 `patchGatewayIfExists`，不再 `upsertGateway`；
   `upsertGateway` 只保留给用户主动动作（配对、切换）。
-- **重新配对会整条替换记录从而清掉旧 `rendezvous`——这是有意为之**：它正是 D6 里「换 Worker 要重新配对」的实现机制，不要为了“保险”去保留它。
+- **重新配对会整条替换记录从而清掉旧 `rendezvous`——这是有意为之**：换 `gatewayId`（换了一台网关）时仍需要重新配对；同一 `gatewayId` 下的 Worker 迁移由下文的 `migrate` 自动处理。
 
 ### 7.3 纯函数 `src/protocol/rendezvous.ts`
 
@@ -437,23 +437,24 @@ export interface RendezvousConfig {
 - `deriveLocator(key): {path, aesKey}`（用 `@noble/hashes` 的 hkdf+sha256，info 字符串见 §4.1）。
 - `decodeAddressBook({ body, config, now }): { rev, endpoints } | null`：执行 §4.4 的 1~6 步。
 - `pickGatewayUrl(endpoints): string`：第一个 `wss://`，否则第一项（与 `pairWithText` 现有规则一致，`pairWithText` 可顺手复用它）。
-- `decideAdoption(local: RendezvousConfig | undefined, incoming): 'adopt' | 'rotate-key' | 'same' | 'conflict'`：
+- `decideAdoption(local: RendezvousConfig | undefined, incoming): 'adopt' | 'rotate-key' | 'migrate' | 'same' | 'conflict'`：
 
 | 本地状态 | 收到的配置 | 结果 | 动作 |
 |---|---|---|---|
 | 无 | 合法 | `adopt` | 保存，`seenRev` 留空 |
 | 有 | `url` 相同、`key` 相同、`gatewayId` 相同 | `same` | 什么都不做 |
 | 有 | `url` 相同、`key` 不同 | `rotate-key` | 更新 key，**清空 `seenRev`**（新 key 是新的 rev 作用域） |
-| 有 | `url` 不同 | `conflict` | **拒绝覆盖**，保留本地，触发 §7.4 提示 |
-| 有 | `gatewayId` 与本地记录里的 `gatewayId`（配对载荷来的，如有）不同 | `conflict` | 同上，且这次响应整个丢弃 |
+| 有 | `url` 不同、`gatewayId` 相同 | `migrate` | 更新 url/key，**清空 `seenRev`**（新 Worker 是新的 rev 作用域） |
+| 有 | `gatewayId` 与本地记录里的 `gatewayId`（配对载荷来的，如有）不同 | `conflict` | 整帧丢弃，触发 §7.4 提示 |
 
-> `url` 相同而 `key` 不同是安全的：攻击者即使给了新 key，指向的仍是原来可信的 Worker，没有写密钥的人写不进那条新路径，手机只会读到 404。
-> 这条规则同时覆盖「网关降级/回滚导致设备记录丢 key 后重新生成」的场景，不会让功能永久失效。
+> `url`/`key` 变化都来自已认证连接，冒充者没有设备 token；同一 `gatewayId` 下采纳它们是安全的。
+> 不能用「url 不同」拒绝：手动→托管、停用再启用、部署失败重试都会产生新 Worker，拒绝等于把用户逼回重新扫码。
+> 只有 `gatewayId` 变化才说明换了一台网关，需要重新配对。
 
 ### 7.4 冲突时的唯一提示
 
 - 内存里记一个 `rendezvousConflict: Set<gatewayId>`，**不持久化**。
-- 在网关列表中该条目的副标题处显示一行灰字：「地址簿已变更，重新扫码后可恢复自动找回」。
+- 在网关列表中该条目的副标题处显示一行灰字：「网关身份已变化，重新扫码后可恢复自动找回」。
 - 不弹窗、不阻断连接、不影响正常使用。用户重新配对后记录被整条替换，下次连接自然 `adopt`，提示消失。
 - 找不到合适的列表位置时，先只 `console.warn` 并把这一条列为待办，**不要**为它新建页面。
 
@@ -528,7 +529,8 @@ refreshUrl?: () => Promise<string | undefined>;
 | J3 隧道重启 | 杀掉并重启 cloudflared/dsh（URL 变）→ 手机在前台等待 | ≤约 3 分钟内自动恢复；横幅自行消失；无弹窗 |
 | J4 换网 | 手机 WiFi↔蜂窝，旧入口不可达 | 同 J3 |
 | J5 撤销 | 网关撤销该设备 | 手机收到 4003 → **停止重连、不触发刷新**；Worker 里该记录被删（或至少不再更新） |
-| J6 换 Worker | 网关改了 `rendezvousUrl` → 手机连上 | `conflict`：保持原配置、连接照常、列表里出现一行灰字；重新扫码后恢复 |
+| J6 换 Worker（同 `gatewayId`） | 手动↔托管、停用再启用、重新部署 → 手机连上 | `migrate`：更新 url/key、清空 `seenRev`，不扫码；连接照常 |
+| J6b 换网关 | 手机连到另一台网关（`gatewayId` 不同） | `conflict`：保持原配置、连接照常、列表里出现一行灰字；重新扫码后恢复 |
 | J7 Worker 挂了/记录丢了 | 停掉 Worker 或手动删记录，再让 URL 失效 | 行为与今天完全一致（只是重连不成功）；Worker 恢复且网关 30 分钟内重发后自愈 |
 | J8 切网关竞态 | 网关 A 连不上，刷新进行中切到网关 B | B 保持激活，A 的迟到结果被丢弃，不写存储、不重连 |
 | J9 兼容 | 旧 App × 新网关；新 App × 旧网关（无 `rendezvous-v1`） | 两者行为与今天一致；新 App 不发 `rendezvous-config`，不显示任何新提示 |
