@@ -32,6 +32,12 @@ for (const candidate of [
 
 const PORT = Number(process.env.PORT || 3999);
 const LAN_HOST = process.env.LAN_HOST || '192.168.1.10';
+// 地址簿：设置了 RENDEZVOUS_URL（https origin）和 RENDEZVOUS_KEY（43 字符）
+// 才会出现在 hello capabilities 里并响应 rendezvous-config。
+// Worker 本体用 dsh-mobile-rendezvous 或 quick tunnel 指向本地假 Worker。
+const RENDEZVOUS_URL = process.env.RENDEZVOUS_URL || '';
+const RENDEZVOUS_KEY = process.env.RENDEZVOUS_KEY || '';
+const RENDEZVOUS_READY = /^https:\/\/[^\s]+$/.test(RENDEZVOUS_URL) && /^[A-Za-z0-9_-]{43}$/.test(RENDEZVOUS_KEY);
 let mode = 'normal';
 const events = [];
 
@@ -156,6 +162,17 @@ wss.on('connection', (ws, req) => {
       echoSeq += 1;
       ws.send(JSON.stringify({ kind: 'event', sessionId: msg.sessionId, seq: echoSeq, time: 1730000000000 + echoSeq, event: { type: 'user/message', source: 'user', text: String(msg.text ?? '') } }));
     }
+    if (msg.type === 'rendezvous-config') {
+      record('rendezvous-config', { id, channel, requestId: msg.requestId });
+      if (!RENDEZVOUS_READY) {
+        ws.send(JSON.stringify({ kind: 'error', code: 'rendezvous/disabled', requestType: 'rendezvous-config', requestId: msg.requestId }));
+      } else {
+        ws.send(JSON.stringify({
+          kind: 'rendezvous-config', requestId: msg.requestId,
+          url: RENDEZVOUS_URL, key: RENDEZVOUS_KEY, gatewayId: 'fake-gateway',
+        }));
+      }
+    }
     if (msg.type === 'workspaces') ws.send(JSON.stringify({ kind: 'workspaces', items: [], archivedSessionIds: [] }));
     if (msg.type === 'speech-catalog') ws.send(JSON.stringify({ kind: 'speech-catalog', available: false, providers: [] }));
   });
@@ -171,7 +188,7 @@ wss.on('connection', (ws, req) => {
   }
   if (mode === 'no-hello') return;
 
-  ws.send(JSON.stringify({ kind: 'hello', gatewayId: 'fake-gateway', gatewayName: 'fake-gateway', protocol: 3, dshVersion: 'fake', historyFormatVersion: 4, authenticated: true, capabilities: [] }));
+  ws.send(JSON.stringify({ kind: 'hello', gatewayId: 'fake-gateway', gatewayName: 'fake-gateway', protocol: 3, dshVersion: 'fake', historyFormatVersion: 4, authenticated: true, capabilities: RENDEZVOUS_READY ? ['rendezvous-v1'] : [] }));
   if (mode === 'half-open') return;
 
 });

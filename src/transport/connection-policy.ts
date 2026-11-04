@@ -9,6 +9,13 @@ export const HANDSHAKE_TIMEOUT_MS = 12_000;
 export const PROBE_TIMEOUT_MS = 5_000;
 export const NETWORK_DEBOUNCE_MS = 1_500;
 
+/**
+ * 连续失败后向上层要一次可能更新过的地址。
+ * 候选值：太早会打扰冷启动，太晚用户等得久；真机后再调。
+ */
+export const REFRESH_AFTER_FAILURES = 2;
+export const REFRESH_COOLDOWN_MS = 60_000;
+
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
 /** 第 attempt 次重连前的等待；attempt 从 0 开始。 */

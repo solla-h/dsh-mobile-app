@@ -367,6 +367,15 @@ export interface PongFrame {
   at: number;
 }
 
+/** 地址簿配置：仅对已认证设备、网关启用了地址簿时下发。 */
+export interface RendezvousConfigFrame {
+  kind: 'rendezvous-config';
+  requestId: string;
+  url: string;
+  key: string;
+  gatewayId: string;
+}
+
 /** 服务端帧的并集；未知类型保留为宽松对象，便于渐进实现。 */
 export type ServerFrame =
   | HelloFrame
@@ -399,6 +408,7 @@ export type ServerFrame =
   | FileDownloadOpenedFrame
   | FileDownloadChunkFrame
   | PongFrame
+  | RendezvousConfigFrame
   | { kind: string; [key: string]: unknown };
 
 export type ClientFrame =
@@ -560,4 +570,6 @@ export type ClientFrame =
       /** 不带 sessionId 时新建会话；workspaceId 决定开在哪个工作区 */
       workspaceId?: string;
       cwd?: string;
-    };
+    }
+  /** 领取地址簿配置；answer 是 rendezvous-config 帧（仅认证连接 + 网关启用时） */
+  | { type: 'rendezvous-config'; requestId: string };

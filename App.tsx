@@ -26,6 +26,12 @@ import {
   type PendingMap,
 } from './src/protocol/pending';
 import type { HelloFrame, ServerFrame, SessionItem, WorkspacesFrame } from './src/protocol/types';
+import {
+  decideAdoption,
+  parseRendezvousConfigFrame,
+  pickGatewayUrl,
+} from './src/protocol/rendezvous';
+import { createUrlRefresher } from './src/transport/rendezvous';
 import { applyOutlineFrame, type OutlineMap } from './src/protocol/outline-cache';
 import { selectFocusSessions } from './src/protocol/focus';
 import {
@@ -48,6 +54,7 @@ import {
   getDeviceName,
   loadActiveGateway,
   loadGateways,
+  patchGatewayIfExists,
   removeGateway,
   upsertGateway,
   type SavedGateway,
@@ -61,6 +68,7 @@ import { mapDirectories, type DirectoryListing } from './src/protocol/directorie
 import { ActionSheet, type SheetAction } from './src/ui/ActionSheet';
 import { DirectoryPicker } from './src/ui/DirectoryPicker';
 import { ScanScreen } from './src/ui/ScanScreen';
+import { ErrorBoundary } from './src/ui/ErrorBoundary';
 import { SessionScreen } from './src/ui/SessionScreen';
 import { useTheme, useThemedStyles } from './src/ui/theme';
 import type { Palette } from './src/theme/tokens';
@@ -128,6 +136,10 @@ function AppBody() {
   const [saved, setSaved] = useState<SavedGateway | null>(null);
   /** 配对过的全部网关，可以在顶部切换 */
   const [gateways, setGateways] = useState<SavedGateway[]>([]);
+  /** 地址簿配置被网关改动过（url 变化）：只提示，不持久化，重新配对后消失 */
+  const [rendezvousConflicts, setRendezvousConflicts] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [gatewaySheet, setGatewaySheet] = useState(false);
   const [addGateway, setAddGateway] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -240,6 +252,8 @@ function AppBody() {
   /** 待落盘的网关：配对握手成功、拿到 token 之后才写 SecureStore。 */
   const pendingGateway = useRef<SavedGateway | null>(null);
   const savedRef = useRef<SavedGateway | null>(null);
+  /** 在途的 rendezvous-config 请求；只接纳自己发出的那一次响应。 */
+  const rendezvousRequestRef = useRef<string | null>(null);
   /** 防止重复扫码/重复点击把同一个配对码连两次。 */
   const pairingRef = useRef(false);
   /** 用户是否亲手选过工作区；选过之后就不再自动切到 mobile。 */
@@ -250,6 +264,26 @@ function AppBody() {
    */
   const creatingWorkspaceRef = useRef<{ stage: 'probe' } | { stage: 'mkdir'; home: string } | null>(
     null,
+  );
+
+  /**
+   * 地址簿换址：GatewayClient 连续失败后回调，重新读 Worker 里的入口列表。
+   * 调用时才读 savedRef——切换网关/重新配对的迟到结果会被 patchGatewayIfExists 挡住。
+   */
+  const refresher = useMemo(
+    () =>
+      createUrlRefresher({
+        getSaved: () => savedRef.current,
+        patch: patchGatewayIfExists,
+        onUpdated: (entry) => {
+          if (savedRef.current?.id === entry.id) {
+            savedRef.current = entry;
+            setSaved(entry);
+          }
+          setGateways((list) => list.map((item) => (item.id === entry.id ? entry : item)));
+        },
+      }),
+    [],
   );
 
   const connected = state === 'ready' && hello?.authenticated === true;
@@ -329,9 +363,12 @@ function AppBody() {
         deviceId,
         deviceName: getDeviceName(),
         channel: 'control',
+        // 地址簿还没领取时 refresher 会返回 undefined，先挂着即可——
+        // 配置是连上之后才领到的，不能等到下次 connect 才生效。
+        refreshUrl: () => refresher(gateway.id),
       });
     },
-    [control],
+    [control, refresher],
   );
 
   useEffect(() => {
@@ -353,6 +390,63 @@ function AppBody() {
     sessionsRef.current = sessions;
   }, [sessions]);
 
+  /**
+   * 地址簿配置：adopt / rotate-key 写回，conflict 只留一条内存提示。
+   * 每次 control 连上都问一次（一帧很便宜），既能补回丢失的本地配置，
+   * 也能发现网关侧的 key 轮换或 Worker 迁移。
+   */
+  const adoptRendezvousConfig = useCallback((frame: ServerFrame) => {
+    const requestId = (frame as { requestId?: unknown }).requestId;
+    if (typeof requestId !== 'string' || requestId !== rendezvousRequestRef.current) return;
+    rendezvousRequestRef.current = null;
+    const config = parseRendezvousConfigFrame(frame);
+    const current = savedRef.current;
+    if (!config || !current) return;
+    const decision = decideAdoption(current.rendezvous, config, current.gatewayId);
+    if (decision === 'same') return;
+    if (decision === 'conflict') {
+      // 不弹窗、不断连：只在该网关的菜单里留一行灰字。
+      console.warn('[rendezvous] config conflict', config.gatewayId);
+      setRendezvousConflicts((previous) => {
+        if (previous.has(config.gatewayId)) return previous;
+        const next = new Set(previous);
+        next.add(config.gatewayId);
+        return next;
+      });
+      return;
+    }
+    void patchGatewayIfExists(current.id, (latest) => {
+      // 等待期间可能切网关或重新配对：只更新仍是同一网关的那条记录。
+      if (latest.gatewayId && latest.gatewayId !== config.gatewayId) return null;
+      const local = latest.rendezvous;
+      if (local && local.url !== config.url) return null;
+      return {
+        rendezvous: {
+          url: config.url,
+          key: config.key,
+          gatewayId: config.gatewayId,
+          // 换 key = 新的 rev 作用域，旧 seenRev 必须清空。
+          seenRev: decision === 'rotate-key' ? undefined : local?.seenRev,
+        },
+      };
+    })
+      .then((entry) => {
+        if (!entry) return;
+        if (savedRef.current?.id === entry.id) {
+          savedRef.current = entry;
+          setSaved(entry);
+        }
+        setGateways((list) => list.map((item) => (item.id === entry.id ? entry : item)));
+        setRendezvousConflicts((previous) => {
+          if (!previous.has(config.gatewayId)) return previous;
+          const next = new Set(previous);
+          next.delete(config.gatewayId);
+          return next;
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+
   // control 通道只关心审批/提问；hello 表示重连成功，先清空再让服务端回放，
   // 否则断线期间处理掉的待办会一直挂在列表上。
   useEffect(() => {
@@ -361,6 +455,24 @@ function AppBody() {
         clearPending();
         // 定时任务目录只在 control 通道上给；连上就问一次。
         control.send({ type: 'schedule-catalog' });
+        const helloFrame = frame as HelloFrame;
+        if (
+          helloFrame.authenticated &&
+          Array.isArray(helloFrame.capabilities) &&
+          helloFrame.capabilities.includes('rendezvous-v1')
+        ) {
+          const requestId = randomUUID();
+          rendezvousRequestRef.current = requestId;
+          control.send({ type: 'rendezvous-config', requestId });
+        }
+        return;
+      }
+      if (frame.kind === 'rendezvous-config') {
+        adoptRendezvousConfig(frame);
+        return;
+      }
+      if (frame.kind === 'error') {
+        // rendezvous/disabled 之类的错误直接忽略，不影响待办与连接状态。
         return;
       }
       if (frame.kind === 'schedule-catalog') {
@@ -380,7 +492,7 @@ function AppBody() {
       }
     });
     return off;
-  }, [clearPending, control]);
+  }, [adoptRendezvousConfig, clearPending, control]);
 
   /** 标题是列表级元数据，WebUI 改了也要立刻反映到卡片和会话页。 */
   const applyTitle = useCallback((sessionId: string, title: string) => {
@@ -597,14 +709,19 @@ function AppBody() {
             // 语音是可选能力：先问一次，服务器没启用就别在界面上画饼。
             client.send({ type: 'speech-catalog', requestId: randomUUID() });
           }
-          // 网关自报的名字比 URL 好认，顺手补进本地记录里。
+          // 网关自报的名字比 URL 好认，顺手补进本地记录里。走 patch：
+          // 后台响应不能新建记录，也不能把 ACTIVE_KEY 抢回来。
           const current = savedRef.current;
           if (helloFrame.gatewayName && current && current.gatewayName !== helloFrame.gatewayName) {
-            const next = { ...current, gatewayName: helloFrame.gatewayName };
-            savedRef.current = next;
-            setSaved(next);
-            upsertGateway(next)
-              .then(() => loadGateways().then(setGateways))
+            void patchGatewayIfExists(current.id, { gatewayName: helloFrame.gatewayName })
+              .then((entry) => {
+                if (!entry) return;
+                if (savedRef.current?.id === entry.id) {
+                  savedRef.current = entry;
+                  setSaved(entry);
+                }
+                void loadGateways().then(setGateways);
+              })
               .catch(() => undefined);
           }
           break;
@@ -622,10 +739,14 @@ function AppBody() {
               savedRef.current = entry;
               setSaved(entry);
               void loadGateways().then(setGateways);
+              // 等记录落盘再连 control：连上后立刻领取的 rendezvous-config
+              // 需要 patch 这条记录，太早连会扑空。
+              void startControl(entry);
             })
-            .catch(() => undefined);
-          // 拿到长期 token 之后 control 通道才能连；配对码是一次性的，不能复用。
-          void startControl(next);
+            .catch(() => {
+              // 落盘失败也要保持连接可用；配置领取会在下次连上时再试。
+              void startControl(next);
+            });
           break;
         }
         case 'sessions': {
@@ -1000,6 +1121,8 @@ function AppBody() {
           pairingCode,
           deviceId,
           deviceName: getDeviceName(),
+          // 配置可能还没领取（刚配对时）；refresher 自己会判断没有地址簿就返回 undefined。
+          refreshUrl: () => refresher(gateway.id),
         });
         if (gateway.token) void startControl(gateway);
       } catch (failure) {
@@ -1008,7 +1131,7 @@ function AppBody() {
         setBusy(false);
       }
     },
-    [client, startControl],
+    [client, refresher, startControl],
   );
 
   const pairWithText = useCallback(
@@ -1021,7 +1144,7 @@ function AppBody() {
       // publicUrl 永远是网关自己的本机地址；公网/局域网入口在 endpoints 里。
       // 优先选 wss（手机走公网），没有则退回 publicUrl。
       const candidates = [payload.publicUrl, ...(payload.endpoints ?? [])];
-      const url = candidates.find((item) => item.startsWith('wss://')) ?? candidates[0];
+      const url = pickGatewayUrl(candidates) ?? candidates[0];
       const gateway: SavedGateway = {
         id: payload.gatewayId ? 'gw:' + payload.gatewayId : 'url:' + url,
         url,
@@ -1241,7 +1364,12 @@ function AppBody() {
     const list: SheetAction[] = gateways.map((item) => {
       const name = item.gatewayName ?? item.label ?? hostOf(item.url);
       const current = item.id === saved?.id;
-      const hint = [current ? (connected ? '当前 · 已连接' : '当前') : null, hostOf(item.url)]
+      const conflicted = rendezvousConflicts.has(item.gatewayId ?? item.rendezvous?.gatewayId ?? '');
+      const hint = [
+        current ? (connected ? '当前 · 已连接' : '当前') : null,
+        hostOf(item.url),
+        conflicted ? '地址簿已变更，重新扫码后可恢复自动找回' : null,
+      ]
         .filter(Boolean)
         .join(' · ');
       return { id: 'gw:' + item.id, label: (current ? '✓ ' : '') + name, hint };
@@ -1256,7 +1384,7 @@ function AppBody() {
       });
     }
     return list;
-  }, [connected, gateways, saved]);
+  }, [connected, gateways, rendezvousConflicts, saved]);
 
   const handleReconnect = useCallback(() => {
     if (saved) connectWith(saved);
@@ -1500,8 +1628,8 @@ function AppBody() {
         {/* 断线时不卸载（保留历史/草稿/附件）；只有切换 sessionId 才重挂载，
             让引用、目录信任、待发回显、语音请求和滚动锚点跟着上一会话一起结束。 */}
         {active ? (
+          <ErrorBoundary key={active.sessionId} onBack={closeSession}>
           <SessionScreen
-            key={active.sessionId}
             client={client}
             session={active}
             queued={queues[active.sessionId] ?? []}
@@ -1545,6 +1673,7 @@ function AppBody() {
             focusApprovalRpcId={approvalFocus}
             onApprovalFocusHandled={clearApprovalFocus}
           />
+          </ErrorBoundary>
         ) : connected || saved ? (
           // 已经配过网关就别再退回「扫码配对」：断线时保留列表，顶部提示重连，
           // 只有一台网关都没配过时才需要配对页。

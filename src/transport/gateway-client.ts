@@ -7,6 +7,8 @@ import {
   HEARTBEAT_MS,
   NETWORK_DEBOUNCE_MS,
   PROBE_TIMEOUT_MS,
+  REFRESH_AFTER_FAILURES,
+  REFRESH_COOLDOWN_MS,
   backoffDelay,
   classifyClose,
 } from './connection-policy';
@@ -27,6 +29,8 @@ export interface ConnectOptions {
    * conversation 只收订阅的会话流。不传则是单连接 legacy 模式。
    */
   channel?: 'control' | 'conversation';
+  /** 连续失败后向上层要一个可能更新过的地址；没有地址簿时返回 undefined。 */
+  refreshUrl?: () => Promise<string | undefined>;
 }
 
 type FrameListener = (frame: ServerFrame) => void;
@@ -66,6 +70,9 @@ export class GatewayClient {
   private unwatchAppState: { remove: () => void } | null = null;
   /** 最近一次广播的连接状态；订阅前就能查询（onState 不回放当前状态）。 */
   private lastState: ConnectionState = 'idle';
+  /** 地址簿刷新：冷却与在途标记；4003/配对码等终止分支不会走到这里。 */
+  private lastRefreshAt = 0;
+  private refreshing = false;
 
   get state(): ConnectionState {
     return this.lastState;
@@ -193,7 +200,15 @@ export class GatewayClient {
         }
         this.emitState('ready');
       }
-      this.frameListeners.forEach((listener) => listener(frame));
+      // OBS-1：一个业务 handler 抛异常不能拖垮其它监听者，也不能炸回
+      // socket 回调（那样会带着整条分发链一起死）。逐个隔离。
+      this.frameListeners.forEach((listener) => {
+        try {
+          listener(frame);
+        } catch (error) {
+          console.warn('[gateway] frame listener failed', frame.kind, error);
+        }
+      });
     };
 
     socket.onerror = () => {
@@ -243,6 +258,7 @@ export class GatewayClient {
       this.emitState('error', '配对码已被使用或已过期。每个配对码只能用一次，请在服务器上重新运行 dsh-pair');
       return;
     }
+    this.maybeRefreshUrl();
     // 已经有一个在等，就别叠第二个定时器。
     if (this.reconnectTimer) return;
     const delay = backoffDelay(this.attempt);
@@ -251,6 +267,39 @@ export class GatewayClient {
       this.reconnectTimer = null;
       this.open();
     }, delay);
+  }
+
+  /**
+   * 地址簿刷新：只在连续失败、有网、冷却到期且没有在途刷新时触发。
+   * 不阻塞原有退避——刷新失败时用户仍然按原来的节奏重试。
+   */
+  private maybeRefreshUrl(): void {
+    const options = this.options;
+    if (this.stopped || !options?.refreshUrl || this.refreshing) return;
+    if (this.attempt < REFRESH_AFTER_FAILURES - 1) return;
+    if (!this.online) return;
+    if (Date.now() - this.lastRefreshAt < REFRESH_COOLDOWN_MS) return;
+
+    this.refreshing = true;
+    // 尝试开始就计冷却：离线/失败时也不会被下一轮立刻再打一次。
+    this.lastRefreshAt = Date.now();
+    void Promise.resolve()
+      .then(() => options.refreshUrl!())
+      .then((url) => {
+        this.refreshing = false;
+        if (this.stopped || this.options !== options) return;
+        if (typeof url !== 'string' || url === '' || url === options.url) return;
+        this.options = { ...options, url };
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.attempt = 0;
+        this.open();
+      })
+      .catch(() => {
+        this.refreshing = false;
+      });
   }
 
   private startHeartbeat(): void {
@@ -298,7 +347,14 @@ export class GatewayClient {
     this.probeTimer = setTimeout(() => {
       this.probeTimer = null;
       if (this.socket !== socket) return;
-      if (this.lastFrameAt >= this.probeStartedAt) return;
+      if (this.lastFrameAt >= this.probeStartedAt) {
+        // CONN-3：探活通过 = 连接是真的活着的。若之前被误判成 error
+        // （如系统报离线但 USB/adb 通道仍通），这里要恢复成 ready——
+        // 否则横幅会僵在「设备已离线」直到下一次真重连。
+        // 只在 error 上恢复；connecting 仍等 hello 定案，别抢跑。
+        if (this.lastState === 'error') this.emitState('ready');
+        return;
+      }
       this.dropSocket('连接无响应，正在重连');
       this.scheduleReconnect();
     }, PROBE_TIMEOUT_MS);
@@ -317,19 +373,26 @@ export class GatewayClient {
         const wasOnline = this.online;
         this.online = online;
         if (this.stopped) return;
-        if (!this.networkInitialized) {
-          this.networkInitialized = true;
-          if (!online) this.emitState('error', '设备已离线，等待网络恢复');
-          return;
-        }
+        const first = !this.networkInitialized;
+        this.networkInitialized = true;
         if (!online) {
           this.clearNetworkTimer();
-          if (wasOnline) this.emitState('error', '设备已离线，等待网络恢复');
+          // CONN-3：系统判离线但 socket 还 OPEN（USB/adb 通道、局域网无外网、
+          // 系统误判）时不要直接把状态打成离线——先探活定真伪。探得动就继续
+          // 当好着用；真死了探活失败会走 dropSocket + 重连，横幅照样会出。
+          // 不这样做的后果：横幅僵在「设备已离线」直到下一次真重连。
+          const socket = this.socket;
+          if (socket && socket.readyState === 1) {
+            this.probe();
+            return;
+          }
+          if (first || wasOnline) this.emitState('error', '设备已离线，等待网络恢复');
           return;
         }
-        // 第一次回调只建立基线；之后任何 online 事件都当成一次网络切换。
+        // 第一次 online 回调只建立基线；之后任何 online 事件都当成一次网络切换。
         // WiFi→5G 时 isConnected 可能一直是 true，不能只看 offline→online；
         // 也不能只看 type（WiFi 断开后 type 可能仍是 WIFI）。
+        if (first) return;
         this.clearNetworkTimer();
         this.networkTimer = setTimeout(() => {
           this.networkTimer = null;
@@ -444,6 +507,13 @@ export class GatewayClient {
 
   private emitState(state: ConnectionState, detail?: string): void {
     this.lastState = state;
-    this.stateListeners.forEach((listener) => listener(state, detail));
+    // OBS-1：状态监听同样逐个隔离——某个页面的 setState 异常不该掐断其余订阅者。
+    this.stateListeners.forEach((listener) => {
+      try {
+        listener(state, detail);
+      } catch (error) {
+        console.warn('[gateway] state listener failed', state, error);
+      }
+    });
   }
 }
