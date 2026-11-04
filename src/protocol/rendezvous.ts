@@ -45,7 +45,16 @@ export interface AddressBook {
   endpoints: string[];
 }
 
-export type AdoptionDecision = 'adopt' | 'rotate-key' | 'same' | 'conflict';
+export type AdoptionDecision = 'adopt' | 'rotate-key' | 'migrate' | 'same' | 'conflict';
+
+/** 无 requestId = 网关主动推送（配置变化时）；带 requestId 的只认自己那次响应。 */
+export function matchesRendezvousRequest(
+  requestId: unknown,
+  pendingRequestId: string | null,
+): boolean {
+  if (requestId === undefined) return true;
+  return typeof requestId === 'string' && requestId === pendingRequestId;
+}
 
 /** ASCII/UTF-8 编码；输入只会有协议里定义的 ASCII 字符串。 */
 function utf8Bytes(input: string): Uint8Array {
@@ -125,9 +134,11 @@ export function pickGatewayUrl(endpoints: string[]): string | undefined {
 
 /**
  * 是否采纳网关下发的配置：
- * - 本地已有地址簿时，url 变化一律 conflict（可能是被冒充的网关在塞伪造入口）；
- * - url 相同、key 不同 = 网关侧 key 轮换/记录丢失，安全（Worker 仍是原来那台）；
- * - gatewayId 与本地记录不一致视为另一个网关，整帧丢弃。
+ * - gatewayId 不一致视为另一个网关，整帧丢弃；
+ * - 同一 gatewayId 下 Worker 或 key 变了 = 网关侧迁移/重部署，采纳并清空 seenRev
+ *   （新 Worker/key 是新的 rev 作用域）；
+ * - 这条配置来自已认证的连接，冒充者拿不到设备 token；不能用 URL 不同来拒绝，
+ *   否则手动→托管、停用再启用、部署失败重试都会把用户逼回重新扫码。
  */
 export function decideAdoption(
   local: RendezvousConfig | undefined,
@@ -137,9 +148,33 @@ export function decideAdoption(
   if (recordGatewayId && incoming.gatewayId !== recordGatewayId) return 'conflict';
   if (!local) return 'adopt';
   if (local.gatewayId !== incoming.gatewayId) return 'conflict';
-  if (local.url !== incoming.url) return 'conflict';
+  if (local.url !== incoming.url) return 'migrate';
   if (local.key !== incoming.key) return 'rotate-key';
   return 'same';
+}
+
+/**
+ * 把已认证连接下发的配置写回本地记录。返回 null = 等待期间记录已换成别的网关，
+ * 不能覆盖。migrate / rotate-key / adopt 都是新的 rev 作用域，必须清空 seenRev。
+ */
+export function applyAdoption(input: {
+  decision: AdoptionDecision;
+  local: RendezvousConfig | undefined;
+  incoming: RendezvousConfig;
+  gatewayId?: string;
+}): RendezvousConfig | null {
+  const { decision, local, incoming } = input;
+  if (input.gatewayId && input.gatewayId !== incoming.gatewayId) return null;
+  if (local && local.gatewayId !== incoming.gatewayId) return null;
+  return {
+    url: incoming.url,
+    key: incoming.key,
+    gatewayId: incoming.gatewayId,
+    seenRev:
+      decision === 'rotate-key' || decision === 'migrate' || decision === 'adopt'
+        ? undefined
+        : local?.seenRev,
+  };
 }
 
 /**

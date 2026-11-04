@@ -27,7 +27,9 @@ import {
 } from './src/protocol/pending';
 import type { HelloFrame, ServerFrame, SessionItem, WorkspacesFrame } from './src/protocol/types';
 import {
+  applyAdoption,
   decideAdoption,
+  matchesRendezvousRequest,
   parseRendezvousConfigFrame,
   pickGatewayUrl,
 } from './src/protocol/rendezvous';
@@ -391,44 +393,44 @@ function AppBody() {
   }, [sessions]);
 
   /**
-   * 地址簿配置：adopt / rotate-key 写回，conflict 只留一条内存提示。
+   * 地址簿配置：adopt / migrate / rotate-key 写回，conflict 只留一条内存提示。
    * 每次 control 连上都问一次（一帧很便宜），既能补回丢失的本地配置，
-   * 也能发现网关侧的 key 轮换或 Worker 迁移。
+   * 也能发现网关侧的 key 轮换或 Worker 迁移；网关主动推送（无 requestId）
+   * 同样采纳，重部署后不必等下一次重连。
    */
   const adoptRendezvousConfig = useCallback((frame: ServerFrame) => {
     const requestId = (frame as { requestId?: unknown }).requestId;
-    if (typeof requestId !== 'string' || requestId !== rendezvousRequestRef.current) return;
-    rendezvousRequestRef.current = null;
+    // 网关在配置变化时也会主动推送（不带 requestId）；带 requestId 的仍只认
+    // 自己刚发出的那一次，迟到响应不能覆盖。
+    if (!matchesRendezvousRequest(requestId, rendezvousRequestRef.current)) return;
+    if (requestId !== undefined) rendezvousRequestRef.current = null;
     const config = parseRendezvousConfigFrame(frame);
     const current = savedRef.current;
     if (!config || !current) return;
     const decision = decideAdoption(current.rendezvous, config, current.gatewayId);
     if (decision === 'same') return;
+    // 提示挂在本地记录的身份上，否则菜单按 gatewayId 查不到这条。
+    const conflictKey = current.gatewayId ?? current.rendezvous?.gatewayId ?? config.gatewayId;
     if (decision === 'conflict') {
       // 不弹窗、不断连：只在该网关的菜单里留一行灰字。
       console.warn('[rendezvous] config conflict', config.gatewayId);
       setRendezvousConflicts((previous) => {
-        if (previous.has(config.gatewayId)) return previous;
+        if (previous.has(conflictKey)) return previous;
         const next = new Set(previous);
-        next.add(config.gatewayId);
+        next.add(conflictKey);
         return next;
       });
       return;
     }
     void patchGatewayIfExists(current.id, (latest) => {
       // 等待期间可能切网关或重新配对：只更新仍是同一网关的那条记录。
-      if (latest.gatewayId && latest.gatewayId !== config.gatewayId) return null;
-      const local = latest.rendezvous;
-      if (local && local.url !== config.url) return null;
-      return {
-        rendezvous: {
-          url: config.url,
-          key: config.key,
-          gatewayId: config.gatewayId,
-          // 换 key = 新的 rev 作用域，旧 seenRev 必须清空。
-          seenRev: decision === 'rotate-key' ? undefined : local?.seenRev,
-        },
-      };
+      const rendezvous = applyAdoption({
+        decision,
+        local: latest.rendezvous,
+        incoming: config,
+        gatewayId: latest.gatewayId,
+      });
+      return rendezvous ? { rendezvous } : null;
     })
       .then((entry) => {
         if (!entry) return;
@@ -438,8 +440,9 @@ function AppBody() {
         }
         setGateways((list) => list.map((item) => (item.id === entry.id ? entry : item)));
         setRendezvousConflicts((previous) => {
-          if (!previous.has(config.gatewayId)) return previous;
+          if (!previous.has(conflictKey) && !previous.has(config.gatewayId)) return previous;
           const next = new Set(previous);
+          next.delete(conflictKey);
           next.delete(config.gatewayId);
           return next;
         });
@@ -1368,7 +1371,7 @@ function AppBody() {
       const hint = [
         current ? (connected ? '当前 · 已连接' : '当前') : null,
         hostOf(item.url),
-        conflicted ? '地址簿已变更，重新扫码后可恢复自动找回' : null,
+        conflicted ? '网关身份已变化，重新扫码后可恢复自动找回' : null,
       ]
         .filter(Boolean)
         .join(' · ');

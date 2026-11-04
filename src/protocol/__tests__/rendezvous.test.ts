@@ -2,11 +2,13 @@ import { gcm } from '@noble/ciphers/aes.js';
 
 import { decodeBase64Url, isPairingUrlAllowed } from '../pairing';
 import {
+  applyAdoption,
   decodeAddressBook,
   decideAdoption,
   deriveLocator,
   encodeBase64Url,
   isRendezvousKey,
+  matchesRendezvousRequest,
   normalizeWorkerUrl,
   parseRendezvousConfigFrame,
   pickGatewayUrl,
@@ -175,17 +177,84 @@ describe('decideAdoption', () => {
     expect(decideAdoption(local, incoming())).toBe('same');
   });
 
-  it('同 Worker 换 key -> rotate-key；换 Worker -> conflict', () => {
+  it('同 Worker 换 key -> rotate-key；同 gatewayId 换 Worker -> migrate', () => {
     expect(decideAdoption(local, incoming({ key: 'B'.repeat(43) }))).toBe('rotate-key');
     expect(decideAdoption(local, incoming({ url: 'https://other.example.workers.dev' }))).toBe(
-      'conflict',
+      'migrate',
     );
+    expect(
+      decideAdoption(
+        local,
+        incoming({ url: 'https://other.example.workers.dev', key: 'B'.repeat(43) }),
+      ),
+    ).toBe('migrate');
   });
 
   it('gatewayId 与本地记录不符 -> conflict（整帧丢弃）', () => {
     expect(decideAdoption(undefined, incoming(), 'another-gateway')).toBe('conflict');
     expect(decideAdoption(local, incoming({ gatewayId: 'another-gateway' }))).toBe('conflict');
+    expect(
+      decideAdoption(
+        local,
+        incoming({ gatewayId: 'another-gateway', url: 'https://other.example.workers.dev' }),
+      ),
+    ).toBe('conflict');
     expect(decideAdoption(undefined, incoming(), VECTOR_GATEWAY)).toBe('adopt');
+  });
+});
+
+describe('matchesRendezvousRequest', () => {
+  it('无 requestId 的主动推送接受；带 requestId 的只认匹配项', () => {
+    expect(matchesRendezvousRequest(undefined, 'r1')).toBe(true);
+    expect(matchesRendezvousRequest(undefined, null)).toBe(true);
+    expect(matchesRendezvousRequest('r1', 'r1')).toBe(true);
+    expect(matchesRendezvousRequest('r2', 'r1')).toBe(false);
+    expect(matchesRendezvousRequest('r1', null)).toBe(false);
+    expect(matchesRendezvousRequest(42, 'r1')).toBe(false);
+  });
+});
+
+describe('applyAdoption', () => {
+  const local = config({ seenRev: 9 });
+  const incoming = config({
+    url: 'https://new-worker.example.workers.dev',
+    key: 'B'.repeat(43),
+    seenRev: undefined,
+  });
+
+  it('migrate 写回新 url/key 并清空 seenRev', () => {
+    expect(applyAdoption({ decision: 'migrate', local, incoming })).toEqual({
+      url: 'https://new-worker.example.workers.dev',
+      key: 'B'.repeat(43),
+      gatewayId: VECTOR_GATEWAY,
+      seenRev: undefined,
+    });
+  });
+
+  it('等待期间网关身份变了 -> 不写回', () => {
+    expect(
+      applyAdoption({ decision: 'migrate', local, incoming, gatewayId: 'another-gateway' }),
+    ).toBeNull();
+    expect(
+      applyAdoption({
+        decision: 'migrate',
+        local: config({ gatewayId: 'another-gateway' }),
+        incoming,
+      }),
+    ).toBeNull();
+  });
+
+  it('same 保留 seenRev；rotate-key 清空', () => {
+    expect(
+      applyAdoption({ decision: 'same', local, incoming: config({ seenRev: undefined }) })?.seenRev,
+    ).toBe(9);
+    expect(
+      applyAdoption({
+        decision: 'rotate-key',
+        local,
+        incoming: config({ key: 'B'.repeat(43) }),
+      })?.seenRev,
+    ).toBeUndefined();
   });
 });
 
