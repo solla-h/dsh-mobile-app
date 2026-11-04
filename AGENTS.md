@@ -80,6 +80,13 @@ src/ui/                  屏幕与组件
 - `agent-preset` 一旦会话跑过一轮就 `locked`，锁上不会再解开。
 - `assistant-stream` 的 start/end 是**每步**（每次模型尝试）一对，**不是每回合**；
   回合边界只看 `turn/end` 事件（真机探针实测：3 步的回合 = 3 对 start/end + 1 个 turn/end）。
+- `rendezvous-config` 有两种形态：请求/响应带 `requestId`，配置变化时的主动推送**不带**。
+  App 两种都要采纳（无 `requestId` 直接处理，带 `requestId` 仍严格关联），否则换 Worker/
+  重新部署后要等下一次重连才迁移，甚至可能因旧 Worker 已删除而卡死。
+- 同一 `gatewayId` 下 URL/key 变化是正常迁移（手动↔托管、停用再启用、重新部署），
+  App 必须更新配置并清空 `seenRev`；只有 `gatewayId` 与配对记录不一致才拒绝。
+- 托管 Worker 名由网关状态里的 `deploySalt` + `gatewayId` 派生（16 hex），停用保留时
+  状态 `active:false` 但文件仍在；`configured` 只看 `active`，不要用「状态文件存在」判断。
 
 ## 宿主与真网关
 
