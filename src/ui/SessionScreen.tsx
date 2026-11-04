@@ -1825,6 +1825,14 @@ export function SessionScreen({
 
   const canSend = !uploadingFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
 
+  /**
+   * APPROVAL-2 停止键合一：运行中且输入框全空（无文字/图片/待发文件，也不在
+   * 编辑排队消息）时，右下角主圆钮直接渲染为停止键；一开始打字就切回 ↑
+   * （排队/插话）。顶栏的「停止」胶囊与转圈指示器由它取代。
+   */
+  const showStop =
+    running && !editingQueue && !draft.trim() && picked.length === 0 && pickedFiles.length === 0;
+
   const sendMessage = useCallback((raw: string) => {
     // 编辑排队消息：走 queue-update 的 edit，不要新发一条。
     if (editingQueue) {
@@ -2319,20 +2327,8 @@ export function SessionScreen({
             <Text style={styles.outlineText}>轮次</Text>
           </Pressable>
         ) : null}
-        {running ? (
-          <View style={styles.headerActions}>
-            <ActivityIndicator size="small" color={t.semantic.diffAddText} />
-            <Pressable
-              style={[styles.stopButton, cancelling ? styles.stopDisabled : null]}
-              onPress={cancelTurn}
-              disabled={cancelling}
-            >
-              <Text style={styles.stopText}>{cancelling ? '停止中' : '停止'}</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.placeholder} />
-        )}
+        {/* 停止入口已合并进右下角主圆钮（APPROVAL-2）；这里只留占位保持标题行平衡。 */}
+        <View style={styles.placeholder} />
       </View>
 
       {/* 对话 / 轨迹切换：对话流里正文优先（思考/工具折叠），轨迹页摊开完整时间线 */}
@@ -2931,11 +2927,17 @@ export function SessionScreen({
               </View>
             </View>
             <Pressable
-              style={[styles.send, !canSend && styles.sendDisabled]}
-              disabled={!canSend}
-              onPress={send}
+              style={[
+                styles.send,
+                showStop ? styles.sendStop : null,
+                (showStop ? cancelling : !canSend) && styles.sendDisabled,
+              ]}
+              disabled={showStop ? cancelling : !canSend}
+              onPress={showStop ? cancelTurn : send}
+              accessibilityRole="button"
+              accessibilityLabel={showStop ? '停止本回合' : '发送'}
             >
-              <Text style={styles.sendText}>↑</Text>
+              {showStop ? <View style={styles.stopGlyph} /> : <Text style={styles.sendText}>↑</Text>}
             </Pressable>
           </View>
         </View>
@@ -3236,15 +3238,6 @@ function makeStyles(t: Palette) {
   titleWrap: { flex: 1 },
   title: { flex: 1, color: t.text.primary, fontSize: 16, fontWeight: '600' },
   placeholder: { width: 20 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  stopButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: t.semantic.dangerBg,
-  },
-  stopDisabled: { opacity: 0.5 },
-  stopText: { color: t.semantic.dangerText, fontSize: 12, fontWeight: '600' },
   error: { color: t.semantic.dangerText, fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
   toast: {
     position: 'absolute',
@@ -3602,6 +3595,9 @@ function makeStyles(t: Palette) {
   },
   sendDisabled: { opacity: 0.3 },
   sendText: { color: t.action.primaryText, fontSize: 19, lineHeight: 22, fontWeight: '700' },
+  /** 运行中且输入空：主圆钮变停止（暗红底 + 纸白方块，APPROVAL-2 键合一） */
+  sendStop: { backgroundColor: t.semantic.dangerText },
+  stopGlyph: { width: 11, height: 11, borderRadius: 2.5, backgroundColor: t.action.primaryText },
   localImages: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
   localImage: { width: 120, height: 90, borderRadius: 8, backgroundColor: t.bg.surface },
   attach: {
