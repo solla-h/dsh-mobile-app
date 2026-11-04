@@ -46,3 +46,7 @@ credentials.json
 # 临时脚本
 .tmp-*
 .tmp/
+
+# 本地临时上下文（EAS 打包不应包含）
+.scratch/
+.llmdoc-tmp/
