@@ -129,8 +129,8 @@ approval policy 本身是 `ask`，不是策略问题。详见 `docs/HANDOFF.md` 
 `dsh-host` 那台跨国家庭网络容易抖，本机也能起一个**功能等价**的网关，而且**不用探针插件就能出真审批**。
 
 ```bash
-npm i -g @deepseek-ai/dsh@0.2.1-rc.3          # 与宿主同版本，已装
-dsh plugin --profile web add dsh-plugin-mobile-gateway
+npm i -g @deepseek-ai/dsh@0.2.1-rc.5          # 与宿主同版本，已装
+dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3
 # profile: ~/.dsh/profiles/web（package.json + cordis.patch.yml）
 cd ~/dsh-lab && MAGPIE_GATEWAY_KEY=magpie dsh web --no-open
 ```
@@ -170,17 +170,17 @@ sandbox_permissions …]`），下一步就带 `sandbox_permissions: danger-full
 `.scratch/localgw-approval-probe.mjs` 是不经手机的探针：`node … "<提示词>" [allowed-once|rejected]`，
 **不给结论就挂起**（审批留在网关侧等手机拍板，别让脚本自己超时——连接一断网关按「撤回」处理）。
 
-**要把语音输入也弄成和宿主一样**，得补两处（都已在 profile 里配好）：
+**要把语音输入也弄成和宿主一样**，DSH rc.5 用匹配的官方 bundle，不需要版本豁免：
 
-1. 装 `@deepseek-ai/dsh-experimental-voice-input-bundle@0.1.7-alpha.1`，**并且**在
-   `~/.dsh/profiles/web/compatibility.json` 里给它的 4 个包开对 `0.2.1-rc.3` 的版本豁免——
-   它们声明的是 `@deepseek-ai/dsh-* ^0.1.7-alpha.1`，不满足 0.2.1-rc.3，不开豁免会被
-   「incompatible with dsh」整排禁用（表现就是 `speech-input-v1` 能力消失、App 显示「语音未启用」）。
-   豁免文件照抄 dsh-host 的 `/home/dsh/.dsh/profiles/web/compatibility.json` 即可。
-2. 识别模型默认从 **`huggingface.co`** 下，国内直连超时（`UND_ERR_CONNECT_TIMEOUT`）。
-   在 `cordis.patch.yml` 里把 `speech-to-text-sensevoice` 的 `modelOrigin` 换成 `https://hf-mirror.com`；
-   **补丁整块替换 config，`dataRoot` 必须重申**。共 3 个文件约 241 MB
-   （`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`），实测镜像 ~1.5 MB/s。
+```bash
+dsh plugin --profile web add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.5
+```
+
+识别模型默认从 **`huggingface.co`** 下，国内直连超时（`UND_ERR_CONNECT_TIMEOUT`）。
+在 `cordis.patch.yml` 里把 `speech-to-text-sensevoice` 的 `modelOrigin` 换成 `https://hf-mirror.com`；
+**补丁整块替换 config，`dataRoot` 必须重申**。共 3 个文件约 241 MB
+（`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`），实测镜像 ~1.5 MB/s。
+rc.3 时代的 0.1.7-alpha.1 + 4 包豁免已过时，只作为历史记录留在 `docs/RISK-PATCHES.md`。
 
 **注意 App 的「语音未启用」文案不等于网关没启用语音**：它是 `hasReadyProvider()` 的结果，
 即 `available && 有 ready/standby 的 provider`。模型没下载时 phase 是 `unprepared`，
