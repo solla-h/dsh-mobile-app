@@ -839,13 +839,15 @@ async function cmdInstall(yes) {
     if (wantRestart && canRestart) {
       await restartWeb(processInfo);
     } else {
-      console.log('DSH Web is stopped. Start it with your normal command, then run:');
+      console.log(
+        'install complete. DSH Web is stopped; start it with your normal command, then run:',
+      );
       console.log(
         '  node scripts/setup-gateway.mjs enable' +
           (flag('tunnel') ? ` --tunnel ${arg('tunnel', null) ?? 'quick'}` : '') +
           (flag('pair') ? ' --pair' : ''),
       );
-      return 1;
+      return 0;
     }
   } else if (!listening && (flag('tunnel') || flag('pair'))) {
     fail('DSH Web is not running; start it first, then rerun with --tunnel/--pair.');
