@@ -29,6 +29,14 @@ export interface HelloFrame {
   clients?: number;
   gatewayId?: string;
   gatewayName?: string;
+  /**
+   * 网关 hello 自报的 DSH 版本。
+   * 注意：0.12.0-rdv.1 里是插件编译期常量（0.2.1-rc.2），不是宿主实际版本；
+   * 只作展示/未来兼容，不要用它做版本门禁。
+   */
+  dshVersion?: string;
+  /** history 帧格式版本（网关 hello 自报；旧网关可能没有）。 */
+  historyFormatVersion?: number;
 }
 
 export interface PairedFrame {

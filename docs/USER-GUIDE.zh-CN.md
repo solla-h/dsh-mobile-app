@@ -25,15 +25,14 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 
 ### 2.1 安装并启用网关插件
 
-在 DSH 宿主上：
+在 DSH 宿主上，安装与当前 App 版本一起验证过的 release：
 
 ```bash
-# 上游插件
-dsh plugin --profile web add dsh-plugin-mobile-gateway@latest
-
-# 或带地址簿功能的 fork release
 dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
 ```
+
+不要用 `@latest`；上游是另一条 release 线，不在本 App 版本的验证组合内。详见
+[COMPATIBILITY.md](COMPATIBILITY.md)。
 
 重启 DSH Web：
 

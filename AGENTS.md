@@ -61,6 +61,9 @@ src/ui/                  屏幕与组件
 服务端是第三方插件 `dsh-plugin-mobile-gateway`（protocol `dsh-mobile-v1`）。
 不确定帧名/字段时，读源码里的 `PROTOCOL.md` 和 `lib/index.mjs`，不要靠猜。
 
+**版本绑定**：每个 App 发布版本与 gateway/DSH 的已验证组合写在 [`compatibility.json`](compatibility.json)
+和 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)。安装/发版前先看；禁止把 `@latest` 当默认。
+
 **源码位置**：`C:\work\dsh-plugin-mobile-gateway`（没 clone 就用
 `git clone https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway.git` 拉一份）。
 

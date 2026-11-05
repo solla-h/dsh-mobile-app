@@ -6,6 +6,18 @@ asks it to “install the mobile gateway from this repository”.
 The agent can install the plugin, restart DSH Web, enable the gateway, and prepare a pairing payload. It cannot
 scan the phone's camera or complete a Cloudflare browser login. Those are human steps.
 
+## Version lock — read this first
+
+This app release is bound to the exact gateway plugin and DSH versions in
+[`compatibility.json`](../compatibility.json) (human explanation: [COMPATIBILITY.md](COMPATIBILITY.md)).
+Use only the `recommended` versions. Do not use `@latest`, a local git checkout, a `link:` dependency, or a
+profile backup — even if one exists on the host. If the host's DSH or plugin version differs, stop and ask;
+do not auto-upgrade either side.
+
+The gateway's `hello` advertises the protocol number and a build-time DSH version, but not the plugin version;
+the app only enforces the protocol. The preflight checker below verifies the installed plugin and the actual
+DSH (`dsh --version`).
+
 ## What the agent can and cannot do
 
 The agent can:
@@ -31,14 +43,16 @@ agent, stop and ask the user.
 Give the agent the repository path (or a URL to this file), then use a prompt like:
 
 ```text
-请先阅读仓库里的 docs/AGENT-SETUP.md，然后按其中的步骤在这台机器上安装并启用
+请先阅读仓库里的 docs/AGENT-SETUP.md 和 compatibility.json，然后按手册在这台机器上安装并启用
 dsh-plugin-mobile-gateway。
 
-先做 Step 0 的检查。任何需要 sudo、重启 dsh web、开放端口、Cloudflare 登录/隧道、
-批准原生构建的步骤，都先停下来告诉我你要执行什么。
+只做网关安装/启用/配对，不要构建或测试 App，不要克隆或使用本机源码 checkout，不要读
+credentials.json、keys/、.scratch/、profile 备份或 DSH 日志。使用 compatibility.json 里
+recommended 的固定版本；不要用 @latest。
 
-不要打印或保存配对 token；不要把 3080/3081 暴露到公网。完成后告诉我：
-手机应该扫码，还是复制哪段 pairing payload。
+先做 Step 0 的检查。安装或重启 DSH Web 会中断当前会话时，先停下来告诉我；需要 sudo、开放端口、
+Cloudflare 登录/隧道也先停下来。不要打印或保存配对 token；不要把 3080/3081 暴露到公网。
+完成后告诉我：手机应该扫码，还是复制哪段 pairing payload。
 ```
 
 ## Step 0 — inspect the host
@@ -51,12 +65,39 @@ dsh plugin --profile web list
 curl -s http://127.0.0.1:3080/mgw/status
 ```
 
+Also read the pinned matrix. If the plugin is already installed, run the checker now; otherwise run it after
+Step 1. From a clone of the app repository:
+
+```bash
+node scripts/check-compat.mjs --profile web
+```
+
+If you do not have a clone, download both files to a temp directory and pass the manifest explicitly:
+
+```bash
+tmp="$(mktemp -d)"
+curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/compatibility.json \
+  -o "$tmp/compatibility.json"
+curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scripts/check-compat.mjs \
+  -o "$tmp/check-compat.mjs"
+node "$tmp/check-compat.mjs" --manifest "$tmp/compatibility.json" --profile web
+```
+
+On Windows PowerShell, use `$env:TEMP` and `Invoke-WebRequest` instead of `mktemp`/`curl` if needed. A
+`plugin not installed` result before Step 1 is expected. After Step 1 the checker must pass; any other failure
+means stop and ask. Do not upgrade DSH or replace the plugin with `@latest`.
+
 Interpretation:
 
 - `dsh` missing: DSH is not installed for this shell. Stop and ask the user for the correct host/shell.
 - `dsh plugin ... list` does not show the plugin: install it in Step 1.
 - `/mgw/status` returns JSON: the gateway is installed and loaded; skip the installation, go to Step 2.
 - `/mgw/status` returns 404: the plugin is not loaded; install and restart.
+
+**Sandbox note:** when this agent runs inside DSH's default `workspace-write` sandbox, `dsh plugin` may fail
+with `EPERM` on `package.json.lock`. That is a permission failure, not “plugin missing”. Do not request
+`danger-full-access` just to run a read-only check; read `~/.dsh/profiles/web/package.json` instead, or stop
+and ask the user. For the install itself, see Step 1.
 
 Check for an existing DSH Web process before starting another one:
 
@@ -75,17 +116,21 @@ If `3080` is already in use, use that instance. Do not start a second `dsh web`.
 
 ## Step 1 — install the plugin and restart Web
 
-Use the upstream plugin for the core gateway:
-
-```bash
-dsh plugin --profile web add dsh-plugin-mobile-gateway@latest
-```
-
-Use the fork only when the user wants the optional address book:
+This app release is verified with the fork tag (address book included). Use exactly:
 
 ```bash
 dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
 ```
+
+Do **not** use the upstream `@latest`, a local path, or a `link:` dependency. If the user does not want the
+fork, stop and explain that the upstream core is not part of this release's verified combination; it may work,
+but it needs a separate compatibility entry.
+
+Before you ask for approval or run the install, check whether you are running inside the target DSH Web
+(you usually are). Installing the plugin reloads DSH Web and can terminate this agent session. Tell the user
+this explicitly, then let the user run the pinned command in a normal shell with DSH Web stopped, or let the
+user install it from the DSH Web plugin panel. Do not “just try it” and dispose the session; do not request
+`danger-full-access` merely to work around the sandbox.
 
 The plugin must be loaded by DSH Web. Restart it using the mechanism already in place:
 
@@ -234,6 +279,13 @@ Do not print the write secret or any pairing token.
 
 - Never expose `3080`, `3081`, or `/mgw` to the public internet.
 - Never print pairing codes, device tokens, write secrets, or private keys in chat or logs.
+- Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They contain unrelated
+  secrets and are not part of gateway setup.
+- Never install from a local path, a `link:` dependency, a profile backup, or `@latest`. Use the pinned
+  `compatibility.json` source.
+- If the DSH or plugin version does not match `compatibility.json`, stop and ask; do not auto-upgrade.
+- Do not build or test the mobile app. The user already has an APK; the task is the gateway, not the app
+  development environment.
 - Never change firewall rules, system services, or SSH configuration without explicit approval.
 - Never disable device authentication to “make pairing easier”.
 - Do not uninstall or disable other plugins while setting up the gateway.
