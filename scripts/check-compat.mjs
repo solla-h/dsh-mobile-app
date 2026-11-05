@@ -69,9 +69,11 @@ function readPluginSpec(profile) {
 
 function readDshVersion() {
   try {
-    const output = execFileSync('dsh', ['--version'], {
+    const command = process.platform === 'win32' ? 'cmd.exe' : 'dsh';
+    const args =
+      process.platform === 'win32' ? ['/c', 'dsh --version'] : ['--version'];
+    const output = execFileSync(command, args, {
       encoding: 'utf8',
-      shell: true,
       timeout: 15000,
     });
     return versionOf(output) ?? output.trim() ?? null;
