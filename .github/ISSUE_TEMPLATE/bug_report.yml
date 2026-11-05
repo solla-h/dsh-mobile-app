@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem in the app
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not paste pairing payloads, device tokens, gateway write secrets, private
+        keys, or screenshots with real hostnames/account IDs.** If this is a security issue, use the Security
+        tab instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: The user-visible problem, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from a cold start or the exact screen; include the tap/gesture path.
+      placeholder: |
+        1. Open the app...
+        2. Tap...
+        3. See...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      placeholder: 0.1.0 / build hash if available
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Platform and OS
+      placeholder: Android 16, real device (model optional)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: DSH and gateway versions
+      placeholder: DSH 0.2.1-rc.5, gateway 0.12.0-rdv.3
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or frames (redacted)
+      description: Remove tokens, hostnames, IPs, gateway IDs, and device IDs before pasting.
+      render: shell

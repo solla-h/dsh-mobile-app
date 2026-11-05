@@ -50,3 +50,6 @@ credentials.json
 # 本地临时上下文（EAS 打包不应包含）
 .scratch/
 .llmdoc-tmp/
+
+# 本地 agent 配置
+.claude/

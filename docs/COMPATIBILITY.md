@@ -10,15 +10,15 @@ The machine-readable copy is [`compatibility.json`](../compatibility.json). Upda
 
 | App | Build | Protocol | Gateway plugin | DSH | Platform | Verified |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.1.0 | `224d30c6` | `dsh-mobile-v1` / 3 | `0.12.0-rdv.1` (fork) | `0.2.1-rc.5` | Android | 2026-11-05 |
+| 0.1.0 | `224d30c6` | `dsh-mobile-v1` / 3 | `0.12.0-rdv.3` (fork) | `0.2.1-rc.5` | Android | 2026-11-05 |
 
 The fork release includes `rendezvous-v1` (the optional encrypted address book). The upstream plugin at the
 time of writing is a different release line; it is not part of this verified combination.
 
 **Recommended for new installs:** `0.12.0-rdv.3`. It adds endpoint-health auto-retry and clearer connection
 notices; the protocol is unchanged. `compatibility.json` pins this version and the setup script installs it.
-The table above records the last full real-device regression (`0.12.0-rdv.1`); treat rdv.3 as recommended but
-not yet through that same full regression.
+The table above records the real-device regression on rdv.3: pairing, session list, text reply, and
+hold-to-talk voice.
 
 Not covered by the verified entry:
 

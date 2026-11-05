@@ -1,11 +1,15 @@
 # DSH Mobile
 
+[![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 一个第三方、开源的 **DeepSeek Harness（DSH）** 手机客户端。它通过
 [`dsh-plugin-mobile-gateway`](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) 插件，以
 `dsh-mobile-v1` WebSocket 协议连接 DSH 宿主。
 
-> **状态：实验性 / 未正式发布。** 目前没有上架应用商店，协议和界面都还在变化。请搭配兼容的网关版本使用，
-> 并预期会有破坏性变更。本项目与 DeepSeek、Expo 官方无关。
+> **状态：公开 alpha（`v0.1.0-alpha.1`）。** Android 已在真机上通过 DSH `0.2.1-rc.5` + 网关
+> `0.12.0-rdv.3` 验证（配对、文字回复、按住说话）；iOS 尚未验证，App 也未上架应用商店。协议和界面
+> 仍可能变化。本项目与 DeepSeek、Expo 官方无关。
 
 > [!IMPORTANT]
 > **给 DSH Agent / AI Agent：** 如果用户把这个仓库交给你，要求安装或配置手机网关，
@@ -66,6 +70,16 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 - 可选地址簿：网关需要支持 `rendezvous-v1`，并需要一个 Cloudflare 账号来托管 Worker。
   锁定的 fork release 已包含地址簿；上游 release 不在本版本的验证组合内。
 - 扫码配对需要相机权限；语音输入需要麦克风权限。
+
+## 已验证范围
+
+| 平台 | 状态 |
+| --- | --- |
+| Android 16 真机 | 已验证：配对、会话列表、文字回复、按住说话 |
+| iOS | 尚未验证 |
+| Expo Go | 仅作开发壳；含原生模块的功能可能需要 development build |
+
+版本组合以兼容表为准；“未验证”表示“停下来问”，不是“先试试看”。
 
 ## 给 DSH Agent 的说明
 
@@ -269,4 +283,5 @@ App **刻意不使用 Expo Router**：路由会在一套网关/会话状态机�
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+源代码使用 MIT，见 [LICENSE](LICENSE)。Expo 模板声明与宠物素材的非商业许可写在
+[NOTICE](NOTICE)。`assets/pet/` 下的动画素材为 CC BY-NC-SA 4.0，不得用于商业用途。

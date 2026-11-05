@@ -1,12 +1,16 @@
 # DSH Mobile
 
+[![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A third-party, open-source mobile client for **DeepSeek Harness (DSH)**. It connects to a DSH host through the
 [`dsh-plugin-mobile-gateway`](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) plugin over the
 `dsh-mobile-v1` WebSocket protocol.
 
-> **Status: experimental / not released.** The app is not on an app store yet, and the protocol and UI are still
-> moving. Pair it with a compatible gateway version and expect breaking changes. This project is not affiliated
-> with DeepSeek or Expo.
+> **Status: public alpha (`v0.1.0-alpha.1`).** Android has been tested on a real device with DSH `0.2.1-rc.5`
+> and gateway `0.12.0-rdv.3` (pairing, text reply, and hold-to-talk voice). iOS is not yet verified, and the app
+> is not on an app store. The protocol and UI may still change. This project is not affiliated with DeepSeek or
+> Expo.
 
 > [!IMPORTANT]
 > **For DSH agents / AI agents:** If a user gives you this repository and asks you to install or configure the
@@ -76,6 +80,16 @@ device keys, session/event projections, and the optional rendezvous publisher.
   Worker deployment. The fork release above includes it; upstream releases are not part of this verified
   combination.
 - Camera permission for QR pairing; microphone permission for voice input.
+
+## Tested
+
+| Platform | Status |
+| --- | --- |
+| Android 16, real device | Verified: pairing, session list, text reply, hold-to-talk voice |
+| iOS | Not yet verified |
+| Expo Go | Development shell only; native modules may require a development build |
+
+The compatibility table is the release-level record; “not verified” means “stop and ask”, not “try it and see”.
 
 ## For DSH agents
 
@@ -299,4 +313,6 @@ Issues and pull requests are welcome. Before opening a PR:
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+The source code is MIT; see [LICENSE](LICENSE). The Expo template notice and the non-commercial pet assets are
+in [NOTICE](NOTICE). The animated assets in `assets/pet/` are CC BY-NC-SA 4.0 and may not be used for commercial
+purposes.
