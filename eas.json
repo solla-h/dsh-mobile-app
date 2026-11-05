@@ -5,6 +5,12 @@
   "build": {
     "preview": {
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview-local": {
+      "distribution": "internal",
       "credentialsSource": "local",
       "android": {
         "buildType": "apk"
