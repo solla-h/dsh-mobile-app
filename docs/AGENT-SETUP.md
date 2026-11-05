@@ -4,9 +4,45 @@ This page is written for a **DSH agent** that has shell access to the machine ru
 asks it to “install the mobile gateway from this repository”.
 
 The setup surface is one script, [`scripts/setup-gateway.mjs`](../scripts/setup-gateway.mjs). The agent runs the
-read-only `check` and the safe `enable`/`pair` steps; the user runs `install` and `voice` in a normal shell with
-DSH Web stopped. This split is intentional: installing a bundle into a running Web process hot-reloads the
-plugin tree and can leave `sessionController` unavailable until the OS process is restarted.
+read-only `check` and `handoff` steps plus the safe `enable`/`pair` steps; the user runs `install` and `voice` in a
+normal shell. This split is intentional: installing a bundle into a running Web process hot-reloads the plugin
+tree and can leave `sessionController` unavailable until the OS process is restarted.
+
+## Handoff first — make the remaining steps survive the stop
+
+**Do not give the user a bare “stop DSH Web” command as the first step.** The DSH Web session is where the agent
+is running; once it stops, the chat UI disappears and the user cannot see the rest of your instructions. That
+happened in a real test: the user ran `Stop-Process`, came back, and could not find the next command.
+
+Before any stop, run:
+
+```bash
+node scripts/setup-gateway.mjs handoff --voice   # or --no-voice
+```
+
+It writes `DSH-MOBILE-NEXT-STEPS.md` and prints the absolute one-command path. Give the user that file path **and**
+the command in a copyable block. The one-command is:
+
+```bash
+node "/absolute/path/to/scripts/setup-gateway.mjs" install --yes --stop-web --restart-web \
+  --tunnel quick --pair --open
+```
+
+What it does: captures how DSH Web was started → stops the whole process tree → installs the pinned gateway →
+optionally installs voice and the model → restarts DSH Web in the background → enables the gateway → starts a
+Quick Tunnel and waits for the public endpoint → writes and opens the pairing page. The user only scans the QR.
+
+Tell the user:
+
+- run it **in a normal terminal, not inside the DSH Web session**;
+- run it from the directory where they normally start `dsh web` (on Windows the script cannot read the old
+  process's working directory; on Linux it reads `/proc` and systemd, so this is automatic);
+- after it restarts, the original DSH session is still in the session list — reopen it; do not start a new task;
+- if restart fails, the script prints the restart log path; start DSH Web normally, then run
+  `enable --tunnel quick --pair`.
+
+If the user prefers the manual path, still give them the complete `NEXT-STEPS.md` before the stop command. Never
+put the stop before the install command.
 
 ## Version lock — read this first
 
@@ -52,14 +88,16 @@ by hand.
 The agent can:
 
 - run `check` (read-only) and report its exact output;
+- run `handoff` (writes one local Markdown file + prints the command; it does not stop anything) **before** the
+  user stops DSH Web;
 - run `enable` after the user has restarted DSH Web;
 - run `pair` after the gateway is enabled. `pair` writes a local QR page and prints only its path and expiry;
   it never prints the pairing payload.
 
 The agent cannot:
 
-- run `install` or `voice` while DSH Web is hosting the agent. The script refuses while port 3080 is listening,
-  but the agent must also not try to work around the refusal;
+- run `install` or `voice` while DSH Web is hosting the agent. The script refuses while port 3080 is listening
+  unless `--stop-web` is given; the agent must not try to work around the refusal or run the one-command itself;
 - approve the phone's camera permission or scan the QR code for the user;
 - complete Cloudflare device authorization for the optional address book;
 - expose ports or change firewall rules without the user's explicit approval;
@@ -79,10 +117,13 @@ node scripts/setup-gateway.mjs check
 不要读 docs/HANDOFF.md、docs/STATUS-*、docs/BACKLOG.md、docs/RISK-PATCHES.md、docs/home-*、
 credentials.json、keys/、.scratch/、profile 备份或 DSH 日志。
 
+如果需要安装网关，先运行 handoff（--voice 或 --no-voice），把生成的 DSH-MOBILE-NEXT-STEPS.md
+和里面那条 install --stop-web --restart-web --tunnel quick --pair 命令给我；不要先把停 DSH Web
+的命令发给我。install/voice 由我在普通终端里执行。
 check 通过后，如需启用网关，运行 enable；需要配对时运行 pair --open，只把二维码页面的本地路径告诉我，
 不要把二维码内容、pairing token 或设备 ID 打印到聊天里。
-如果 check 报版本不匹配、DSH Web 正在监听 3080，或需要重启 DSH Web，停下来把 install/voice 交给
-我在普通终端里执行。不要为了绕过沙箱去申请 danger-full-access，也不要把 3080/3081 暴露到公网。
+如果 check 报版本不匹配或需要重启 DSH Web，停下来把 install/voice 交给我在普通终端里执行。
+不要为了绕过沙箱去申请 danger-full-access，也不要把 3080/3081 暴露到公网。
 ```
 
 ## Step 0 — inspect the host
@@ -120,7 +161,38 @@ with `EPERM` on `package.json.lock`. That is a permission failure, not “plugin
 
 ## Step 1 — install the gateway (user runs this)
 
-The user must stop DSH Web first. Examples:
+### Preferred: one command, then scan
+
+From the repository clone, in a normal terminal (not the DSH Web chat):
+
+```bash
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
+  --tunnel quick --pair --open
+```
+
+Add `--voice` to install the matching voice bundle and download the model without a prompt, or `--no-voice`
+to skip. If neither is given and stdin is a terminal, the script asks the usual
+`Enable voice input now? [Y/n]` question.
+
+The one-command path:
+
+1. captures the running DSH Web command (Linux: `/proc` + systemd; Windows: `Win32_Process`); if it is a
+   systemd unit, uses `sudo -n systemctl stop/start dsh-web`;
+2. stops the whole DSH Web process tree — the current agent session ends here;
+3. installs exactly the pinned GitHub tag from `compatibility.json`;
+4. re-runs the checker and fails if the installed package version is wrong;
+5. optionally installs voice and downloads/verifies the 241 MB SenseVoice model;
+6. starts DSH Web again in the background and prints the restart log path;
+7. enables the gateway;
+8. opens a Quick Tunnel, waits for the public URL, and re-checks DNS/TLS/WebSocket until ready (or prints a
+   warning and continues);
+9. writes and opens the pairing QR page.
+
+Use `--dry-run` to see the plan (including the captured DSH Web command) without stopping or installing anything.
+
+### Manual fallback
+
+Stop DSH Web first:
 
 ```bash
 # Linux systemd
@@ -136,19 +208,19 @@ Then, in a normal shell:
 node scripts/setup-gateway.mjs install --yes
 ```
 
-The script:
-
-1. refuses if port 3080 is listening — this is the guard against the hot-install `sessionController` failure;
-2. checks the DSH version against `compatibility.json`;
-3. installs exactly the pinned GitHub tag from `compatibility.json`;
-4. re-runs the checker and fails if the installed package version is wrong;
-5. asks `Enable voice input now? [Y/n]` when stdin is a terminal; `--no-voice` skips. The voice step installs
-   the matching bundle and downloads the model. If it fails, the gateway is still installed; start DSH Web and
-   retry later with DSH Web stopped.
+The manual path refuses if port 3080 is listening — this is the guard against the hot-install
+`sessionController` failure. It checks the DSH version, installs the pinned tag, re-runs the checker, and asks
+the voice question. After it finishes, start DSH Web with the normal command and run `enable`, `tunnel`, and
+`pair`.
 
 Do **not** use the Web plugin panel or `dsh plugin add` directly for this release: the panel’s catalog entry
 is not pinned to the recommended tag. Do **not** “just try it” while DSH Web is running; a page refresh or a
 soft plugin reload is not a process restart.
+
+### After the restart
+
+The original DSH session is still in the session list. Open it again; it keeps its history, drafts, and
+workspace. The chat UI disappears only while DSH Web is down.
 
 If the user wants voice input, keep DSH Web stopped and run the optional step below before starting it again.
 
@@ -212,6 +284,12 @@ Use the URLs printed by `check`/`enable`:
 - `tailscale.urls`: use `ws://100.x.x.x:3081/ws/mobile` when both the host and phone are on Tailscale.
 - `publicUrl`: a `wss://` Quick Tunnel or named Tunnel address.
 
+To start a Quick Tunnel and wait for it from the script:
+
+```bash
+node scripts/setup-gateway.mjs tunnel --wait 120
+```
+
 **Quick Tunnel DNS false negative:** `publicReady:false` with `endpointHealth.state === 'dns-error'` can mean
 the host’s local DNS is poisoned or blocked, not that the tunnel is down. The public record can exist and the
 tunnel can be live. `pair` still creates a payload in this state. If the phone also cannot resolve the
@@ -251,7 +329,8 @@ print device IDs.
 | Symptom | What to do |
 | --- | --- |
 | `sessionController is unavailable` after install | The plugin was hot-installed. Stop the **whole** DSH Web process and start it again; a page refresh or soft plugin reload is not enough. The setup script avoids this by refusing while 3080 is listening. |
-| `install` refuses “DSH Web is listening on 3080” | Intentional. Stop DSH Web, then run `install --yes` in a normal shell. Do not bypass the guard. |
+| `install` refuses “DSH Web is listening on 3080” | Intentional. Use the one-command `--stop-web --restart-web` path, or stop DSH Web manually and run `install --yes` in a normal shell. Do not bypass the guard. |
+| App turns fail with `MISSING_CREDENTIAL` after restart | The model provider key was not available to the restarted DSH Web. Save it in `~/.dsh/.credentials.yaml` under `refs:` (the store is watched and reloads without a restart), or start DSH Web with the provider environment variable set. This is a host credential issue, not a gateway or pairing issue. |
 | `check` says `plugin not installed` or installed version mismatch | Stop DSH Web; run `install --yes`. Do not use the Web plugin panel, a local checkout, or `@latest`. |
 | `check` says `DSH ... != recommended ...` | Stop and ask. Do not upgrade DSH automatically. |
 | `/mgw/status` 404 | The plugin is not loaded. Restart DSH Web and check the profile bundle list. |

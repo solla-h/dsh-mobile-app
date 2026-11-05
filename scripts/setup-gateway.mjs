@@ -4,14 +4,24 @@
  *
  * Usage:
  *   node scripts/setup-gateway.mjs check   [--profile web] [--port 3080] [--json]
- *   node scripts/setup-gateway.mjs install [--profile web] [--yes] [--no-voice]
+ *   node scripts/setup-gateway.mjs handoff [--voice|--no-voice] [--out FILE]
+ *   node scripts/setup-gateway.mjs install [--profile web] [--yes] [--voice|--no-voice]
+ *                                          [--stop-web] [--restart-web]
+ *                                          [--tunnel quick] [--pair] [--open] [--dry-run]
  *   node scripts/setup-gateway.mjs enable  [--port 3080]
+ *   node scripts/setup-gateway.mjs tunnel  [--port 3080] [--wait SECONDS]
  *   node scripts/setup-gateway.mjs pair    [--port 3080] [--url URL] [--out FILE] [--open]
  *
- * `check` is read-only and is the only command an agent should run.
- * `install` is for the user in a normal shell with DSH Web stopped: installing
- * into a running Web process hot-reloads the plugin tree and can leave
- * sessionController unavailable until a full process restart.
+ * `check` and `handoff` are read-only and safe for an agent. `handoff` writes
+ * the one-command plan to a file and prints it, so the user never loses the
+ * remaining steps when DSH Web stops.
+ *
+ * `install` is for the user in a normal shell: installing into a running Web
+ * process hot-reloads the plugin tree and can leave sessionController
+ * unavailable until a full process restart. With --stop-web --restart-web it
+ * captures the running command, stops the whole process tree, installs, and
+ * starts DSH Web again in the background. --tunnel quick and --pair finish the
+ * setup without opening the Web UI.
  *
  * The script never prints pairing tokens. `pair` writes them to a local
  * single-use QR page and prints only the file path and expiry.
@@ -36,6 +46,8 @@ const PORT = Number(arg('port', '3080'));
 const HOST = '127.0.0.1';
 const BASE = `http://${HOST}:${PORT}`;
 const PLUGIN_NAME = 'dsh-plugin-mobile-gateway';
+const DRY_RUN = flag('dry-run');
+const LOG_DIR = path.join(os.homedir(), '.dsh', 'logs');
 
 class SetupError extends Error {}
 
@@ -218,6 +230,328 @@ async function waitForStatus(predicate, timeoutMs = 5000) {
   return last;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function timestamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function runCapture(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+    error: result.error ?? null,
+  };
+}
+
+/** 找监听端口的 PID；找不到返回 null，由调用方决定是失败还是让用户手动处理。 */
+function findListenerPid(port) {
+  if (process.platform === 'win32') {
+    const result = runCapture('netstat', ['-ano', '-p', 'tcp']);
+    for (const line of result.stdout.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 5 && parts[3] === 'LISTENING' && parts[1].endsWith(`:${port}`)) {
+        return Number(parts[4]) || null;
+      }
+    }
+    return null;
+  }
+  const lsof = runCapture('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']);
+  if (lsof.status === 0 && lsof.stdout.trim()) {
+    return Number(lsof.stdout.trim().split(/\s+/)[0]) || null;
+  }
+  const ss = runCapture('ss', ['-ltnp', `sport = :${port}`]);
+  const match = /pid=(\d+)/.exec(ss.stdout);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * 捕获 DSH Web 的启动方式，供安装后重启。
+ * Linux 读 /proc 拿 argv/cwd/env（最准）；Windows 只能拿命令行，cwd 用安装器
+ * 当前目录，env 用安装器自己的环境——所以要在原来启动 dsh web 的终端里运行。
+ */
+function captureProcess(pid) {
+  const info = {
+    pid: pid ?? null,
+    commandLine: null,
+    argv: null,
+    cwd: null,
+    env: null,
+    systemdUnit: null,
+  };
+  if (!pid) return info;
+
+  if (process.platform === 'win32') {
+    const ps = runCapture('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+    ]);
+    info.commandLine = ps.stdout.trim() || null;
+    info.cwd = process.cwd();
+    info.env = { ...process.env };
+    return info;
+  }
+
+  if (process.platform === 'linux') {
+    const unit = runCapture('systemctl', ['show', '-p', 'LoadState', '--value', 'dsh-web']);
+    if (unit.status === 0 && unit.stdout.trim() === 'loaded') {
+      const main = runCapture('systemctl', ['show', '-p', 'MainPID', '--value', 'dsh-web']);
+      const mainPid = Number(main.stdout.trim());
+      if (!mainPid || mainPid === pid) info.systemdUnit = 'dsh-web';
+    }
+    try {
+      const raw = fs.readFileSync(`/proc/${pid}/cmdline`);
+      info.argv = raw.toString('utf8').split('\0').filter(Boolean);
+      info.commandLine = info.argv.join(' ');
+    } catch {
+      // /proc 可能因权限不可读；回退到 ps。
+      const ps = runCapture('ps', ['-p', String(pid), '-o', 'command=']);
+      info.commandLine = ps.stdout.trim() || null;
+    }
+    try {
+      info.cwd = fs.readlinkSync(`/proc/${pid}/cwd`);
+    } catch {
+      info.cwd = process.cwd();
+    }
+    try {
+      const raw = fs.readFileSync(`/proc/${pid}/environ`, 'utf8');
+      info.env = {};
+      for (const entry of raw.split('\0')) {
+        const index = entry.indexOf('=');
+        if (index > 0) info.env[entry.slice(0, index)] = entry.slice(index + 1);
+      }
+    } catch {
+      info.env = { ...process.env };
+    }
+    return info;
+  }
+
+  const ps = runCapture('ps', ['-p', String(pid), '-o', 'command=']);
+  info.commandLine = ps.stdout.trim() || null;
+  const lsof = runCapture('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']);
+  const cwdLine = lsof.stdout.split(/\r?\n/).find((line) => line.startsWith('n'));
+  info.cwd = cwdLine ? cwdLine.slice(1) : process.cwd();
+  info.env = { ...process.env };
+  return info;
+}
+
+async function stopWeb(info) {
+  if (info.systemdUnit) {
+    if (DRY_RUN) {
+      console.log(`  would run: sudo -n systemctl stop ${info.systemdUnit}`);
+      return;
+    }
+    const result = spawnSync('sudo', ['-n', 'systemctl', 'stop', info.systemdUnit], {
+      stdio: 'inherit',
+    });
+    if (result.error) fail(`cannot run sudo: ${result.error.message}`);
+    if (result.status !== 0) {
+      fail(
+        `cannot stop ${info.systemdUnit} without a sudo prompt. Run ` +
+          `"sudo systemctl stop ${info.systemdUnit}" manually, then rerun without --stop-web.`,
+      );
+    }
+  } else {
+    if (!info.pid) fail(`cannot find the process listening on ${PORT}; stop DSH Web manually.`);
+    if (DRY_RUN) {
+      console.log(`  would stop pid ${info.pid}${info.commandLine ? `: ${info.commandLine}` : ''}`);
+      return;
+    }
+    if (process.platform === 'win32') {
+      const result = spawnSync('taskkill', ['/PID', String(info.pid), '/T', '/F'], {
+        stdio: 'inherit',
+      });
+      if (result.status !== 0) fail(`taskkill failed for pid ${info.pid}; stop DSH Web manually.`);
+    } else {
+      try {
+        process.kill(info.pid, 'SIGTERM');
+      } catch (error) {
+        fail(`cannot stop pid ${info.pid}: ${error.message}`);
+      }
+      const termDeadline = Date.now() + 8000;
+      while (Date.now() < termDeadline && (await isListening(PORT))) await sleep(250);
+      if (await isListening(PORT)) {
+        try {
+          process.kill(info.pid, 'SIGKILL');
+        } catch {
+          // 已经退出就无所谓。
+        }
+      }
+    }
+  }
+
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline && (await isListening(PORT))) await sleep(250);
+  if (await isListening(PORT)) fail(`port ${PORT} is still listening after stopping DSH Web.`);
+}
+
+async function restartWeb(info) {
+  let logFile = null;
+  if (info.systemdUnit) {
+    if (DRY_RUN) {
+      console.log(`  would run: sudo -n systemctl start ${info.systemdUnit}`);
+      return;
+    }
+    const result = spawnSync('sudo', ['-n', 'systemctl', 'start', info.systemdUnit], {
+      stdio: 'inherit',
+    });
+    if (result.error) fail(`cannot run sudo: ${result.error.message}`);
+    if (result.status !== 0) {
+      fail(
+        `cannot start ${info.systemdUnit}. Run "sudo systemctl start ${info.systemdUnit}" ` +
+          'manually, then run "node scripts/setup-gateway.mjs enable --tunnel quick --pair".',
+      );
+    }
+  } else if (info.commandLine) {
+    logFile = path.join(LOG_DIR, `dsh-web-${timestamp()}.log`);
+    if (DRY_RUN) {
+      console.log(`  would restart: ${info.commandLine}`);
+      console.log(`  log: ${logFile}`);
+      return;
+    }
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    const fd = fs.openSync(logFile, 'a');
+    const env = { ...process.env, ...(info.env ?? {}) };
+    const child = process.platform === 'win32'
+      ? spawn('cmd.exe', ['/d', '/s', '/c', info.commandLine], {
+          cwd: info.cwd ?? process.cwd(),
+          env,
+          detached: true,
+          stdio: ['ignore', fd, fd],
+          windowsHide: true,
+        })
+      : info.argv?.length
+        ? spawn(info.argv[0], info.argv.slice(1), {
+            cwd: info.cwd ?? process.cwd(),
+            env,
+            detached: true,
+            stdio: ['ignore', fd, fd],
+          })
+        : spawn('/bin/sh', ['-c', info.commandLine], {
+            cwd: info.cwd ?? process.cwd(),
+            env,
+            detached: true,
+            stdio: ['ignore', fd, fd],
+          });
+    child.unref();
+    fs.closeSync(fd);
+    console.log(`dsh web restarted in the background; log: ${logFile}`);
+  } else {
+    fail(
+      'cannot determine how DSH Web was started. Start it with your normal command, then run ' +
+        '"node scripts/setup-gateway.mjs enable --tunnel quick --pair".',
+    );
+  }
+
+  const started = await waitForStatus(() => true, 60000);
+  if (!started?.ok) {
+    if (logFile) console.error(`check the restart log: ${logFile}`);
+    fail('DSH Web did not come back within 60s; start it manually and rerun the remaining steps.');
+  }
+  console.log(`dsh web is back on ${BASE}.`);
+}
+
+/** 只做尺寸预检，避免每次 --voice 都对 241 MB 模型做 SHA-256。 */
+function voiceAssetsReady(voice) {
+  if (!voice?.name || installedPackageVersion(voice.name) !== voice.version) return false;
+  try {
+    const assetsFile = path.join(
+      os.homedir(),
+      '.dsh',
+      'profiles',
+      PROFILE,
+      'node_modules',
+      '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice',
+      'runtime',
+      'assets.json',
+    );
+    const assets = JSON.parse(fs.readFileSync(assetsFile, 'utf8'));
+    const dataRoot = path.join(os.homedir(), '.dsh', 'speech-to-text', 'sensevoice');
+    const modelRoot = path.join(dataRoot, 'models', 'sensevoice-onnx');
+    const vadRoot = path.join(dataRoot, 'models', 'silero');
+    const present = (file, asset) => {
+      try {
+        return Boolean(asset?.bytes) && fs.statSync(file).size === asset.bytes;
+      } catch {
+        return false;
+      }
+    };
+    return (
+      present(path.join(modelRoot, assets.models?.int8?.name ?? ''), assets.models?.int8) &&
+      present(path.join(modelRoot, assets.tokens?.name ?? ''), assets.tokens) &&
+      present(path.join(vadRoot, assets.vad?.name ?? ''), assets.vad)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function cmdTunnel(mode) {
+  if (mode !== 'quick') {
+    fail('only "--tunnel quick" is supported by this script; use the Web UI for a named Tunnel.');
+  }
+  const status = await fetchStatus();
+  if (!status.ok) fail(`DSH Web is not reachable on ${BASE} (${status.error}); start it first.`);
+  if (!status.data.gatewayEnabled) {
+    const code = await cmdEnable();
+    if (code !== 0) return code;
+  }
+
+  const response = await fetch(`${BASE}/mgw/cloudflare`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: true, mode: 'quick' }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    fail(`Quick Tunnel setup failed: HTTP ${response.status} ${body}`);
+  }
+  let snapshot = await response.json();
+  const waitMs = Number(arg('wait', '120')) * 1000;
+  const onlineDeadline = Date.now() + waitMs;
+  while (Date.now() < onlineDeadline) {
+    if (snapshot.cloudflare?.state === 'online' && snapshot.cloudflare?.publicUrl) break;
+    await sleep(1000);
+    const next = await fetchStatus();
+    if (next.ok) snapshot = next.data;
+  }
+  if (!snapshot.cloudflare?.publicUrl) {
+    fail(
+      `Quick Tunnel did not come online within ${Math.round(waitMs / 1000)}s; ` +
+        'check the DSH Web log or run "node scripts/setup-gateway.mjs check".',
+    );
+  }
+  console.log(`public: ${snapshot.cloudflare.publicUrl}`);
+
+  let ready = snapshot.cloudflare.publicReady === true;
+  const readyDeadline = Date.now() + Math.min(waitMs, 120000);
+  let attempt = 0;
+  while (!ready && Date.now() < readyDeadline) {
+    attempt += 1;
+    console.log(`checking public endpoint (attempt ${attempt})...`);
+    const check = await fetch(`${BASE}/mgw/cloudflare/check`, { method: 'POST' });
+    if (check.ok) {
+      snapshot = await check.json();
+      ready = snapshot.cloudflare?.publicReady === true;
+    }
+    if (!ready) await sleep(attempt < 2 ? 2000 : 5000);
+  }
+  console.log(`public endpoint: ${ready ? 'ready' : 'not ready (the phone may still resolve it)'}`);
+  if (!ready) {
+    console.log(
+      'note: DNS may still be propagating or the host DNS is filtered; the QR page can still work ' +
+        'if the phone resolves the hostname.',
+    );
+  }
+  return 0;
+}
+
 function hasDshMismatch(result) {
   const errors = result.parsed?.errors ?? [];
   return errors.some((error) => error.startsWith('DSH '));
@@ -305,75 +639,161 @@ async function cmdInstall(yes) {
   if (!spec.startsWith(`github:solla-h/${PLUGIN_NAME}#v`) || !spec.endsWith(`#v${pinned.version}`)) {
     fail(`unexpected gateway source in compatibility.json: ${spec || '(missing)'}`);
   }
+  if (flag('voice') && flag('no-voice')) fail('--voice and --no-voice cannot be combined.');
+
+  const voice = manifest.recommended.voice;
+  const voiceFlag = flag('voice') ? true : flag('no-voice') ? false : null;
+  const wantStop = flag('stop-web');
+  const wantRestart = flag('restart-web');
 
   const before = runChecker();
-  if (before.code === 0) {
-    console.log(`setup-gateway: ${PLUGIN_NAME}@${pinned.version} is already installed; nothing to do.`);
-    console.log('next: if you just changed the profile, restart DSH Web; then run enable and pair.');
-    return 0;
-  }
   if (!before.parsed) {
     fail('compatibility checker did not return JSON; run "node scripts/check-compat.mjs --profile web"');
   }
-  if (!before.parsed.dsh) {
-    fail('cannot determine the DSH version; install DSH or run this in the shell where dsh is available.');
+  const gatewayInstalled = before.code === 0;
+  if (!gatewayInstalled) {
+    if (!before.parsed.dsh) {
+      fail('cannot determine the DSH version; install DSH or run this in the shell where dsh is available.');
+    }
+    if (hasDshMismatch(before)) {
+      console.error('setup-gateway: DSH does not match compatibility.json:');
+      for (const error of before.parsed.errors ?? []) console.error(`  - ${error}`);
+      fail('refusing to install; stop and ask the user. Do not upgrade DSH automatically.');
+    }
   }
-  if (hasDshMismatch(before)) {
-    console.error('setup-gateway: DSH does not match compatibility.json:');
-    for (const error of before.parsed.errors ?? []) console.error(`  - ${error}`);
-    fail('refusing to install; stop and ask the user. Do not upgrade DSH automatically.');
+
+  const needGateway = !gatewayInstalled;
+  const needVoice = Boolean(voice && voiceFlag === true && !voiceAssetsReady(voice));
+  const needStop = needGateway || needVoice;
+  const listening = await isListening(PORT);
+  const listenerPid = listening ? findListenerPid(PORT) : null;
+  const processInfo = listening ? captureProcess(listenerPid) : null;
+  if (processInfo && arg('cwd', null)) processInfo.cwd = path.resolve(arg('cwd', null));
+  const canRestart = Boolean(processInfo?.systemdUnit || processInfo?.commandLine);
+
+  if (wantRestart && needStop && !wantStop) {
+    fail('--restart-web needs --stop-web so the script can capture how DSH Web was started.');
   }
-  if (await isListening(PORT)) {
+  if (needStop && listening && !wantStop) {
     fail(
       `DSH Web is listening on ${PORT}. Installing now hot-reloads the plugin tree and can leave ` +
-        'sessionController unavailable. Stop DSH Web first (the agent session will end), then run ' +
-        'this command in a normal shell.',
+        'sessionController unavailable. Re-run with --stop-web --restart-web to stop and restart it ' +
+        'in one command, or stop it manually and run install without --stop-web.',
     );
   }
-  if (!yes) {
+
+  if (DRY_RUN) {
+    console.log(
+      `plan: gateway ${needGateway ? 'install' : 'already installed'}` +
+        `${needVoice ? ', voice install' : ''}` +
+        `${needStop && listening ? ', stop DSH Web' : ''}` +
+        `${needStop && wantRestart ? ', restart DSH Web' : ''}` +
+        `${flag('tunnel') ? `, tunnel ${arg('tunnel', null) ?? '(missing mode)'}` : ''}` +
+        `${flag('pair') ? ', pairing page' : ''}`,
+    );
+    if (needStop && listening) {
+      console.log(`  DSH Web: pid ${listenerPid ?? '?'}${processInfo?.systemdUnit ? ` (systemd ${processInfo.systemdUnit})` : ''}`);
+      if (processInfo?.commandLine) console.log(`  command: ${processInfo.commandLine}`);
+      console.log(`  restart: ${wantRestart ? (canRestart ? 'yes' : 'cannot capture the command') : 'no'}`);
+    } else if (needStop) {
+      console.log('  DSH Web: not running; it cannot be restarted automatically after install.');
+    }
+    return 0;
+  }
+
+  if (needStop && !yes) {
     console.log(`This will install ${spec} into profile "${PROFILE}".`);
-    console.log('Run again with --yes after you have stopped DSH Web.');
+    console.log('Run again with --yes. Add --stop-web --restart-web for the one-command path.');
     return 1;
   }
 
-  console.log(`installing ${spec} into profile "${PROFILE}"...`);
-  if (runDsh(['plugin', '--profile', PROFILE, 'add', spec]) !== 0) {
-    fail('dsh plugin add failed; nothing else was changed.');
+  if (needStop && listening) {
+    if (!listenerPid) {
+      fail(`DSH Web is listening on ${PORT} but the owning process was not found; stop it manually.`);
+    }
+    console.log(
+      `stopping DSH Web (pid ${listenerPid}` +
+        `${processInfo?.systemdUnit ? `, systemd ${processInfo.systemdUnit}` : ''})...`,
+    );
+    await stopWeb(processInfo);
+  } else if (needStop) {
+    console.log('DSH Web is not running; continuing without stopping it.');
+  } else if (wantStop) {
+    console.log('nothing to install; keeping DSH Web running.');
   }
 
-  const after = runChecker();
-  if (after.code !== 0) {
-    console.error('setup-gateway: compatibility check failed after install:');
-    for (const error of after.parsed?.errors ?? []) console.error(`  - ${error}`);
-    return 1;
+  if (needGateway) {
+    console.log(`installing ${spec} into profile "${PROFILE}"...`);
+    if (runDsh(['plugin', '--profile', PROFILE, 'add', spec]) !== 0) {
+      fail('dsh plugin add failed; nothing else was changed.');
+    }
+    const after = runChecker();
+    if (after.code !== 0) {
+      console.error('setup-gateway: compatibility check failed after install:');
+      for (const error of after.parsed?.errors ?? []) console.error(`  - ${error}`);
+      return 1;
+    }
+    console.log('compat: PASS');
+  } else {
+    console.log(`setup-gateway: ${PLUGIN_NAME}@${pinned.version} is already installed; skipping install.`);
   }
-  console.log('compat: PASS');
 
-  const voice = manifest.recommended.voice;
-  if (voice && !flag('no-voice')) {
+  let enableVoice = false;
+  if (voice && voiceFlag === true) {
+    enableVoice = needVoice;
+    if (!needVoice) console.log('voice: already installed and the model files are present.');
+  } else if (voice && voiceFlag === false) {
+    if (needGateway) {
+      console.log(
+        'voice input skipped (--no-voice); later: stop DSH Web, then run ' +
+          '"node scripts/setup-gateway.mjs voice".',
+      );
+    }
+  } else if (voice && needGateway) {
     const modelBytes = voice.model?.bytes ?? 241357257;
-    const enableVoice = await confirm(
+    enableVoice = await confirm(
       `Enable voice input now? Installs ${voice.source} and downloads ` +
         `~${Math.round(modelBytes / 1_000_000)} MB. [Y/n] `,
     );
-    if (enableVoice) {
-      try {
-        await cmdVoice(true, true);
-      } catch (error) {
-        console.error(`voice setup failed: ${error.message}`);
-        console.error('The gateway is installed; start DSH Web and retry voice later with it stopped.');
-      }
-    } else {
+    if (!enableVoice) {
       console.log(
         'voice input skipped; later: stop DSH Web, then run "node scripts/setup-gateway.mjs voice".',
       );
     }
-  } else if (voice) {
-    console.log(
-      'voice input skipped (--no-voice); later: stop DSH Web, then run "node scripts/setup-gateway.mjs voice".',
-    );
   }
-  console.log('next: start DSH Web with your normal command, then run enable and pair.');
+  if (enableVoice) {
+    try {
+      await cmdVoice(true, true);
+    } catch (error) {
+      console.error(`voice setup failed: ${error.message}`);
+      console.error('The gateway is installed; start DSH Web and retry voice later with it stopped.');
+    }
+  }
+
+  if (needStop) {
+    if (wantRestart && canRestart) {
+      await restartWeb(processInfo);
+    } else {
+      console.log('DSH Web is stopped. Start it with your normal command, then run:');
+      console.log(
+        '  node scripts/setup-gateway.mjs enable' +
+          (flag('tunnel') ? ` --tunnel ${arg('tunnel', null) ?? 'quick'}` : '') +
+          (flag('pair') ? ' --pair' : ''),
+      );
+      return 1;
+    }
+  } else if (!listening && (flag('tunnel') || flag('pair'))) {
+    fail('DSH Web is not running; start it first, then rerun with --tunnel/--pair.');
+  }
+
+  if (flag('tunnel')) {
+    const code = await cmdTunnel(arg('tunnel', null));
+    if (code !== 0) return code;
+  }
+  if (flag('pair')) {
+    const code = await cmdPair({ open: flag('open') });
+    if (code !== 0) return code;
+  }
   return 0;
 }
 
@@ -625,7 +1045,7 @@ function openFile(file) {
   }
 }
 
-async function cmdPair() {
+async function cmdPair(options = {}) {
   const status = await fetchStatus();
   if (!status.ok) {
     fail(`DSH Web is not reachable on ${BASE} (${status.error}); start it first.`);
@@ -637,7 +1057,11 @@ async function cmdPair() {
 
   const current = await fetchStatus();
   if (!current.ok) fail(`DSH Web stopped responding (${current.error}).`);
-  const publicUrl = arg('url', null) ?? current.data.publicUrl ?? current.data.cloudflare?.publicUrl;
+  const publicUrl =
+    options.publicUrl ??
+    arg('url', null) ??
+    current.data.publicUrl ??
+    current.data.cloudflare?.publicUrl;
   if (!publicUrl) {
     fail('no publicUrl is configured; start a tunnel or pass --url <ws://...|wss://...>.');
   }
@@ -653,7 +1077,9 @@ async function cmdPair() {
   }
   const data = await response.json();
   const expiresAt = new Date(data.pairing.expiresAt).toISOString();
-  const output = path.resolve(arg('out', path.join(os.tmpdir(), 'dsh-mobile-pair.html')));
+  const output = path.resolve(
+    options.output ?? arg('out', path.join(os.tmpdir(), 'dsh-mobile-pair.html')),
+  );
   fs.mkdirSync(path.dirname(output), { recursive: true });
 
   const html = `<!doctype html>
@@ -679,21 +1105,82 @@ async function cmdPair() {
     );
   }
   console.log('Open the page and scan the QR. Do not paste the code into chat, logs, or screenshots.');
-  if (flag('open')) openFile(output);
+  if (options.open ?? flag('open')) openFile(output);
+  return 0;
+}
+
+async function cmdHandoff() {
+  if (flag('voice') && flag('no-voice')) fail('--voice and --no-voice cannot be combined.');
+  const manifest = readManifest();
+  const voice = manifest.recommended.voice;
+  const voiceFlag = flag('voice') ? ' --voice' : flag('no-voice') ? ' --no-voice' : '';
+  const scriptPath = path.join(HERE, 'setup-gateway.mjs');
+  const command =
+    `node "${scriptPath}" install --yes --stop-web --restart-web ` +
+    `--tunnel quick --pair --open${voiceFlag}`;
+  const output = path.resolve(
+    arg('out', path.join(process.cwd(), 'DSH-MOBILE-NEXT-STEPS.md')),
+  );
+  const text = `# DSH Mobile setup — next steps
+
+Run this **in a normal terminal, not inside the DSH Web session**:
+
+\`\`\`bash
+${command}
+\`\`\`
+
+What it does, in order:
+
+1. captures how DSH Web was started, then stops it (the DSH session UI disappears);
+2. installs ${manifest.recommended.gateway.version} into profile "${PROFILE}";
+3. installs the optional voice bundle and models when --voice is used;
+4. starts DSH Web again in the background (log path is printed);
+5. enables the mobile gateway;
+6. opens a Quick Tunnel and waits for the public endpoint;
+7. writes and opens the pairing QR page.
+
+After the command, scan the QR with the DSH Mobile app. The original DSH session
+is still in the session list after restart; open it again instead of starting over.
+
+If restart fails, the script prints the restart log path. Start DSH Web with your
+normal command, then run:
+
+\`\`\`bash
+node scripts/setup-gateway.mjs enable --tunnel quick --pair --open
+\`\`\`
+
+If a model turn reports MISSING_CREDENTIAL, the provider key was not available
+to the restarted process. Save it in ~/.dsh/.credentials.yaml under \`refs\`
+(the credentials store is watched and reloads without a restart), or start
+DSH Web with the provider environment variable set.
+
+Do not paste the QR payload, pairing code, device token, or this page into chat,
+logs, issues, or screenshots.
+`;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, text, { mode: 0o600 });
+  console.log(`handoff: ${output}`);
+  console.log('Run this in a normal terminal (not inside the DSH Web session):');
+  console.log(`  ${command}`);
   return 0;
 }
 
 function usage() {
   console.log(`usage:
   node scripts/setup-gateway.mjs check   [--profile web] [--port 3080] [--json]
-  node scripts/setup-gateway.mjs install [--profile web] [--yes] [--no-voice]
+  node scripts/setup-gateway.mjs handoff [--voice|--no-voice] [--out FILE]
+  node scripts/setup-gateway.mjs install [--profile web] [--yes] [--voice|--no-voice]
+                                         [--stop-web] [--restart-web]
+                                         [--tunnel quick] [--pair] [--open] [--dry-run]
   node scripts/setup-gateway.mjs enable  [--port 3080]
+  node scripts/setup-gateway.mjs tunnel  [--port 3080] [--wait SECONDS]
   node scripts/setup-gateway.mjs pair    [--port 3080] [--url URL] [--out FILE] [--open]
   node scripts/setup-gateway.mjs voice   [--profile web] [--yes] [--no-download]
 
-check is read-only and safe for an agent. install and voice must be run by the
-user in a normal shell with DSH Web stopped; they refuse while the port is
-listening.`);
+check and handoff are read-only and safe for an agent. handoff writes the
+one-command plan to a file and prints it, so the remaining steps survive the
+DSH Web stop. install and voice must be run by the user in a normal shell;
+install refuses to touch a running DSH Web unless --stop-web is given.`);
 }
 
 async function main() {
@@ -703,8 +1190,10 @@ async function main() {
     return 0;
   }
   if (command === 'check') return cmdCheck(flag('json'));
+  if (command === 'handoff') return cmdHandoff();
   if (command === 'install') return cmdInstall(flag('yes'));
   if (command === 'enable') return cmdEnable();
+  if (command === 'tunnel') return cmdTunnel(arg('tunnel', 'quick'));
   if (command === 'pair') return cmdPair();
   if (command === 'voice') return cmdVoice(flag('yes'), !flag('no-download'));
   usage();

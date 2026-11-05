@@ -61,11 +61,10 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 
 - **Node.js 22.13+**（开发用；Expo SDK 58 / React Native 0.88 的要求）。
 - 已安装 DSH，并安装 `dsh-plugin-mobile-gateway`。App 使用 `dsh-mobile-v1`。
-  本版本已验证的组合是 **DSH `0.2.1-rc.5`** + fork release
-  [`v0.12.0-rdv.1`](https://github.com/solla-h/dsh-plugin-mobile-gateway/releases/tag/v0.12.0-rdv.1)；
-  安装前先看 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
+  本版本绑定 **DSH `0.2.1-rc.5`** + [`compatibility.json`](compatibility.json) 里锁定的 fork 网关版本；
+  安装前先看 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) 里最近一次真机验证的组合。
 - 可选地址簿：网关需要支持 `rendezvous-v1`，并需要一个 Cloudflare 账号来托管 Worker。
-  上面的 fork release 已包含地址簿；上游 release 不在本版本的验证组合内。
+  锁定的 fork release 已包含地址簿；上游 release 不在本版本的验证组合内。
 - 扫码配对需要相机权限；语音输入需要麦克风权限。
 
 ## 给 DSH Agent 的说明
@@ -77,9 +76,11 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 node scripts/setup-gateway.mjs check
 ```
 
-`install` 和 `voice` 交给用户在停掉 DSH Web 的普通终端里执行；脚本在 3080 被监听时会拒绝安装。
-不要直接运行 `dsh plugin add`、不要改 profile、不要用本机 checkout。`enable`/`pair` 是安全的；
-`pair` 只生成本地二维码页，不打印配对载荷。
+需要安装时，先运行 `handoff`（`--voice` 或 `--no-voice`），把生成的 `DSH-MOBILE-NEXT-STEPS.md`
+和里面那条 `install --stop-web --restart-web --tunnel quick --pair` 命令交给用户；**不要先把停 DSH Web
+的命令发出去**。`install` 和 `voice` 由用户在普通终端里执行；脚本在没有 `--stop-web` 且 3080 被监听时
+会拒绝安装。不要直接运行 `dsh plugin add`、不要改 profile、不要用本机 checkout。`handoff`/`enable`/`pair`
+是安全的；`pair` 只生成本地二维码页，不打印配对载荷。
 
 版本绑定在 [`compatibility.json`](compatibility.json)：只用里面的 `recommended` 版本，不要用 `@latest`
 或本机 checkout。任务是网关，不是构建/测试 App；真实用户已经装好 APK。
@@ -91,8 +92,26 @@ node scripts/setup-gateway.mjs check
 
 ### 1. 安装网关插件
 
-在运行 DSH 的机器上，从本仓库运行。先停掉 DSH Web——往运行中的 Web 进程里装 bundle 会热重载插件树，
-可能让 `sessionController` 一直不可用，直到整个进程重启：
+在运行 DSH 的机器上，从本仓库打开一个**普通终端**（不是在 DSH Web 的聊天里），运行这一条：
+
+```bash
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
+  --tunnel quick --pair --open
+```
+
+它会捕获 DSH Web 的启动方式并停掉整个进程树 → 安装固定版本的网关 → 可选安装语音和模型 → 在后台重启
+DSH Web → 启用网关 → 开 Quick Tunnel 并等公网入口就绪 → 生成并打开配对二维码。DSH Web 重启期间聊天界面
+会消失，重启后原会话仍在会话列表里，重新打开即可。
+
+加 `--voice` 会不询问地安装与 `0.2.1-rc.5` 匹配的语音 bundle 并预下载约 241 MB 的 SenseVoice 模型；
+加 `--no-voice` 跳过。两个都不加且 stdin 是终端时，脚本会问 `Enable voice input now? [Y/n]`。模型 ready
+之前 App 会显示「语音未启用」。不要在 DSH `0.2.1-rc.5` 上装旧的 `0.1.7-alpha.1`。
+
+在 Windows 上请从你平时启动 `dsh web` 的目录运行，这样重启后的工作目录保持一致；Linux 会从 `/proc` 和
+systemd 自动读取。想先看计划而不停进程，加 `--dry-run`。
+
+手动兜底：先停 DSH Web（往运行中的 Web 进程里装 bundle 会热重载插件树，可能让 `sessionController` 一直
+不可用，直到整个进程重启），再运行 `node scripts/setup-gateway.mjs install --yes`：
 
 ```bash
 # Linux systemd
@@ -102,19 +121,11 @@ sudo systemctl stop dsh-web
 node scripts/setup-gateway.mjs install --yes
 ```
 
-脚本会安装 [`compatibility.json`](compatibility.json) 里的固定 tag，3080 在监听时直接拒绝，并重新跑检查。
-不要用 `@latest` 或 Web 插件面板；详见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
+脚本会安装 [`compatibility.json`](compatibility.json) 里的固定 tag，3080 在监听时直接拒绝（除非显式传
+`--stop-web`），并重新跑检查。不要用 `@latest` 或 Web 插件面板；详见
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
 
-安装脚本会问 `Enable voice input now? [Y/n]`。回答 Y 会安装与 `0.2.1-rc.5` 匹配的语音 bundle，并预下载
-约 241 MB 的 SenseVoice 模型；模型 ready 之前 App 会显示「语音未启用」。用 `--no-voice` 跳过，或以后在
-DSH Web 停着时运行 `node scripts/setup-gateway.mjs voice`。不要在 DSH `0.2.1-rc.5` 上装旧的
-`0.1.7-alpha.1`。
-
-用你平时的方式启动 DSH Web，然后：
-
-```bash
-node scripts/setup-gateway.mjs check
-```
+然后启动 DSH Web，运行 `node scripts/setup-gateway.mjs check`。
 
 ### 2. 启用网关并生成配对码
 

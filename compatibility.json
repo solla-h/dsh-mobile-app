@@ -11,9 +11,9 @@
   "recommended": {
     "gateway": {
       "name": "dsh-plugin-mobile-gateway",
-      "version": "0.12.0-rdv.2",
-      "source": "github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.2",
-      "install": "dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.2"
+      "version": "0.12.0-rdv.3",
+      "source": "github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3",
+      "install": "dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3"
     },
     "dsh": {
       "version": "0.2.1-rc.5"

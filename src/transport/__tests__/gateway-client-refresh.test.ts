@@ -31,6 +31,7 @@ class FakeSocket {
 }
 
 const originalWebSocket = globalThis.WebSocket;
+const originalFetch = globalThis.fetch;
 const options = (refreshUrl?: () => Promise<string | undefined>) => ({
   url: 'wss://old.example.com/ws/mobile',
   token: 'token',
@@ -141,6 +142,41 @@ describe('GatewayClient 地址簿刷新', () => {
     await fail(FakeSocket.instances[1]);
     await jest.advanceTimersByTimeAsync(0);
     // 还是刚才那两个 socket：没有用相同地址多开一条连接。
+    expect(FakeSocket.instances).toHaveLength(2);
+    client.disconnect();
+  });
+});
+
+describe('GatewayClient 配对失败分类', () => {
+  beforeEach(() => {
+    globalThis.fetch = jest
+      .fn()
+      .mockRejectedValue(new TypeError('fetch failed')) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('preflight 失败时用同一个配对码重试一次，再报网络/代理', async () => {
+    const client = new GatewayClient();
+    const details: string[] = [];
+    client.onState((state, detail) => {
+      if (state === 'error' && detail) details.push(detail);
+    });
+
+    client.connect({ ...options(), pairingCode: 'code-1' });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.instances).toHaveLength(1);
+
+    await fail(FakeSocket.instances[0]);
+    expect(details.some((detail) => detail.includes('正在重试一次'))).toBe(true);
+
+    await jest.advanceTimersByTimeAsync(1_500);
+    expect(FakeSocket.instances).toHaveLength(2);
+
+    await fail(FakeSocket.instances[1]);
+    expect(details.at(-1)).toContain('网络或代理');
     expect(FakeSocket.instances).toHaveLength(2);
     client.disconnect();
   });

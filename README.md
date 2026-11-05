@@ -69,9 +69,9 @@ device keys, session/event projections, and the optional rendezvous publisher.
 
 - **Node.js 22.13+** for development (Expo SDK 58 / React Native 0.88 requirement).
 - A DSH installation with `dsh-plugin-mobile-gateway`. The app speaks `dsh-mobile-v1`.
-  This release is verified with **DSH `0.2.1-rc.5`** and the fork release
-  [`v0.12.0-rdv.1`](https://github.com/solla-h/dsh-plugin-mobile-gateway/releases/tag/v0.12.0-rdv.1);
-  see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before installing anything.
+  This release is bound to **DSH `0.2.1-rc.5`** and the fork gateway version pinned in
+  [`compatibility.json`](compatibility.json); see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
+  for the last verified combination before installing anything.
 - For the optional address book: a gateway build with `rendezvous-v1` and a Cloudflare account for the managed
   Worker deployment. The fork release above includes it; upstream releases are not part of this verified
   combination.
@@ -86,9 +86,12 @@ human quick start by guessing**. Read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)
 node scripts/setup-gateway.mjs check
 ```
 
-The user runs `install` and `voice` in a normal shell with DSH Web stopped; the script refuses while port 3080
-is listening. Do not call `dsh plugin add` directly, edit the profile, or use a local checkout. `enable` and
-`pair` are safe for the agent; `pair` writes a local QR page and never prints the payload.
+Before asking the user to stop DSH Web, run `node scripts/setup-gateway.mjs handoff --voice` (or `--no-voice`)
+and give them the generated `DSH-MOBILE-NEXT-STEPS.md` plus the one-command inside it. The user runs `install`
+and `voice` in a normal shell; the one-command uses `--stop-web --restart-web --tunnel quick --pair` so no step
+is lost when the DSH Web session disappears. Do not call `dsh plugin add` directly, edit the profile, or use a
+local checkout. `handoff`, `enable`, and `pair` are safe for the agent; `pair` writes a local QR page and never
+prints the payload.
 
 The release is pinned in [`compatibility.json`](compatibility.json): use its `recommended` versions, never
 `@latest` or a local checkout. The task is the gateway, not building or testing the app; a real user already
@@ -101,9 +104,27 @@ human approval (sudo, DSH Web restart/stop, public tunnel, Cloudflare login).
 
 ### 1. Install the gateway plugin
 
-On the machine that runs DSH, from a clone of this repository. Stop DSH Web first — adding a bundle to a
-running Web process hot-reloads the plugin tree and can leave `sessionController` unavailable until a full
-process restart:
+On the machine that runs DSH, from a clone of this repository, run this **in a normal terminal** (not in the
+DSH Web chat). It stops DSH Web, installs the pinned gateway, optionally installs voice, restarts DSH Web,
+enables the gateway, starts a Quick Tunnel, and opens the pairing page:
+
+```bash
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
+  --tunnel quick --pair --open
+```
+
+Add `--voice` to install the matching `0.2.1-rc.5` voice bundle and pre-download the ~241 MB SenseVoice model
+without a prompt, or `--no-voice` to skip. If neither is given and stdin is a terminal, the script asks
+`Enable voice input now? [Y/n]`. The app shows “语音未启用” until the provider is ready. Do not install the older
+`0.1.7-alpha.1` bundle on DSH `0.2.1-rc.5`.
+
+Run it from the directory where you normally start `dsh web` so the restarted process keeps the same working
+directory on Windows. The DSH Web session disappears while it restarts; reopen the same session from the session
+list afterwards.
+
+Manual fallback: stop DSH Web first (adding a bundle to a running Web process hot-reloads the plugin tree and
+can leave `sessionController` unavailable until a full process restart), then run
+`node scripts/setup-gateway.mjs install --yes`:
 
 ```bash
 # Linux systemd
@@ -113,20 +134,11 @@ sudo systemctl stop dsh-web
 node scripts/setup-gateway.mjs install --yes
 ```
 
+Start DSH Web with your normal command, then run `node scripts/setup-gateway.mjs check`.
+
 The script installs the pinned tag from [`compatibility.json`](compatibility.json), refuses while port 3080 is
-listening, and re-runs the checker. Do not use `@latest` or the Web plugin panel for this release; see
-[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
-
-The install script asks `Enable voice input now? [Y/n]`. Answer Y to install the matching `0.2.1-rc.5` voice
-bundle and pre-download the ~241 MB SenseVoice model; the app shows “语音未启用” until that provider is ready.
-Use `--no-voice` to skip, or run `node scripts/setup-gateway.mjs voice` later with DSH Web stopped. Do not
-install the older `0.1.7-alpha.1` bundle on DSH `0.2.1-rc.5`.
-
-Start DSH Web with your normal command, then:
-
-```bash
-node scripts/setup-gateway.mjs check
-```
+listening (unless `--stop-web` is given), and re-runs the checker. Do not use `@latest` or the Web plugin panel
+for this release; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ### 2. Enable the gateway and show a pairing code
 
