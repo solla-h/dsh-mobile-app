@@ -90,6 +90,7 @@ device keys, session/event projections, and the optional rendezvous publisher.
 | Expo Go | Development shell only; native modules may require a development build |
 
 The compatibility table is the release-level record; “not verified” means “stop and ask”, not “try it and see”.
+Screenshots/GIFs are not included in this alpha yet; the UI is still moving.
 
 ## For DSH agents
 

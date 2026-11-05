@@ -82,8 +82,8 @@ git log --all --format=%B | grep -nE '<sensitive-pattern>'
 ### 2.3 发布工程
 
 - [x] `CHANGELOG.md` 按 Keep a Changelog 记录 `0.1.0-alpha.1`。
-- [ ] 打 tag `v0.1.0-alpha.1`，创建 GitHub pre-release，附源码包和已知限制。
-- [ ] 如果没有可公开的 APK/AAB，明确写「source-only alpha」，不要伪造安装包。
+- [x] 打 tag `v0.1.0-alpha.1`，创建 GitHub pre-release，附源码包和已知限制。
+- [x] 如果没有可公开的 APK/AAB，明确写「source-only alpha」，不要伪造安装包。
 - [x] 更新 `compatibility.json` 的 `verified` 条目：DSH `0.2.1-rc.5`、gateway
       `0.12.0-rdv.3`、voice `0.2.1-rc.5`、Android 真机、配对/语音/回复已验证。
 - [x] 同步更新 `docs/COMPATIBILITY.md` 的已验证矩阵和日期。
@@ -95,7 +95,7 @@ git log --all --format=%B | grep -nE '<sensitive-pattern>'
       「public alpha，Android 真机已验证，iOS 未验证，不上架」。
 - [x] 增加最小可复现 demo：`docs/tools/fake-gateway.mjs` 的启动、配对、发消息步骤。
 - [ ] 如条件允许，加 2–3 张脱敏截图或 GIF；没有就明确写「截图待补」，不要用带真实
-      主机名的图。
+      主机名的图。（本次未加，截图待补）
 - [x] 把内部工作文档（HANDOFF / STATUS / RISK-PATCHES / AGENTS 的宿主章节）改成
       通用工程说明，或移到私有仓库；公开仓库里不保留服务器操作细节。
 - [x] 检查 `docs/AGENT-SETUP.md` 里「不要读某文档」的表述，改成「这些是开发记录，
