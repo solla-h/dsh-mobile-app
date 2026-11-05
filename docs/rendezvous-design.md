@@ -112,10 +112,10 @@ nonce(hex) = 000102030405060708090a0b
 pathKey    = 121566a9133a858e3167092a8362a0b0cb5a9b3417df72b6ac9741f1181f9d8f
 path       = EhVmqRM6hY4xZwkqg2KgsMtamzQX33K2rJdB8RgfnY8
 aesKey     = 2b614eec74828fcad0771ca475138a77163ec47d6cd4a5de0ff625ed48e32e7d
-plaintext  = {"v":1,"rev":7,"ts":1762000000000,"gatewayId":"3f1b9c2e-7d4a-4b8f-9c1d-2e5a6b7c8d9f","name":"Test Gateway","endpoints":["wss://abc.trycloudflare.com/ws/mobile","ws://192.168.1.10:3081/ws/mobile"]}   (197 字节)
-tag(hex)   = 5216c00d8c4f51bc96b5ebdf6536933c
-body (302 字符) =
-AQABAgMEBQYHCAkKC2o9ixs6CrlWNdCqYJujnipSZYB1j0sz5t82XX8Su-FrC8YpOXSsYbkM3N3BIpt2ZwvLEVXkIpzzvJ24ZQ5T2JZG2t4cRP9us4GHPDYsBOOtYbTmzqr7IXRB2LlrK06nw9AhZRfAxXldWIyzgLXGPvFW9siaH6kXprVGGwInS0hXLir8cFeF3KwcisSqb5u6eWz2OgMcOfJoK-g6vMXekd1Hc5vSloBXbyj9acQOIKZfietXgjZjt9q0ZkibAIitqDB_j_pBUhbADYxPUbyWtevfZTaTPA
+plaintext  = {"v":1,"rev":7,"ts":1762000000000,"gatewayId":"3f1b9c2e-7d4a-4b8f-9c1d-2e5a6b7c8d9f","name":"Test Gateway","endpoints":["wss://abc.trycloudflare.com/ws/mobile","ws://192.168.1.10:3081/ws/mobile"]}   (196 字节)
+tag(hex)   = 0a67679437a5bbb039b2159682791084
+body (300 字符) =
+AQABAgMEBQYHCAkKC2o9ixs6CrlWNdCqYJujnipSZYB1j0sz5t82XX8Su-FrC8YpOXSsYbkM3N3BIpt2ZwvLEVXkIpzzvJ24ZQ5T2JZG2t4cRP9us4GHPDYsBOOtYbTmzqr7IXRB2LlrK06nw9AhZRfAxXldWIyzgLXGPvFW9siaH6kXprVGGwInS0hXLir8cFeF3KwcisSqb5u6eWz2OgMcOfJoK-g6vMXekd1Hc5vSloBXbyj9acQOIKZBlupfizVrvsTsYhTZAoWmrTk48NoKZ2eUN6W7sDmyFZaCeRCE
 ```
 
 用法：
