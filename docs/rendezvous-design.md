@@ -1,13 +1,9 @@
 # 地址簿（Rendezvous）设计与实现要点
 
-> 状态：**已实现并真机/真 Worker 验证**（2026-11-04）。本文件保留为设计依据；最终形态是
-> Worker 源码随 `dsh-plugin-mobile-gateway` 一起安装、面板托管部署（见仓库 3 个 `feat/rendezvous-*` 分支），
-> §5 中「新建独立仓库 `dsh-mobile-rendezvous` / 手动 `wrangler`」的描述仅作早期方案参考。
-> 日期：2026-11-04。
-> 本文**取代** `.llmdoc-tmp/` 下所有 rendezvous 相关文档（`rendezvous-p0.md`、`handoff-rendezvous.md`、
-> `rendezvous-research-review.md`、`rendezvous-app-review.md`）。那些文件里有已被推翻的结论，实现时**不要参考**，
-> 唯一例外是 §4.2 的密码学测试向量（已逐字节双实现验证）。
-> 涉及两处代码：本仓库（App）、`C:\work\dsh-plugin-mobile-gateway`（网关插件，第三方开源，协议 `dsh-mobile-v1`）。
+> 状态：**已实现并完成真机/真 Worker 验证**（2026-11-04）。最终形态是 Worker 源码随
+> `dsh-plugin-mobile-gateway` 一起安装、由面板托管部署；§5 中「新建独立仓库 / 手动 `wrangler`」的描述
+> 仅作早期方案参考。
+> 涉及两处代码：本仓库（App）与 `dsh-plugin-mobile-gateway`（网关插件，第三方开源，协议 `dsh-mobile-v1`）。
 
 ## 0. 一句话
 
