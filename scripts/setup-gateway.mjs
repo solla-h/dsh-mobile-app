@@ -4,10 +4,12 @@
  *
  * Usage:
  *   node scripts/setup-gateway.mjs check   [--profile web] [--port 3080] [--json]
- *   node scripts/setup-gateway.mjs handoff [--voice|--no-voice] [--out FILE]
+ *   node scripts/setup-gateway.mjs handoff [--voice|--no-voice]
+ *                                          [--pair-url wss://HOST/ws/mobile] [--out FILE]
  *   node scripts/setup-gateway.mjs install [--profile web] [--yes] [--voice|--no-voice]
  *                                          [--stop-web] [--restart-web]
- *                                          [--tunnel quick] [--pair] [--open] [--dry-run]
+ *                                          [--tunnel quick] [--pair] [--url URL]
+ *                                          [--open] [--dry-run]
  *   node scripts/setup-gateway.mjs enable  [--port 3080]
  *   node scripts/setup-gateway.mjs tunnel  [--port 3080] [--wait SECONDS]
  *   node scripts/setup-gateway.mjs pair    [--port 3080] [--url URL] [--out FILE] [--open]
@@ -1162,7 +1164,7 @@ async function cmdPair(options = {}) {
 
   console.log(`pairing page: ${output}`);
   console.log(`expires: ${expiresAt}`);
-  if (current.data.cloudflare?.publicReady === false) {
+  if (!options.publicUrl && !arg('url', null) && current.data.cloudflare?.publicReady === false) {
     console.log(
       'note: the host endpoint check did not pass; the tunnel can still work if the phone can resolve the hostname.',
     );
@@ -1178,9 +1180,29 @@ async function cmdHandoff() {
   const voice = manifest.recommended.voice;
   const voiceFlag = flag('voice') ? ' --voice' : flag('no-voice') ? ' --no-voice' : '';
   const scriptPath = path.join(HERE, 'setup-gateway.mjs');
-  const command =
-    `node "${scriptPath}" install --yes --stop-web --restart-web ` +
-    `--tunnel quick --pair --open${voiceFlag}`;
+  const pairUrl = arg('pair-url', null) ?? arg('url', null);
+  if ((flag('pair-url') || flag('url')) && pairUrl === null) {
+    fail('--pair-url needs a ws:// or wss:// WebSocket URL');
+  }
+  if (pairUrl !== null) {
+    let parsed;
+    try {
+      parsed = new URL(pairUrl);
+    } catch {
+      fail('--pair-url must be a ws:// or wss:// WebSocket URL');
+    }
+    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+      fail('--pair-url must be a ws:// or wss:// WebSocket URL');
+    }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+      fail('--pair-url must not contain credentials, query parameters, or a fragment');
+    }
+  }
+  const command = pairUrl
+    ? `node "${scriptPath}" install --yes --stop-web --restart-web ` +
+      `--pair --open --url "${pairUrl}"${voiceFlag}`
+    : `node "${scriptPath}" install --yes --stop-web --restart-web ` +
+      `--tunnel quick --pair --open${voiceFlag}`;
   const output = path.resolve(
     arg('out', path.join(process.cwd(), 'DSH-MOBILE-NEXT-STEPS.md')),
   );
@@ -1199,17 +1221,34 @@ What it does, in order:
 3. installs the optional voice bundle and models when --voice is used;
 4. starts DSH Web again in the background (log path is printed);
 5. enables the mobile gateway;
-6. opens a Quick Tunnel and waits for the public endpoint;
+${
+  pairUrl
+    ? `6. pairs through the existing named-tunnel endpoint ${pairUrl} (no Quick Tunnel is started);`
+    : '6. opens a Quick Tunnel and waits for the public endpoint;'
+}
 7. writes and opens the pairing QR page.
 
 After the command, scan the QR with the DSH Mobile app. The original DSH session
 is still in the session list after restart; open it again instead of starting over.
 
+${
+  pairUrl
+    ? `The endpoint ${pairUrl} must be reachable from the phone, route only to the
+gateway's WebSocket listener, and have Cloudflare Access disabled (the app cannot
+complete a browser login). Prefer the dedicated tunnel proxy on 3082, or the
+WS-only LAN listener on 3081. Never point it at the DSH Web UI or /mgw.
+`
+    : ''
+}
 If restart fails, the script prints the restart log path. Start DSH Web with your
 normal command, then run:
 
 \`\`\`bash
-node scripts/setup-gateway.mjs enable --tunnel quick --pair --open
+${
+  pairUrl
+    ? `node scripts/setup-gateway.mjs enable --pair --open --url "${pairUrl}"`
+    : 'node scripts/setup-gateway.mjs enable --tunnel quick --pair --open'
+}
 \`\`\`
 
 If a model turn reports MISSING_CREDENTIAL, the provider key was not available
@@ -1231,10 +1270,11 @@ logs, issues, or screenshots.
 function usage() {
   console.log(`usage:
   node scripts/setup-gateway.mjs check   [--profile web] [--port 3080] [--json]
-  node scripts/setup-gateway.mjs handoff [--voice|--no-voice] [--out FILE]
+  node scripts/setup-gateway.mjs handoff [--voice|--no-voice]
+                                         [--pair-url wss://HOST/ws/mobile] [--out FILE]
   node scripts/setup-gateway.mjs install [--profile web] [--yes] [--voice|--no-voice]
                                          [--stop-web] [--restart-web]
-                                         [--tunnel quick] [--pair] [--open] [--dry-run]
+                                         [--tunnel quick] [--pair] [--url URL] [--open] [--dry-run]
   node scripts/setup-gateway.mjs enable  [--port 3080]
   node scripts/setup-gateway.mjs tunnel  [--port 3080] [--wait SECONDS]
   node scripts/setup-gateway.mjs pair    [--port 3080] [--url URL] [--out FILE] [--open]

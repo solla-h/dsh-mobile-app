@@ -190,6 +190,48 @@ The one-command path:
 
 Use `--dry-run` to see the plan (including the captured DSH Web command) without stopping or installing anything.
 
+### Existing named Cloudflare Tunnel
+
+A named tunnel has a stable hostname, so the optional address book is **not** needed. Do not reuse the DSH
+Web hostname for the gateway:
+
+- if that hostname has Cloudflare Access, the app's WebSocket cannot complete the browser login;
+- a tunnel to `3080` also exposes the Web UI and the management surface (`/mgw`), not just `/ws/mobile`.
+
+Use a dedicated gateway hostname (for example `gw.example.com`). It may point at either:
+
+- `http://127.0.0.1:3082` — the gateway's dedicated tunnel proxy. It serves **only** `/ws/mobile` and never
+  the Web UI or `/mgw`. It starts only when the gateway's Cloudflare tunnel mode is enabled; the gateway can
+  run its own `cloudflared` connector from the named-tunnel token; or
+- `http://127.0.0.1:3081` — the LAN listener. It is also WS-only (HTTP requests get 404) and accepts only
+  `/ws/mobile` from private-network/loopback sources; this is the path used by an existing named tunnel.
+
+Never point a public hostname at `3080`; that exposes the Web UI and `/mgw`.
+
+First-time sequence (the tunnel token is a secret; the user enters it, not the agent):
+
+1. Install without creating a Quick Tunnel, in a normal shell:
+   ```bash
+   node scripts/setup-gateway.mjs install --yes --stop-web --restart-web
+   ```
+2. In DSH Web → **移动设备 → 连接与配对**, enable the gateway. If the hostname points at `3082`, open the
+   Cloudflare Tunnel section, choose the named mode, enter the tunnel token and the gateway hostname, and
+   wait until the state is `online`. If it points at `3081`, keep the existing connector and make sure LAN
+   mode is enabled.
+3. Pair through the named endpoint:
+   ```bash
+   node scripts/setup-gateway.mjs pair --url wss://gw.example.com/ws/mobile --open
+   ```
+
+Once that named setup persists across restarts, an agent can generate the one-command plan without creating
+a Quick Tunnel:
+
+```bash
+node scripts/setup-gateway.mjs handoff --pair-url wss://gw.example.com/ws/mobile
+```
+
+`handoff --pair-url` only changes the generated command; it does not create or validate the tunnel.
+
 ### Manual fallback
 
 Stop DSH Web first:
@@ -335,6 +377,8 @@ print device IDs.
 | `check` says `DSH ... != recommended ...` | Stop and ask. Do not upgrade DSH automatically. |
 | `/mgw/status` 404 | The plugin is not loaded. Restart DSH Web and check the profile bundle list. |
 | `publicReady:false`, `dns-error` | Host DNS false negative; the tunnel may be live. Use `pair`; if the phone cannot resolve the hostname, use VPN/Private DNS, Tailscale, or a named Tunnel. |
+| Named-tunnel hostname works in a browser but the app cannot connect | Cloudflare Access is probably in front of that hostname. The app cannot complete an Access login; put the gateway on a separate hostname without Access, routed to `127.0.0.1:3082`. |
+| DSH Web token page loops or lands on `authentication required` after Cloudflare Access login | Access can strip `?token=...` on the login redirect, and its cross-site return does not send DSH's `SameSite=Strict` cookie on the first request. Refresh once may get in if the cookie exists; otherwise open the current token URL again. The robust fix is not to put Cloudflare Access in front of the DSH Web hostname — DSH's own token is the auth layer. Use Access only on other services. |
 | `ws://192.10.x.x` rejected, `lan.urls` empty | The address is not RFC1918/Tailscale. Use Tailscale or a `wss://` tunnel. |
 | Voice bundle disabled after upgrading DSH | Install the matching `0.2.1-rc.5` bundle; do not use `0.1.7-alpha.1`. |
 | App shows 语音未启用 after voice install | The model is not ready. Stop DSH Web, run `voice --yes` to download and verify it, then start DSH Web; check `speech-catalog` `providers[].preparation.phase`. |
@@ -342,7 +386,9 @@ print device IDs.
 
 ## Safety rules
 
-- Never expose `3080`, `3081`, or `/mgw` to the public internet.
+- Never expose `3080` or `/mgw` to the public internet. A tunnel may expose only the gateway's dedicated
+  proxy on `127.0.0.1:3082` (serves `/ws/mobile` only) or the WS-only LAN listener on `127.0.0.1:3081`
+  (HTTP 404, `/ws/mobile` from private/loopback sources only).
 - Never print pairing codes, device tokens, write secrets, or private keys in chat or logs. `pair` writes them
   to a local page; do not echo the page’s payload.
 - Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs.

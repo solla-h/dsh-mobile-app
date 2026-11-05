@@ -334,6 +334,18 @@ App 在运行期间会持续重试。
 - 如果所在网络打不开 `workers.dev`（中国大陆或某些 VPN/DNS 环境可能如此），可以改用自定义域名、
   命名 Tunnel 或 Tailscale。地址簿是可选的，核心 App 不依赖它。
 
+### 9.5 命名 Tunnel
+
+命名 Tunnel 的地址是固定的，**不需要地址簿**。把网关放在独立主机名（例如 `gw.example.com`），
+指向网关的专用隧道代理 `http://127.0.0.1:3082`（只提供 `/ws/mobile`），或指向只接受 WebSocket 的
+局域网监听 `http://127.0.0.1:3081`；两者都不暴露网页和 `/mgw`。配对时用
+`wss://gw.example.com/ws/mobile`。不要把 DSH Web 的主机名直接复用给网关，
+也不要在网关主机名前挂 Cloudflare Access：App 的 WebSocket 无法完成浏览器登录。
+
+Cloudflare Access 也不要挡在 DSH Web 前面：Access 的登录回跳可能丢掉 DSH 的 `?token=`，
+且跨站回跳不会带上 DSH 的 `SameSite=Strict` 登录 Cookie，表现为“认证完仍回到认证页/401”。
+DSH 自带的 token 就是网页版认证层；命名 Tunnel 只负责把端口安全地映射出去。
+
 ## 10. 离线与重连
 
 - 会话列表按网关缓存，断网冷启动仍会显示上次的列表；从未配对过的网关才会显示配对页。
