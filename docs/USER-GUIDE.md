@@ -41,14 +41,10 @@ The script installs the pinned release and refuses while port 3080 is listening.
 is a different release line and is not part of this app release's verified combination. See
 [COMPATIBILITY.md](COMPATIBILITY.md).
 
-Optional voice input, while DSH Web is still stopped:
-
-```bash
-node scripts/setup-gateway.mjs voice --yes
-```
-
-This installs the bundle matching DSH `0.2.1-rc.5` and pre-downloads the ~241 MB SenseVoice model. The app shows
-“语音未启用” until the provider is ready; do not install the older `0.1.7-alpha.1` bundle.
+The install script asks `Enable voice input now? [Y/n]`. Answer Y to install the bundle matching DSH
+`0.2.1-rc.5` and pre-download the ~241 MB SenseVoice model; `--no-voice` skips it. To add voice later, stop DSH
+Web and run `node scripts/setup-gateway.mjs voice`. The app shows “语音未启用” until the provider is ready; do
+not install the older `0.1.7-alpha.1` bundle.
 
 Start DSH Web with your normal command, then enable the gateway:
 
