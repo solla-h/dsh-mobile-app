@@ -62,6 +62,56 @@ function flag(name) {
   return process.argv.includes(`--${name}`);
 }
 
+/**
+ * Split a Windows command line the way CommandLineToArgvW does.
+ *
+ * The restart path needs the real executable and argv: spawning cmd.exe with a
+ * quoted command line is fragile (and produces a visible console on Windows).
+ * This handles quoted paths, spaces, empty arguments, and backslash-escaped
+ * quotes.
+ */
+export function parseWindowsCommandLine(commandLine) {
+  const args = [];
+  let current = '';
+  let started = false;
+  let inQuotes = false;
+  let backslashes = 0;
+
+  for (const character of commandLine) {
+    if (character === '\\') {
+      backslashes += 1;
+      continue;
+    }
+    if (character === '"') {
+      current += '\\'.repeat(Math.floor(backslashes / 2));
+      if (backslashes % 2 === 1) {
+        current += '"';
+      } else {
+        inQuotes = !inQuotes;
+      }
+      backslashes = 0;
+      started = true;
+      continue;
+    }
+    current += '\\'.repeat(backslashes);
+    backslashes = 0;
+    if (!inQuotes && (character === ' ' || character === '\t')) {
+      if (started) {
+        args.push(current);
+        current = '';
+        started = false;
+      }
+    } else {
+      current += character;
+      started = true;
+    }
+  }
+
+  current += '\\'.repeat(backslashes);
+  if (started) args.push(current);
+  return args;
+}
+
 function fail(message) {
   throw new SetupError(message);
 }
@@ -418,33 +468,40 @@ async function restartWeb(info) {
     fs.mkdirSync(LOG_DIR, { recursive: true });
     const fd = fs.openSync(logFile, 'a');
     const env = { ...process.env, ...(info.env ?? {}) };
-    const child = process.platform === 'win32'
-      ? spawn('cmd.exe', ['/d', '/s', '/c', `"${info.commandLine}"`], {
-          cwd: info.cwd ?? process.cwd(),
-          env,
-          // Windows command lines start with a quoted executable. Node's default
-          // argument quoting escapes those quotes as \"...\", which cmd.exe then
-          // treats as the program name; the restart fails before DSH starts.
-          // Pass the command line verbatim, wrapped in the outer quotes cmd /s /c
-          // expects.
-          windowsVerbatimArguments: true,
-          detached: true,
-          stdio: ['ignore', fd, fd],
+    const common = {
+      cwd: info.cwd ?? process.cwd(),
+      env,
+      detached: true,
+      stdio: ['ignore', fd, fd],
+    };
+    let child;
+    if (process.platform === 'win32') {
+      const [executable, ...args] = parseWindowsCommandLine(info.commandLine);
+      if (!executable) {
+        fs.closeSync(fd);
+        fail('cannot parse the DSH Web command line; start DSH Web manually and rerun.');
+      }
+      // Spawn the captured executable directly so Windows does not create a
+      // visible console and stdout/stderr go to the log file. Only fall back to
+      // cmd.exe for batch shims, where the quoting has to stay verbatim.
+      const batch = /\.(cmd|bat)$/i.test(executable);
+      child = spawn(
+        batch ? 'cmd.exe' : executable,
+        batch ? ['/d', '/s', '/c', `"${info.commandLine}"`] : args,
+        {
+          ...common,
           windowsHide: true,
-        })
-      : info.argv?.length
-        ? spawn(info.argv[0], info.argv.slice(1), {
-            cwd: info.cwd ?? process.cwd(),
-            env,
-            detached: true,
-            stdio: ['ignore', fd, fd],
-          })
-        : spawn('/bin/sh', ['-c', info.commandLine], {
-            cwd: info.cwd ?? process.cwd(),
-            env,
-            detached: true,
-            stdio: ['ignore', fd, fd],
-          });
+          ...(batch ? { windowsVerbatimArguments: true } : {}),
+        },
+      );
+    } else if (info.argv?.length) {
+      child = spawn(info.argv[0], info.argv.slice(1), common);
+    } else {
+      child = spawn('/bin/sh', ['-c', info.commandLine], common);
+    }
+    child.once('error', (error) => {
+      console.error(`restart failed: ${error.message}; log: ${logFile}`);
+    });
     child.unref();
     fs.closeSync(fd);
     console.log(`dsh web restarted in the background; log: ${logFile}`);
@@ -1206,13 +1263,18 @@ async function main() {
   return 2;
 }
 
-try {
-  process.exitCode = await main();
-} catch (error) {
-  if (error instanceof SetupError) {
-    console.error(`setup-gateway: ${error.message}`);
-  } else {
-    console.error(error);
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (invokedDirectly) {
+  try {
+    process.exitCode = await main();
+  } catch (error) {
+    if (error instanceof SetupError) {
+      console.error(`setup-gateway: ${error.message}`);
+    } else {
+      console.error(error);
+    }
+    process.exitCode = 1;
   }
-  process.exitCode = 1;
 }
