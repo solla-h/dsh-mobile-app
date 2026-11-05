@@ -25,3 +25,14 @@ details out.
 - The mobile gateway is a separate project; report gateway or host vulnerabilities there or to the host owner.
 - The app is a client. A compromised DSH host or gateway can read everything the app sends to it; the app does
   not claim to protect data from the host.
+
+## Dependency advisories
+
+This repository ships a React Native app, not a Node.js server. `npm audit` and Dependabot can report
+advisories in the **development toolchain** (Jest, ESLint, Expo CLI). Those packages are used to lint, test, and
+bundle the app; they are not included in the built app, and the vulnerable code paths (for example, the `glob`
+CLI `-c/--cmd` option or merging untrusted Jest config) are not reachable from application input.
+
+We still track them. Major-version overrides are not applied blindly because the Expo SDK and Jest toolchain
+pin compatible versions; an override can break the build while not reducing application risk. When a compatible
+upstream release is available, the dependency update is picked up through Dependabot.
