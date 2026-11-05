@@ -238,6 +238,20 @@ npx expo-doctor       # 依赖与配置检查
 
 Expo Go 适合调 UI，但相机、安全存储、音频、后台重连等原生行为，应在开发构建或 preview 构建里验证。
 
+### 没有 DSH 宿主时的本地演示
+
+`docs/tools/fake-gateway.mjs` 是一个确定性的 WebSocket 假网关，用来验证配对、会话列表、消息回执和失败路径：
+
+```bash
+node docs/tools/fake-gateway.mjs
+# USB：adb reverse tcp:3999 tcp:3999，然后打开 http://127.0.0.1:3999/pair?host=usb
+# 局域网：LAN_HOST=<你的局域网 IP> node docs/tools/fake-gateway.mjs
+#       然后打开 http://<你的局域网 IP>:3999/pair?host=lan
+```
+
+用 App 扫描页面上的二维码，或粘贴 payload。假网关带一个会话，支持
+`normal`、`no-ack`、`reject`、`no-hello`、`half-open`、`no-history`、`no-create` 模式；完整列表见文件头。
+
 ## 项目结构
 
 | 路径 | 职责 |

@@ -259,6 +259,21 @@ npx expo-doctor       # dependency and config checks
 Expo Go is useful for UI work, but native behavior (camera, secure storage, audio, background reconnect) should
 be verified in a development or preview build.
 
+### Local demo without a DSH host
+
+`docs/tools/fake-gateway.mjs` is a deterministic WebSocket fake for pairing, the session list, message
+receipts, and failure modes:
+
+```bash
+node docs/tools/fake-gateway.mjs
+# USB: adb reverse tcp:3999 tcp:3999, then open http://127.0.0.1:3999/pair?host=usb
+# LAN: LAN_HOST=<your-lan-ip> node docs/tools/fake-gateway.mjs
+#      then open http://<your-lan-ip>:3999/pair?host=lan
+```
+
+Scan the page's QR with the app, or paste the payload. The fake serves one session and supports
+`normal`, `no-ack`, `reject`, `no-hello`, `half-open`, `no-history`, and `no-create` modes; see the file header.
+
 ## Project layout
 
 | Path | Responsibility |
