@@ -1,5 +1,8 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
+> This file is for **developing the app**. If you are a DSH agent asked to install/configure the mobile gateway on
+> a host, use [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) instead.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
