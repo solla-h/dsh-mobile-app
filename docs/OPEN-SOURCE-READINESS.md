@@ -13,7 +13,7 @@
       非商业许可。
 - [x] README 不再声称「未发布 / experimental-only」，明确当前支持范围。
 - [x] CI 在干净 clone 上通过：协议单测、TypeScript、lint、node 测试、expo-doctor。
-- [x] 至少能按 README 的 fake-gateway 路径在本地走通一次配对和一条消息（文档 + 服务端冒烟；App 侧真机路径见 2.4）。
+- [x] 至少能按 README 的 fake-gateway 路径在本地走通一次配对和一条消息（文档 + 服务端冒烟；App 侧配对/发消息已在真实网关真机验证，见兼容表）。
 
 ## 1. P0：必须先做（阻塞发布）
 
@@ -32,8 +32,10 @@
 验收命令（示例，替换为你自己的扫描器）：
 
 ```bash
-git grep -nIE '<sensitive-pattern>' $(git rev-list --all) -- .
-git log --all --format=%B | grep -nE '<sensitive-pattern>'
+# 任一历史提交新增/删除了敏感串
+git log --all -S'<sensitive-pattern>' --oneline
+# 当前 HEAD 是否残留
+git grep -nIE '<sensitive-pattern>' -- .
 ```
 
 ### 1.2 许可证与素材许可
