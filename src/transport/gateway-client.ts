@@ -11,6 +11,9 @@ import {
   REFRESH_COOLDOWN_MS,
   backoffDelay,
   classifyClose,
+  classifyPairingFailure,
+  type PairingFailureInput,
+  type PairingPreflight,
 } from './connection-policy';
 
 export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'closed' | 'error';
@@ -73,6 +76,11 @@ export class GatewayClient {
   /** 地址簿刷新：冷却与在途标记；4003/配对码等终止分支不会走到这里。 */
   private lastRefreshAt = 0;
   private refreshing = false;
+  /** 当前 socket 是否真的 open 过；配对失败时用来区分「码被用掉」和「根本没连上」。 */
+  private socketOpened = false;
+  /** 配对前对 wss:// 主机的 HTTP 预检结果。 */
+  private pairingPreflight: PairingPreflight = 'unknown';
+  private lastPairingFailure: PairingFailureInput | null = null;
 
   get state(): ConnectionState {
     return this.lastState;
@@ -94,9 +102,19 @@ export class GatewayClient {
     this.stopped = false;
     this.attempt = 0;
     this.lastFrameAt = 0;
+    this.socketOpened = false;
+    this.pairingPreflight = 'unknown';
+    this.lastPairingFailure = null;
     this.watchNetwork();
     this.watchForeground();
-    this.open();
+    if (options.pairingCode) {
+      const current = options;
+      void this.probePairingTarget(current).finally(() => {
+        if (!this.stopped && this.options === current) this.open();
+      });
+    } else {
+      this.open();
+    }
   }
 
   send(frame: ClientFrame): boolean {
@@ -119,7 +137,34 @@ export class GatewayClient {
     this.unwatchAppState?.remove();
     this.unwatchAppState = null;
     this.closeSocket();
+    this.socketOpened = false;
+    this.lastPairingFailure = null;
+    this.pairingPreflight = 'unknown';
     this.emitState('idle');
+  }
+
+  /**
+   * 配对前用普通 HTTP 探一下同一主机：拿到任何 HTTP 响应都说明 DNS/TLS/TCP
+   * 基本可达，WS 仍未打开就更可能是网关拒绝了升级（例如配对码无效）。
+   * 只对 wss:// 公网入口做，避免 Android cleartext 策略误伤局域网 ws://。
+   */
+  private async probePairingTarget(options: ConnectOptions): Promise<void> {
+    if (!options.url.startsWith('wss://') || typeof fetch !== 'function') {
+      this.pairingPreflight = 'unknown';
+      return;
+    }
+    const httpUrl = `https://${options.url.slice('wss://'.length)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      await fetch(httpUrl, { method: 'GET', signal: controller.signal });
+      this.pairingPreflight = 'ok';
+    } catch (error) {
+      this.pairingPreflight =
+        error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'failed';
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private open(): void {
@@ -141,6 +186,7 @@ export class GatewayClient {
       this.stopHeartbeat();
       this.closeSocket();
     }
+    this.socketOpened = false;
     this.emitState('connecting');
     const Socket = WebSocket as unknown as new (
       url: string,
@@ -152,6 +198,11 @@ export class GatewayClient {
     try {
       socket = new Socket(options.url, protocols, { headers });
     } catch (error) {
+      this.lastPairingFailure = {
+        opened: false,
+        timedOut: false,
+        preflight: this.pairingPreflight,
+      };
       this.emitState('error', error instanceof Error ? error.message : '无法建立连接');
       this.scheduleReconnect();
       return;
@@ -170,6 +221,7 @@ export class GatewayClient {
       }
       // 注意：这里不能把 attempt 清零。只有真正收到 hello/paired 才算握手成功，
       // 否则一个「接受后立刻断」的代理会让退避永远停在 1s。
+      this.socketOpened = true;
       this.lastFrameAt = Date.now();
       this.startHeartbeat();
     };
@@ -219,6 +271,15 @@ export class GatewayClient {
     socket.onclose = (event: { code?: number; reason?: string }) => {
       // 已经被 disconnect()、探活或握手截止换掉的旧 socket，不许再动状态机。
       if (this.socket !== socket) return;
+      const opened = this.socketOpened;
+      this.socketOpened = false;
+      this.lastPairingFailure = {
+        opened,
+        closeCode: event.code,
+        closeReason: event.reason,
+        timedOut: false,
+        preflight: this.pairingPreflight,
+      };
       this.clearHandshake();
       this.clearProbe();
       this.stopHeartbeat();
@@ -245,6 +306,11 @@ export class GatewayClient {
     this.handshakeTimer = setTimeout(() => {
       this.handshakeTimer = null;
       if (this.socket !== socket) return;
+      this.lastPairingFailure = {
+        opened: this.socketOpened,
+        timedOut: true,
+        preflight: this.pairingPreflight,
+      };
       this.dropSocket('连接超时，正在重连');
       this.scheduleReconnect();
     }, HANDSHAKE_TIMEOUT_MS);
@@ -252,10 +318,27 @@ export class GatewayClient {
 
   private scheduleReconnect(): void {
     if (this.stopped) return;
-    // 配对码是一次性的，重试必然还是失败。这里一次都不重试，直接停。
     if (this.options?.pairingCode) {
+      const failure = this.lastPairingFailure ?? {
+        opened: this.socketOpened,
+        timedOut: false,
+        preflight: this.pairingPreflight,
+      };
+      const decision = classifyPairingFailure(failure);
+      // socket 从未打开 = 配对码还没被 claim，同一个码可以安全重试一次
+      // （手机代理抖动很常见）；已打开但没完成 hello 才认定码可能失效。
+      if (decision.retryable && this.attempt < 1) {
+        this.attempt += 1;
+        this.emitState('error', `${decision.message}（正在重试一次）`);
+        if (this.reconnectTimer) return;
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.open();
+        }, 1500);
+        return;
+      }
       this.stopped = true;
-      this.emitState('error', '配对码已被使用或已过期。每个配对码只能用一次，请在服务器上重新运行 dsh-pair');
+      this.emitState('error', decision.message);
       return;
     }
     this.maybeRefreshUrl();

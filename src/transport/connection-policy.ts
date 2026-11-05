@@ -31,6 +31,82 @@ export interface CloseDecision {
   message: string;
 }
 
+export type PairingPreflight = 'unknown' | 'ok' | 'timeout' | 'failed';
+
+export interface PairingFailureInput {
+  /** WebSocket 是否曾 open（服务端接受了升级）。false 时配对码通常还没被 claim。 */
+  opened: boolean;
+  closeCode?: number;
+  closeReason?: string;
+  /** 握手截止定时器触发（没有收到 hello/paired）。 */
+  timedOut: boolean;
+  /** 对同一主机的 HTTP 预检：ok 说明 DNS/TLS/TCP 基本可达。 */
+  preflight: PairingPreflight;
+}
+
+export interface PairingFailureDecision {
+  message: string;
+  /** 同一个配对码可以安全地再试一次（socket 未打开，码未被 claim）。 */
+  retryable: boolean;
+  /** 需要用户在服务器上重新生成配对码。 */
+  regenerate: boolean;
+}
+
+/**
+ * 区分「配对码失效」和「网络/代理连不上」。
+ *
+ * 旧实现把任何认证前失败都写成「配对码已被使用或已过期」，手机开了
+ * VPN/VPN 时会把网络问题误报成码的问题。这里只在 WebSocket 真的 open
+ * 过（服务端接受了升级、但没完成 hello）时才判定码可能失效；socket 都
+ * 没打开时，用 HTTP 预检结果把网络/代理和握手拒绝分开。
+ */
+export function classifyPairingFailure(input: PairingFailureInput): PairingFailureDecision {
+  if (input.closeCode === 4004) {
+    return {
+      message: '网关已关闭，请先在服务器上启用移动网关',
+      retryable: false,
+      regenerate: false,
+    };
+  }
+  if (input.closeCode === 4003) {
+    return {
+      message: '网关要求重新鉴权，请重新配对：在服务器上重新生成配对码',
+      retryable: false,
+      regenerate: true,
+    };
+  }
+  if (input.opened) {
+    return {
+      message:
+        '连接已建立但配对未完成：配对码可能已被使用或过期。请在服务器上重新生成配对码后重新配对。',
+      retryable: false,
+      regenerate: true,
+    };
+  }
+  if (input.preflight === 'failed') {
+    return {
+      message:
+        '连不上网关：手机网络或代理阻断了连接。请关闭 VPN/代理后重试；仍失败请检查 Wi-Fi/蜂窝网络。',
+      retryable: true,
+      regenerate: false,
+    };
+  }
+  if (input.preflight === 'timeout' || input.timedOut) {
+    return {
+      message:
+        '连接网关超时：请检查手机网络/VPN/代理后重试；配对码可能仍在有效期内。',
+      retryable: true,
+      regenerate: false,
+    };
+  }
+  return {
+    message:
+      '网关拒绝或未能完成连接：配对码可能已失效，也可能是代理拦截了 WebSocket。请先关闭代理重试；仍失败就在服务器上重新生成配对码。',
+    retryable: true,
+    regenerate: false,
+  };
+}
+
 /**
  * 4003 有两个来源：管理面重新开启鉴权、设备被撤销。两者都应该停，
  * 但提示不同；不要统一写成「设备授权已失效」。

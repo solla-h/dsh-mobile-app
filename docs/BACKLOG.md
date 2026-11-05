@@ -426,6 +426,7 @@
 | 2026-11-03 | LayoutAnimation 波及清单（新记录） | **候选（小，观感级）** | ThinkPill/ActivityGroup/ToolGroup/TrajectoryView 的交互折叠动画在 Android 同为死代码（点开/收起瞬跳）；修法照 `RowFadeIn` 手写 Animated | 入 AGENTS.md 防再踩；按日常使用反馈再排（STATUS-11-03 §8.3） |
 | 2026-11-04 | REPAIR-1 内建检修 Agent（新需求） | **记录，待讨论（用户明确先不做）** | dsh 社区迭代快、升级易坏，用户不在电脑边时无法手动修；希望 App 内置一个平时隐藏的检修 Agent，出现问题时被唤醒 | 见下方「§12 新需求记录」 |
 | 2026-11-05 | COMPAT-1 App / 网关 / DSH 版本绑定（新需求） | **做（文档/清单/预检已落地；真机回归待重试）** | 上游协议、插件与 DSH 迭代快，文档若只写“装最新版”，用户装到的版本可能和 App 发布时验证过的组合不一致 | `compatibility.json` + `docs/COMPATIBILITY.md` + `scripts/check-compat.mjs`；App 对 hello 的 protocol/dshVersion 做提示；Agent 手册改为固定版本 |
+| 2026-11-05 | PROJ-1 新建项目无法选择 Windows D 盘目录（新发现） | **记录，待排查** | 手机端新建项目时，工作区/目录选择里看不到 Windows 宿主的 `D:\` 目录；用户无法把新项目建在 D 盘 | 需真机复现并确认是 App 目录选择器只展示已注册工作区/home，还是网关 `workspace` 列表/协议字段没有暴露 D 盘；先不要猜修法 |
 
 ## 12. 新需求记录（2026-11-04）
 

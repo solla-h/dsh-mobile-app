@@ -25,8 +25,22 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 
 ### 2.1 安装并启用网关插件
 
-在 DSH 宿主上，从本仓库运行。先停掉 DSH Web：往运行中的 Web 进程里装 bundle 会热重载插件树，
-可能让 `sessionController` 一直不可用，直到整个进程重启。
+最简单的方式是在 DSH 宿主上、从本仓库打开一个普通终端（不是 DSH Web 的聊天），运行：
+
+```bash
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
+  --tunnel quick --pair --open
+```
+
+它会停掉 DSH Web、安装固定 release、可选安装语音、在后台重启 DSH Web、启用网关、开 Quick Tunnel，
+并打开配对二维码页。DSH Web 重启期间聊天界面会消失；重启后原会话仍在列表里，重新打开即可。
+
+加 `--voice` 安装与 DSH `0.2.1-rc.5` 匹配的语音 bundle 并预下载约 241 MB 的 SenseVoice 模型；
+`--no-voice` 跳过。以后要加语音，停掉 DSH Web 后运行 `node scripts/setup-gateway.mjs voice`。模型 ready
+之前 App 会显示「语音未启用」；不要在 `0.2.1-rc.5` 上装旧的 `0.1.7-alpha.1`。
+
+手动方式：先停掉 DSH Web（往运行中的 Web 进程里装 bundle 会热重载插件树，可能让 `sessionController`
+一直不可用，直到整个进程重启），再运行 `node scripts/setup-gateway.mjs install --yes`：
 
 ```bash
 # Linux systemd
@@ -36,15 +50,10 @@ sudo systemctl stop dsh-web
 node scripts/setup-gateway.mjs install --yes
 ```
 
-脚本会安装固定 release，并在 3080 被监听时拒绝。不要用 `@latest`；上游是另一条 release 线，
-不在本 App 版本的验证组合内。详见 [COMPATIBILITY.md](COMPATIBILITY.md)。
+脚本会安装固定 release，并在 3080 被监听时拒绝（除非显式传 `--stop-web`）。不要用 `@latest`；上游是
+另一条 release 线，不在本 App 版本的验证组合内。详见 [COMPATIBILITY.md](COMPATIBILITY.md)。
 
-安装脚本会问 `Enable voice input now? [Y/n]`。回答 Y 会安装与 DSH `0.2.1-rc.5` 匹配的 bundle，并预下载
-约 241 MB 的 SenseVoice 模型；`--no-voice` 跳过。以后要加语音，停掉 DSH Web 后运行
-`node scripts/setup-gateway.mjs voice`。模型 ready 之前 App 会显示「语音未启用」；不要在 `0.2.1-rc.5`
-上装旧的 `0.1.7-alpha.1`。
-
-用你平时的方式启动 DSH Web，然后启用网关：
+启动 DSH Web，然后启用网关：
 
 ```bash
 node scripts/setup-gateway.mjs enable
@@ -357,9 +366,11 @@ App 在运行期间会持续重试。
 
 ## 13. 故障排查
 
-### 二维码被拒绝
+### 二维码被拒绝 / 配对失败
 
-- 可能已过期，请重新生成。
+- App 提示「网络或代理」时，先关闭手机上的 VPN/代理，再重试；App 会自动用同一个配对码
+  重试一次。仍失败时检查 Wi-Fi/蜂窝网络，或把隧道域名设为直连。
+- App 提示「配对码可能已被使用或过期」时才需要重新生成；一个配对码只能使用一次。
 - 确认扫的是配对二维码，不是普通网址。
 - 相机对不上焦时，改用手动粘贴。
 
@@ -381,6 +392,14 @@ App 在运行期间会持续重试。
 
 - 网关没有就绪的语音 provider。到宿主检查语音插件和模型下载状态。
 - 能力可能存在，但模型还在 `unprepared`；App 要求有 ready/standby 的 provider。
+
+### 消息报 `MISSING_CREDENTIAL`
+
+宿主 DSH 没有找到模型 provider 的凭据，消息在调用模型前就失败了；不是手机或网关的问题。
+
+- 在 DSH Web 的 Models 页面保存 provider key，或在 `~/.dsh/.credentials.yaml` 的 `refs:` 下写入
+  对应环境变量（例如本地 magpie 的 `MAGPIE_GATEWAY_KEY`）。凭据文件默认会自动重载，不需要重启。
+- 如果 key 只存在于启动命令的环境变量里，重启 DSH Web 时必须带上它；更稳妥的做法是存进凭据文件。
 
 ### 消息一直停在「未确认」
 

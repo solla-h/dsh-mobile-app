@@ -15,11 +15,16 @@ The machine-readable copy is [`compatibility.json`](../compatibility.json). Upda
 The fork release includes `rendezvous-v1` (the optional encrypted address book). The upstream plugin at the
 time of writing is a different release line; it is not part of this verified combination.
 
-Not covered by this entry:
+**Recommended for new installs:** `0.12.0-rdv.3`. It adds endpoint-health auto-retry and clearer connection
+notices; the protocol is unchanged. `compatibility.json` pins this version and the setup script installs it.
+The table above records the last full real-device regression (`0.12.0-rdv.1`); treat rdv.3 as recommended but
+not yet through that same full regression.
+
+Not covered by the verified entry:
 
 - iOS;
 - DSH versions other than `0.2.1-rc.5`;
-- gateway versions other than `0.12.0-rdv.1`;
+- gateway versions other than the verified and recommended entries above;
 - installing from a local `git clone` or a `link:` dependency.
 
 “Not covered” means “stop and ask”, not “try it and see”.
@@ -41,7 +46,7 @@ The gateway's `hello` frame includes:
 
 - `protocol` — the `dsh-mobile-v1` protocol number (currently `3`);
 - `dshVersion` — currently a **build-time constant in the gateway plugin**, not the running host's version
-  (`0.12.0-rdv.1` reports `0.2.1-rc.2`). The app therefore does **not** enforce `dshVersion`; doing so would
+  (the current fork, including `0.12.0-rdv.3`, reports `0.2.1-rc.2`). The app therefore does **not** enforce `dshVersion`; doing so would
   produce false warnings on a verified host.
 
 The app compares `protocol` with `compatibility.json` and shows a warning when it is outside the verified
@@ -67,7 +72,7 @@ a profile backup. If the user's DSH is not `0.2.1-rc.5`, the script refuses to i
 auto-upgrade DSH.
 
 ```bash
-dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
+dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3
 ```
 
 The underlying dependency-free checker is also available on its own:
