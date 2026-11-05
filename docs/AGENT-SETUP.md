@@ -46,13 +46,14 @@ Give the agent the repository path (or a URL to this file), then use a prompt li
 请先阅读仓库里的 docs/AGENT-SETUP.md 和 compatibility.json，然后按手册在这台机器上安装并启用
 dsh-plugin-mobile-gateway。
 
-只做网关安装/启用/配对，不要构建或测试 App，不要克隆或使用本机源码 checkout，不要读
-credentials.json、keys/、.scratch/、profile 备份或 DSH 日志。使用 compatibility.json 里
-recommended 的固定版本；不要用 @latest。
+只做网关安装/启用/配对，不要构建或测试 App，不要克隆或使用本机的网关源码 checkout（那份只用于
+开发，安装必须走 GitHub 固定标签）。不要读 credentials.json、keys/、.scratch/、profile 备份、
+DSH 日志，也不要读 docs/HANDOFF.md、docs/STATUS-*、docs/BACKLOG.md。使用 compatibility.json 里
+recommended 的固定版本；不要用 @latest，也不要用 Web 插件面板装这个插件（面板没有固定版本）。
 
 先做 Step 0 的检查。安装或重启 DSH Web 会中断当前会话时，先停下来告诉我；需要 sudo、开放端口、
-Cloudflare 登录/隧道也先停下来。不要打印或保存配对 token；不要把 3080/3081 暴露到公网。
-完成后告诉我：手机应该扫码，还是复制哪段 pairing payload。
+Cloudflare 登录/隧道也先停下来；不要为了绕过沙箱权限去申请 danger-full-access。不要打印或保存
+配对 token；不要把 3080/3081 暴露到公网。完成后告诉我：手机应该扫码，还是复制哪段 pairing payload。
 ```
 
 ## Step 0 — inspect the host
@@ -128,9 +129,9 @@ but it needs a separate compatibility entry.
 
 Before you ask for approval or run the install, check whether you are running inside the target DSH Web
 (you usually are). Installing the plugin reloads DSH Web and can terminate this agent session. Tell the user
-this explicitly, then let the user run the pinned command in a normal shell with DSH Web stopped, or let the
-user install it from the DSH Web plugin panel. Do not “just try it” and dispose the session; do not request
-`danger-full-access` merely to work around the sandbox.
+this explicitly, then let the user run the pinned command in a normal shell with DSH Web stopped. Do not use
+the Web plugin panel for this release: its catalog entry is not pinned to `0.12.0-rdv.1`. Do not “just try
+it” and dispose the session; do not request `danger-full-access` merely to work around the sandbox.
 
 The plugin must be loaded by DSH Web. Restart it using the mechanism already in place:
 
@@ -281,6 +282,11 @@ Do not print the write secret or any pairing token.
 - Never print pairing codes, device tokens, write secrets, or private keys in chat or logs.
 - Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They contain unrelated
   secrets and are not part of gateway setup.
+- Never read `docs/HANDOFF.md`, `docs/STATUS-*`, or `docs/BACKLOG.md`; they are internal working notes and
+  may contain host details. The setup surface is README, AGENT-SETUP, COMPATIBILITY, compatibility.json,
+  and the gateway's own `PROTOCOL.md`.
+- Do not request `danger-full-access` for a read-only check or for the install. If the sandbox blocks the
+  profile, stop and hand the command to the user.
 - Never install from a local path, a `link:` dependency, a profile backup, or `@latest`. Use the pinned
   `compatibility.json` source.
 - If the DSH or plugin version does not match `compatibility.json`, stop and ask; do not auto-upgrade.
