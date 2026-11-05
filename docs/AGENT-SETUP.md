@@ -255,6 +255,21 @@ The manual path refuses if port 3080 is listening — this is the guard against 
 the voice question. After it finishes, start DSH Web with the normal command and run `enable`, `tunnel`, and
 `pair`.
 
+If DSH runs as a systemd service under another user (for example the unit runs as `dsh` while you log in as
+`ubuntu`), the profile commands must run as that service user, and only `systemctl` needs the login user's
+sudo:
+
+```bash
+sudo systemctl stop dsh-web
+sudo -u dsh -H bash -lc 'cd <repo> && node scripts/setup-gateway.mjs install --yes'
+sudo systemctl start dsh-web
+sudo -u dsh -H bash -lc 'cd <repo> && node scripts/setup-gateway.mjs enable'
+```
+
+Then pair from the DSH Web panel with the named-tunnel URL, or run `pair --url ...` and retrieve the HTML
+file. Do not run `install` as root: it would create root-owned files in the service user's profile. Clone the
+repository somewhere the service user can read.
+
 Do **not** use the Web plugin panel or `dsh plugin add` directly for this release: the panel’s catalog entry
 is not pinned to the recommended tag. Do **not** “just try it” while DSH Web is running; a page refresh or a
 soft plugin reload is not a process restart.
@@ -372,6 +387,7 @@ print device IDs.
 | --- | --- |
 | `sessionController is unavailable` after install | The plugin was hot-installed. Stop the **whole** DSH Web process and start it again; a page refresh or soft plugin reload is not enough. The setup script avoids this by refusing while 3080 is listening. |
 | `install` refuses “DSH Web is listening on 3080” | Intentional. Use the one-command `--stop-web --restart-web` path, or stop DSH Web manually and run `install --yes` in a normal shell. Do not bypass the guard. |
+| `install --stop-web` fails with `sudo: a password is required` | DSH runs as a service user without sudo. Stop/start the unit with the login user's sudo and run the profile commands as the service user; see “Manual fallback”. |
 | App turns fail with `MISSING_CREDENTIAL` after restart | The model provider key was not available to the restarted DSH Web. Save it in `~/.dsh/.credentials.yaml` under `refs:` (the store is watched and reloads without a restart), or start DSH Web with the provider environment variable set. This is a host credential issue, not a gateway or pairing issue. |
 | `check` says `plugin not installed` or installed version mismatch | Stop DSH Web; run `install --yes`. Do not use the Web plugin panel, a local checkout, or `@latest`. |
 | `check` says `DSH ... != recommended ...` | Stop and ask. Do not upgrade DSH automatically. |
