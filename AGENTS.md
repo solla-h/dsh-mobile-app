@@ -64,7 +64,7 @@ src/ui/                  屏幕与组件
 **版本绑定**：每个 App 发布版本与 gateway/DSH 的已验证组合写在 [`compatibility.json`](compatibility.json)
 和 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)。安装/发版前先看；禁止把 `@latest` 当默认。
 
-**源码位置**：`C:\work\dsh-plugin-mobile-gateway`（没 clone 就用
+**源码位置**：`../dsh-plugin-mobile-gateway`（没 clone 就用
 `git clone https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway.git` 拉一份）。
 
 **注意源码版本可能领先 npm 发布版**。仓库 `main` 的 `package.json` 版本号不随每次提交更新，

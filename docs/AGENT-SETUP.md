@@ -102,8 +102,8 @@ The agent cannot:
 - complete Cloudflare device authorization for the optional address book;
 - expose ports or change firewall rules without the user's explicit approval;
 - read `docs/HANDOFF.md`, `docs/STATUS-*`, `docs/BACKLOG.md`, `docs/RISK-PATCHES.md`, `docs/home-*`,
-  `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They are unrelated to setup and
-  contain host or account details.
+  `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They are internal engineering
+  notes, not part of the setup surface.
 
 ## Recommended user prompt
 
@@ -409,8 +409,9 @@ print device IDs.
   to a local page; do not echo the page’s payload.
 - Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs.
 - Never read `docs/HANDOFF.md`, `docs/STATUS-*`, `docs/BACKLOG.md`, `docs/RISK-PATCHES.md`, or `docs/home-*`;
-  they are internal working notes and may contain host details. The setup surface is README, AGENT-SETUP,
-  COMPATIBILITY, compatibility.json, the two setup scripts, and the gateway’s own `PROTOCOL.md`.
+  they are internal engineering notes, not part of the setup surface. The setup surface is README,
+  AGENT-SETUP, COMPATIBILITY, compatibility.json, the two setup scripts, and the gateway’s own
+  `PROTOCOL.md`.
 - Do not request `danger-full-access` for a read-only check or for the install. If the sandbox blocks the
   profile, stop and hand the command to the user.
 - Never install from a local path, a `link:` dependency, a profile backup, or `@latest`. Use the pinned

@@ -131,7 +131,7 @@ adb: C:/Users/example/AppData/Local/Microsoft/WinGet/Packages/
 截图缩放: PowerShell 跑 C:/work/.tmp/adb/shrink.ps1 <in> <out> 780   # 原图直接看会撑爆上下文
 ```
 
-**服务器 `dsh-host`（203.0.113.10，admin）**
+**服务器 `dsh-host`（测试机，账号 `admin`）**
 
 ```
 dsh web 跑在 systemd 单元 dsh-web.service，cwd /home/dsh/workspace
