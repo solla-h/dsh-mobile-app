@@ -25,23 +25,42 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 
 ### 2.1 安装并启用网关插件
 
-在 DSH 宿主上，安装与当前 App 版本一起验证过的 release：
+在 DSH 宿主上，从本仓库运行。先停掉 DSH Web：往运行中的 Web 进程里装 bundle 会热重载插件树，
+可能让 `sessionController` 一直不可用，直到整个进程重启。
 
 ```bash
-dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
+# Linux systemd
+sudo systemctl stop dsh-web
+# 或者 Ctrl+C 掉正在运行 `dsh web` 的终端
+
+node scripts/setup-gateway.mjs install --yes
 ```
 
-不要用 `@latest`；上游是另一条 release 线，不在本 App 版本的验证组合内。详见
-[COMPATIBILITY.md](COMPATIBILITY.md)。
+脚本会安装固定 release，并在 3080 被监听时拒绝。不要用 `@latest`；上游是另一条 release 线，
+不在本 App 版本的验证组合内。详见 [COMPATIBILITY.md](COMPATIBILITY.md)。
 
-重启 DSH Web：
+可选语音，DSH Web 仍停着时运行：
 
 ```bash
-dsh web
+node scripts/setup-gateway.mjs voice --yes
 ```
 
-打开 DSH Web → **移动设备 → 连接与配对**，启用网关，并选择手机访问方式。
-第一次在同一 Wi-Fi 下测试时，局域网直连最短；要在局域网外使用，就启用隧道并等公网地址就绪。
+它会安装与 DSH `0.2.1-rc.5` 匹配的 bundle，并预下载约 241 MB 的 SenseVoice 模型。模型 ready 之前
+App 会显示「语音未启用」；不要在 `0.2.1-rc.5` 上装旧的 `0.1.7-alpha.1`。
+
+用你平时的方式启动 DSH Web，然后启用网关：
+
+```bash
+node scripts/setup-gateway.mjs enable
+```
+
+打开 DSH Web → **移动设备 → 连接与配对**，或运行 `node scripts/setup-gateway.mjs pair --open`，
+再选择手机访问方式。第一次在同一 Wi-Fi 下测试时，局域网直连最短；要在局域网外使用，就启用隧道并等
+公网地址就绪。
+
+如果 Web UI 说 Quick Tunnel 公网入口未通过验证、但隧道日志显示 online，可能是宿主本机 DNS 被污染，
+隧道本身仍然可用。用 `pair` 生成配对页；如果手机也解析不了域名，就在手机上开 VPN 或 Private DNS
+（DoH），或者改用 Tailscale / 命名 Tunnel。
 
 ### 2.2 生成配对码
 

@@ -71,44 +71,62 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 ## 给 DSH Agent 的说明
 
 如果用户把这个仓库交给你，要求安装或配置手机网关，**不要照下面的人类快速开始自行猜**。
-请阅读 [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)，按其中的检查清单执行：环境预检、安装、重启、启用、
-入口选择、配对、验证和安全规则。
+请阅读 [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)，并且只运行：
+
+```bash
+node scripts/setup-gateway.mjs check
+```
+
+`install` 和 `voice` 交给用户在停掉 DSH Web 的普通终端里执行；脚本在 3080 被监听时会拒绝安装。
+不要直接运行 `dsh plugin add`、不要改 profile、不要用本机 checkout。`enable`/`pair` 是安全的；
+`pair` 只生成本地二维码页，不打印配对载荷。
 
 版本绑定在 [`compatibility.json`](compatibility.json)：只用里面的 `recommended` 版本，不要用 `@latest`
 或本机 checkout。任务是网关，不是构建/测试 App；真实用户已经装好 APK。
 
 手册里还有一段可以直接交给用户的中文提示词，以及所有必须停下来等人工确认的节点
-（sudo、重启 DSH Web、公网隧道、Cloudflare 登录）。
+（sudo、停止/重启 DSH Web、公网隧道、Cloudflare 登录）。
 
 ## 快速开始（终端用户）
 
 ### 1. 安装网关插件
 
-在运行 DSH 的机器上：
+在运行 DSH 的机器上，从本仓库运行。先停掉 DSH Web——往运行中的 Web 进程里装 bundle 会热重载插件树，
+可能让 `sessionController` 一直不可用，直到整个进程重启：
 
 ```bash
-# 与当前 App 版本一起验证过的 release
-dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
+# Linux systemd
+sudo systemctl stop dsh-web
+# 或者 Ctrl+C 掉正在运行 `dsh web` 的终端
+
+node scripts/setup-gateway.mjs install --yes
 ```
 
-不要用 `@latest`；上游 release 不在本 App 版本的验证组合内。详见
-[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
+脚本会安装 [`compatibility.json`](compatibility.json) 里的固定 tag，3080 在监听时直接拒绝，并重新跑检查。
+不要用 `@latest` 或 Web 插件面板；详见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
 
-重启 DSH Web：
+可选语音：DSH Web 仍停着时运行 `node scripts/setup-gateway.mjs voice --yes`。它会安装与
+`0.2.1-rc.5` 匹配的语音 bundle，并预下载约 241 MB 的 SenseVoice 模型；模型 ready 之前 App 会显示
+「语音未启用」。不要在 DSH `0.2.1-rc.5` 上装旧的 `0.1.7-alpha.1`。
+
+用你平时的方式启动 DSH Web，然后：
 
 ```bash
-dsh web
+node scripts/setup-gateway.mjs check
 ```
 
 ### 2. 启用网关并生成配对码
 
-打开 DSH Web → **移动设备 → 连接与配对**：
+```bash
+node scripts/setup-gateway.mjs enable
+node scripts/setup-gateway.mjs pair --open
+```
 
-1. 启用网关。
-2. 选择连接方式。同一 Wi-Fi 下，局域网直连最短；远程访问则启用 Cloudflare Quick Tunnel 或命名 Tunnel。
-3. 生成配对二维码。
+也可以打开 DSH Web → **移动设备 → 连接与配对**。脚本会写一个本地二维码页；配对码一次性、五分钟有效。
 
-如果宿主提供 `dsh-pair`，也可以在终端直接打印同样的配对载荷。
+如果 Web UI 说 Quick Tunnel 公网入口未通过验证、但隧道日志显示 online，可能是宿主本机 DNS 被污染，
+隧道本身仍然可用。用 `pair` 生成配对页；如果手机也解析不了域名，就在手机上开 VPN 或 Private DNS
+（DoH），或者改用 Tailscale / 命名 Tunnel。App 会拒绝公网地址的明文 `ws://`，这是有意设计。
 
 ### 3. 安装 App
 

@@ -55,16 +55,26 @@ function normalizePluginSpec(spec) {
 }
 
 function readPluginSpec(profile) {
-  const packageFile = path.join(os.homedir(), '.dsh', 'profiles', profile, 'package.json');
+  const profileDir = path.join(os.homedir(), '.dsh', 'profiles', profile);
+  const packageFile = path.join(profileDir, 'package.json');
+  const installedFile = path.join(profileDir, 'node_modules', PLUGIN_NAME, 'package.json');
+  let installedVersion = null;
+  if (fs.existsSync(installedFile)) {
+    try {
+      installedVersion = readJson(installedFile).version ?? null;
+    } catch {
+      installedVersion = null;
+    }
+  }
   if (!fs.existsSync(packageFile)) {
-    return { spec: null, packageFile };
+    return { spec: null, packageFile, installedFile, installedVersion };
   }
   const pkg = readJson(packageFile);
   const spec =
     pkg.dependencies?.[PLUGIN_NAME] ??
     pkg.devDependencies?.[PLUGIN_NAME] ??
     null;
-  return { spec, packageFile };
+  return { spec, packageFile, installedFile, installedVersion };
 }
 
 function readDshVersion() {
@@ -105,10 +115,12 @@ function main() {
 
   let pluginSpec = explicitPlugin;
   let profileFile = null;
+  let installedVersion = null;
   if (!pluginSpec) {
     const fromProfile = readPluginSpec(profile);
     pluginSpec = fromProfile.spec;
     profileFile = fromProfile.packageFile;
+    installedVersion = fromProfile.installedVersion;
   }
   const plugin = normalizePluginSpec(pluginSpec);
   const dsh = versionOf(explicitDsh ?? readDshVersion());
@@ -130,6 +142,11 @@ function main() {
   const expected = manifest.recommended;
   if (plugin.version && plugin.version !== expected.gateway.version) {
     errors.push(`plugin ${plugin.version} != recommended ${expected.gateway.version}`);
+  }
+  if (plugin.raw && !plugin.local && !installedVersion) {
+    errors.push(`installed package not found for profile "${profile}"; run the pinned install`);
+  } else if (installedVersion && installedVersion !== expected.gateway.version) {
+    errors.push(`installed plugin ${installedVersion} != recommended ${expected.gateway.version}`);
   }
   if (dsh && dsh !== expected.dsh.version) {
     errors.push(`DSH ${dsh} != recommended ${expected.dsh.version}`);
@@ -155,7 +172,12 @@ function main() {
     ok: errors.length === 0,
     app: appVersion,
     protocol: protocol ?? manifest.protocol.version,
-    plugin: { spec: plugin.raw, version: plugin.version, local: plugin.local },
+    plugin: {
+      spec: plugin.raw,
+      version: plugin.version,
+      installedVersion,
+      local: plugin.local,
+    },
     dsh,
     expected: {
       plugin: expected.gateway.version,

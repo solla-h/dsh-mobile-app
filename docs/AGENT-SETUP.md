@@ -3,174 +3,192 @@
 This page is written for a **DSH agent** that has shell access to the machine running DSH Web, when the user
 asks it to “install the mobile gateway from this repository”.
 
-The agent can install the plugin, restart DSH Web, enable the gateway, and prepare a pairing payload. It cannot
-scan the phone's camera or complete a Cloudflare browser login. Those are human steps.
+The setup surface is one script, [`scripts/setup-gateway.mjs`](../scripts/setup-gateway.mjs). The agent runs the
+read-only `check` and the safe `enable`/`pair` steps; the user runs `install` and `voice` in a normal shell with
+DSH Web stopped. This split is intentional: installing a bundle into a running Web process hot-reloads the
+plugin tree and can leave `sessionController` unavailable until the OS process is restarted.
 
 ## Version lock — read this first
 
-This app release is bound to the exact gateway plugin and DSH versions in
+This app release is bound to the exact gateway plugin, DSH, and optional voice bundle versions in
 [`compatibility.json`](../compatibility.json) (human explanation: [COMPATIBILITY.md](COMPATIBILITY.md)).
 Use only the `recommended` versions. Do not use `@latest`, a local git checkout, a `link:` dependency, or a
 profile backup — even if one exists on the host. If the host's DSH or plugin version differs, stop and ask;
 do not auto-upgrade either side.
 
 The gateway's `hello` advertises the protocol number and a build-time DSH version, but not the plugin version;
-the app only enforces the protocol. The preflight checker below verifies the installed plugin and the actual
-DSH (`dsh --version`).
+the app only enforces the protocol. The checker below verifies the profile spec, the **installed package**
+version under `node_modules`, and the actual DSH (`dsh --version`).
+
+## Use the setup script
+
+From a clone of this repository:
+
+```bash
+node scripts/setup-gateway.mjs check
+```
+
+If the agent does not have a clone, download the three files the script needs into a temporary directory:
+
+```bash
+tmp="$(mktemp -d)"
+mkdir -p "$tmp/scripts"
+curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/compatibility.json \
+  -o "$tmp/compatibility.json"
+curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scripts/check-compat.mjs \
+  -o "$tmp/scripts/check-compat.mjs"
+curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scripts/setup-gateway.mjs \
+  -o "$tmp/scripts/setup-gateway.mjs"
+node "$tmp/scripts/setup-gateway.mjs" check
+```
+
+On Windows PowerShell, use `$env:TEMP` and `Invoke-WebRequest` instead of `mktemp`/`curl`.
+
+The script must stay inside the temporary directory; do not copy it into `~/.dsh/profiles` or edit the profile
+by hand.
 
 ## What the agent can and cannot do
 
 The agent can:
 
-- install `dsh-plugin-mobile-gateway` into the `web` profile;
-- restart DSH Web when it has permission to do so;
-- enable the gateway and verify its local status;
-- choose a reachable endpoint and create a pairing payload;
-- verify that the phone appears as a trusted device after the user scans or pastes the payload.
+- run `check` (read-only) and report its exact output;
+- run `enable` after the user has restarted DSH Web;
+- run `pair` after the gateway is enabled. `pair` writes a local QR page and prints only its path and expiry;
+  it never prints the pairing payload.
 
 The agent cannot:
 
+- run `install` or `voice` while DSH Web is hosting the agent. The script refuses while port 3080 is listening,
+  but the agent must also not try to work around the refusal;
 - approve the phone's camera permission or scan the QR code for the user;
 - complete Cloudflare device authorization for the optional address book;
 - expose ports or change firewall rules without the user's explicit approval;
-- safely restart DSH Web if that would kill the agent's own session without a supervisor.
-
-If a step requires sudo, a browser authorization, a firewall change, or a restart that would terminate the
-agent, stop and ask the user.
+- read `docs/HANDOFF.md`, `docs/STATUS-*`, `docs/BACKLOG.md`, `docs/RISK-PATCHES.md`, `docs/home-*`,
+  `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They are unrelated to setup and
+  contain host or account details.
 
 ## Recommended user prompt
 
 Give the agent the repository path (or a URL to this file), then use a prompt like:
 
 ```text
-请先阅读仓库里的 docs/AGENT-SETUP.md 和 compatibility.json，然后按手册在这台机器上安装并启用
-dsh-plugin-mobile-gateway。
+请先阅读仓库里的 docs/AGENT-SETUP.md 和 compatibility.json，然后只运行：
+node scripts/setup-gateway.mjs check
+不要运行 install 或 voice，不要直接运行 dsh plugin add，不要修改 profile / cordis.patch.yml，
+不要克隆或使用本机的网关源码 checkout，也不要使用 @latest 或 Web 插件面板。
+不要读 docs/HANDOFF.md、docs/STATUS-*、docs/BACKLOG.md、docs/RISK-PATCHES.md、docs/home-*、
+credentials.json、keys/、.scratch/、profile 备份或 DSH 日志。
 
-只做网关安装/启用/配对，不要构建或测试 App，不要克隆或使用本机的网关源码 checkout（那份只用于
-开发，安装必须走 GitHub 固定标签）。不要读 credentials.json、keys/、.scratch/、profile 备份、
-DSH 日志，也不要读 docs/HANDOFF.md、docs/STATUS-*、docs/BACKLOG.md。使用 compatibility.json 里
-recommended 的固定版本；不要用 @latest，也不要用 Web 插件面板装这个插件（面板没有固定版本）。
-
-先做 Step 0 的检查。安装或重启 DSH Web 会中断当前会话时，先停下来告诉我；需要 sudo、开放端口、
-Cloudflare 登录/隧道也先停下来；不要为了绕过沙箱权限去申请 danger-full-access。不要打印或保存
-配对 token；不要把 3080/3081 暴露到公网。完成后告诉我：手机应该扫码，还是复制哪段 pairing payload。
+check 通过后，如需启用网关，运行 enable；需要配对时运行 pair --open，只把二维码页面的本地路径告诉我，
+不要把二维码内容、pairing token 或设备 ID 打印到聊天里。
+如果 check 报版本不匹配、DSH Web 正在监听 3080，或需要重启 DSH Web，停下来把 install/voice 交给
+我在普通终端里执行。不要为了绕过沙箱去申请 danger-full-access，也不要把 3080/3081 暴露到公网。
 ```
 
 ## Step 0 — inspect the host
 
-Run these first; do not install blindly:
+Run:
 
 ```bash
-dsh --version
-dsh plugin --profile web list
-curl -s http://127.0.0.1:3080/mgw/status
+node scripts/setup-gateway.mjs check
 ```
 
-Also read the pinned matrix. If the plugin is already installed, run the checker now; otherwise run it after
-Step 1. From a clone of the app repository:
+It reports:
 
-```bash
-node scripts/check-compat.mjs --profile web
-```
-
-If you do not have a clone, download both files to a temp directory and pass the manifest explicitly:
-
-```bash
-tmp="$(mktemp -d)"
-curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/compatibility.json \
-  -o "$tmp/compatibility.json"
-curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scripts/check-compat.mjs \
-  -o "$tmp/check-compat.mjs"
-node "$tmp/check-compat.mjs" --manifest "$tmp/compatibility.json" --profile web
-```
-
-On Windows PowerShell, use `$env:TEMP` and `Invoke-WebRequest` instead of `mktemp`/`curl` if needed. A
-`plugin not installed` result before Step 1 is expected. After Step 1 the checker must pass; any other failure
-means stop and ask. Do not upgrade DSH or replace the plugin with `@latest`.
+- the app, expected gateway, and expected DSH versions;
+- `compat: PASS/FAIL` with the installed gateway version;
+- the live DSH Web status (gateway enabled, clients, public endpoint, LAN/Tailscale URLs);
+- whether the optional voice bundle is installed;
+- the exact next command.
 
 Interpretation:
 
-- `dsh` missing: DSH is not installed for this shell. Stop and ask the user for the correct host/shell.
-- `dsh plugin ... list` does not show the plugin: install it in Step 1.
-- `/mgw/status` returns JSON: the gateway is installed and loaded; skip the installation, go to Step 2.
-- `/mgw/status` returns 404: the plugin is not loaded; install and restart.
+- `compat: PASS`: the exact verified combination is installed. Go to Step 2 if DSH Web is running; if it is not,
+  start it first.
+- `compat: FAIL` with `plugin not installed` or an installed-version mismatch: stop DSH Web, then run `install`
+  (Step 1) in a normal shell.
+- `compat: FAIL` with `DSH ... != recommended ...`: stop and ask. Do not upgrade DSH automatically.
+- `dsh web: not reachable`: start DSH Web, then re-run `check`.
+- `3080` already in use by another process: use that DSH Web instance; do not start a second one.
 
-**Sandbox note:** when this agent runs inside DSH's default `workspace-write` sandbox, `dsh plugin` may fail
+For a machine-readable result, `check --json` returns `{ ok, checker, dshWeb, voice }`. The public URL is
+reported as `(configured)` rather than printed.
+
+**Sandbox note:** when the agent runs inside DSH's default `workspace-write` sandbox, `dsh plugin` may fail
 with `EPERM` on `package.json.lock`. That is a permission failure, not “plugin missing”. Do not request
-`danger-full-access` just to run a read-only check; read `~/.dsh/profiles/web/package.json` instead, or stop
-and ask the user. For the install itself, see Step 1.
+`danger-full-access`; hand the install to the user instead.
 
-Check for an existing DSH Web process before starting another one:
+## Step 1 — install the gateway (user runs this)
 
-```bash
-# Linux
-ss -ltnp | grep -E ':(3080|3081)\b' || true
-
-# macOS
-lsof -nP -iTCP:3080 -iTCP:3081 -sTCP:LISTEN || true
-
-# Windows PowerShell
-Get-NetTCPConnection -State Listen -LocalPort 3080,3081 -ErrorAction SilentlyContinue
-```
-
-If `3080` is already in use, use that instance. Do not start a second `dsh web`.
-
-## Step 1 — install the plugin and restart Web
-
-This app release is verified with the fork tag (address book included). Use exactly:
+The user must stop DSH Web first. Examples:
 
 ```bash
-dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
+# Linux systemd
+sudo systemctl stop dsh-web
+
+# macOS / manual install
+# Ctrl+C the terminal that is running `dsh web`
 ```
 
-Do **not** use the upstream `@latest`, a local path, or a `link:` dependency. If the user does not want the
-fork, stop and explain that the upstream core is not part of this release's verified combination; it may work,
-but it needs a separate compatibility entry.
-
-Before you ask for approval or run the install, check whether you are running inside the target DSH Web
-(you usually are). Installing the plugin reloads DSH Web and can terminate this agent session. Tell the user
-this explicitly, then let the user run the pinned command in a normal shell with DSH Web stopped. Do not use
-the Web plugin panel for this release: its catalog entry is not pinned to `0.12.0-rdv.1`. Do not “just try
-it” and dispose the session; do not request `danger-full-access` merely to work around the sandbox.
-
-The plugin must be loaded by DSH Web. Restart it using the mechanism already in place:
-
-- If DSH Web is a system service, restart that unit (for example `sudo systemctl restart dsh-web`), but only
-  after confirming the unit exists and the user allows sudo.
-- If the user launched `dsh web` in a terminal, ask the user to stop and restart it. Do not kill a process that
-  is hosting your own session.
-- Do not run a second `dsh web` while one is listening on 3080.
-
-Verify after restart:
+Then, in a normal shell:
 
 ```bash
-curl -s http://127.0.0.1:3080/mgw/status
+node scripts/setup-gateway.mjs install --yes
 ```
 
-The response must include a `version` and `gatewayId`. If it returns 404, the plugin is not loaded; check the
-profile name and the restart.
+The script:
+
+1. refuses if port 3080 is listening — this is the guard against the hot-install `sessionController` failure;
+2. checks the DSH version against `compatibility.json`;
+3. installs exactly the pinned GitHub tag from `compatibility.json`;
+4. re-runs the checker and fails if the installed package version is wrong.
+
+Do **not** use the Web plugin panel or `dsh plugin add` directly for this release: the panel’s catalog entry
+is not pinned to the recommended tag. Do **not** “just try it” while DSH Web is running; a page refresh or a
+soft plugin reload is not a process restart.
+
+If the user wants voice input, keep DSH Web stopped and run the optional step below before starting it again.
+
+## Optional — enable voice input (user runs this)
+
+The app supports voice input; the host needs the matching official bundle. The script installs the exact
+version from `compatibility.json` (currently `@deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.5`)
+and pre-downloads the SenseVoice model (about 241 MB) to the DSH home. The model is required: the app shows
+“语音未启用” until a provider is `ready`/`standby`, and the mobile app has no “prepare model” button.
+
+With DSH Web still stopped:
+
+```bash
+node scripts/setup-gateway.mjs voice
+# reads the plan and asks for confirmation; then:
+node scripts/setup-gateway.mjs voice --yes
+```
+
+- Use `--no-download` to skip the model download and prepare it later from the Web UI.
+- The script verifies the model size and SHA-256. It tries `hf-mirror.com` first and falls back to
+  `huggingface.co`; a failed download leaves no partial file behind.
+- Do not install `0.1.7-alpha.1` on DSH `0.2.1-rc.5`: that older bundle is disabled by the profile’s
+  compatibility exemptions. Use the matching version.
+- The optional profile patch for `speech-to-text-sensevoice` only needs `dataRoot` and, in China, the
+  `https://hf-mirror.com` model origin. The bundle already supplies the default `dataRoot`; do not edit the
+  profile patch by hand.
+
+Start DSH Web with the user’s normal command after the gateway and optional voice steps. Verify:
+
+```bash
+node scripts/setup-gateway.mjs check
+```
 
 ## Step 2 — enable the gateway
 
-The management API is loopback-only and requires no extra token when called from the DSH host. Do not expose
-`/mgw` or port `3081` to the public internet.
+The management API is loopback-only. Do not expose `/mgw` or port `3081` to the public internet.
 
 ```bash
-curl -s -X POST http://127.0.0.1:3080/mgw/gateway \
-  -H 'content-type: application/json' \
-  -d '{"mode":"persistent"}'
+node scripts/setup-gateway.mjs enable
 ```
 
-`mode` may be `persistent`, `temporary`, or `disabled`. Use `persistent` for normal use and `temporary` for a
-short test.
-
-Verify:
-
-```bash
-curl -s http://127.0.0.1:3080/mgw/status
-```
-
-Look for `"gatewayEnabled": true` and `"lan": {"listening": true, "port": 3081, ...}`.
+The script posts `{"mode":"persistent"}`, waits for the status to flip, and prints the public, LAN, and
+Tailscale URLs. If it reports `HTTP 404`, the plugin is not loaded; restart DSH Web and re-run `check`.
 
 ## Step 3 — choose a phone-reachable endpoint
 
@@ -181,110 +199,73 @@ The app requires:
 
 A public IP with plain `ws://` is rejected by design. Do not work around that by disabling the check.
 
-### Same LAN
+Use the URLs printed by `check`/`enable`:
 
-Find a private address of the DSH host reachable from the phone:
+- `lan.urls`: private IPv4 addresses (`10/8`, `172.16/12`, `192.168/16`) and Tailscale `100.64/10`.
+  `ws://<address>:3081/ws/mobile`.
+- If `lan.urls` is empty, the host has no RFC1918/Tailscale address. Do not force a `ws://` URL: addresses
+  such as `192.10.x.x` are not RFC1918, and both the gateway LAN listener and the app reject them.
+- `tailscale.urls`: use `ws://100.x.x.x:3081/ws/mobile` when both the host and phone are on Tailscale.
+- `publicUrl`: a `wss://` Quick Tunnel or named Tunnel address.
 
-```bash
-# Linux
-hostname -I
-ip -4 addr
-
-# macOS
-ipconfig getifaddr en0
-ipconfig getifaddr en1
-```
-
-Use an address in a private range such as `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`:
-
-```text
-ws://<private-lan-ip>:3081/ws/mobile
-```
-
-If the host only has a public address, or the phone and host are on different networks, do not use `ws://`.
-Use a Cloudflare tunnel or Tailscale WSS/private endpoint instead.
-
-### Public access
-
-For a remote phone, use the gateway's public route:
-
-```text
-wss://<public-host>/ws/mobile
-```
-
-The agent must not enable a Cloudflare Quick Tunnel or named Tunnel without the user's approval. A Quick Tunnel
-creates a public URL; a named Tunnel requires the user's Cloudflare configuration. Ask first.
+**Quick Tunnel DNS false negative:** `publicReady:false` with `endpointHealth.state === 'dns-error'` can mean
+the host’s local DNS is poisoned or blocked, not that the tunnel is down. The public record can exist and the
+tunnel can be live. `pair` still creates a payload in this state. If the phone also cannot resolve the
+hostname, enable a VPN or Android Private DNS (DoH) on the phone, or use Tailscale / a named Tunnel with a
+custom domain. Do not debug the tunnel by disabling TLS verification or the app’s URL check.
 
 ## Step 4 — create the pairing payload
 
-Preferred path for a human at the DSH Web UI:
-
-1. Ask the user to open **Mobile devices → Connection & pairing**.
-2. Enable the gateway if it is not already enabled.
-3. Generate the pairing QR code and scan it with the phone.
-
-If the user wants a payload for manual paste, or cannot use the QR panel, create one from the host:
+With DSH Web running and the gateway enabled:
 
 ```bash
-curl -s -X POST http://127.0.0.1:3080/mgw/pair \
-  -H 'content-type: application/json' \
-  -d '{"publicUrl":"ws://<private-lan-ip>:3081/ws/mobile"}'
+node scripts/setup-gateway.mjs pair --open
 ```
 
-The response contains:
+The script writes a local HTML page containing the QR code, prints the page path and expiry, and opens it if
+`--open` is given. On a headless/SSH host, omit `--open` and give the user the path; the page is plain HTML.
+The page also contains the manual-paste payload in a collapsed section.
 
-- `payload` — the decoded pairing object;
-- `qrPayload` — the Base64URL string accepted by the app's **手动粘贴配对串** / manual paste path;
-- `svg` — a QR image if the agent can display it.
+- The pairing code is single-use and expires in five minutes.
+- Treat it like a password: do not paste the QR payload, device token, or the page’s textarea into chat, logs,
+  issues, or screenshots.
+- The agent may report the page path and expiry, but must not print the payload.
+- If the Web UI’s QR button is blocked by `publicReady:false`, use this script instead; it calls the same
+  `/mgw/pair` API without the misleading readiness gate.
 
-The payload is single-use and expires in five minutes by default. Treat it like a password: do not paste it into
-a public issue, log, or screenshot.
-
-After the user pairs, verify:
+After the user scans the QR, verify:
 
 ```bash
-curl -s http://127.0.0.1:3080/mgw/devices
+node scripts/setup-gateway.mjs check
 ```
 
-The new device should be listed; the gateway panel should show it as online after the app connects.
-
-## Optional — address book
-
-The address book is optional and needs a Cloudflare account. It cannot be completed by an agent alone:
-
-1. The user opens **Mobile devices → Connection & pairing → Address book**.
-2. The user completes the Cloudflare device login in a browser.
-3. The plugin deploys the Worker and stores the write secret on the host.
-
-Do not run `wrangler login` in the agent shell unless the user explicitly asks. It is an interactive
-authorization and must be visible to the user. After the user enables it, the agent may check:
-
-```bash
-curl -s http://127.0.0.1:3080/mgw/rendezvous
-```
-
-Do not print the write secret or any pairing token.
+`clients` should become non-zero. The device list is available to the user in the Web UI; the agent should not
+print device IDs.
 
 ## Failure branches
 
 | Symptom | What to do |
 | --- | --- |
-| `/mgw/status` 404 | Plugin not loaded. Check the `web` profile and restart DSH Web. |
-| `3080` already in use | Use the existing DSH Web process; do not start another one. |
-| `publicUrl must use wss://` | The host IP is public or the phone is remote. Use a private LAN/Tailscale `ws://` or a `wss://` tunnel. |
-| Plugin installed but no Mobile devices panel | Restart DSH Web and check the profile's bundle list. |
-| Voice plugins disabled after upgrading DSH | Optional. The core gateway works; fix speech compatibility separately only if the user asks. |
+| `sessionController is unavailable` after install | The plugin was hot-installed. Stop the **whole** DSH Web process and start it again; a page refresh or soft plugin reload is not enough. The setup script avoids this by refusing while 3080 is listening. |
+| `install` refuses “DSH Web is listening on 3080” | Intentional. Stop DSH Web, then run `install --yes` in a normal shell. Do not bypass the guard. |
+| `check` says `plugin not installed` or installed version mismatch | Stop DSH Web; run `install --yes`. Do not use the Web plugin panel, a local checkout, or `@latest`. |
+| `check` says `DSH ... != recommended ...` | Stop and ask. Do not upgrade DSH automatically. |
+| `/mgw/status` 404 | The plugin is not loaded. Restart DSH Web and check the profile bundle list. |
+| `publicReady:false`, `dns-error` | Host DNS false negative; the tunnel may be live. Use `pair`; if the phone cannot resolve the hostname, use VPN/Private DNS, Tailscale, or a named Tunnel. |
+| `ws://192.10.x.x` rejected, `lan.urls` empty | The address is not RFC1918/Tailscale. Use Tailscale or a `wss://` tunnel. |
+| Voice bundle disabled after upgrading DSH | Install the matching `0.2.1-rc.5` bundle; do not use `0.1.7-alpha.1`. |
+| App shows 语音未启用 after voice install | The model is not ready. Stop DSH Web, run `voice --yes` to download and verify it, then start DSH Web; check `speech-catalog` `providers[].preparation.phase`. |
 | Cloudflare authorization requested | Stop and hand the browser step to the user. |
 
 ## Safety rules
 
 - Never expose `3080`, `3081`, or `/mgw` to the public internet.
-- Never print pairing codes, device tokens, write secrets, or private keys in chat or logs.
-- Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They contain unrelated
-  secrets and are not part of gateway setup.
-- Never read `docs/HANDOFF.md`, `docs/STATUS-*`, or `docs/BACKLOG.md`; they are internal working notes and
-  may contain host details. The setup surface is README, AGENT-SETUP, COMPATIBILITY, compatibility.json,
-  and the gateway's own `PROTOCOL.md`.
+- Never print pairing codes, device tokens, write secrets, or private keys in chat or logs. `pair` writes them
+  to a local page; do not echo the page’s payload.
+- Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs.
+- Never read `docs/HANDOFF.md`, `docs/STATUS-*`, `docs/BACKLOG.md`, `docs/RISK-PATCHES.md`, or `docs/home-*`;
+  they are internal working notes and may contain host details. The setup surface is README, AGENT-SETUP,
+  COMPATIBILITY, compatibility.json, the two setup scripts, and the gateway’s own `PROTOCOL.md`.
 - Do not request `danger-full-access` for a read-only check or for the install. If the sandbox blocks the
   profile, stop and hand the command to the user.
 - Never install from a local path, a `link:` dependency, a profile backup, or `@latest`. Use the pinned

@@ -80,46 +80,67 @@ device keys, session/event projections, and the optional rendezvous publisher.
 ## For DSH agents
 
 If a user gives you this repository and asks you to install or configure the mobile gateway, **do not follow the
-human quick start by guessing**. Read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) and follow its checklist:
-preflight, install, restart, enable, endpoint selection, pairing, verification, and safety rules.
+human quick start by guessing**. Read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) and run only:
+
+```bash
+node scripts/setup-gateway.mjs check
+```
+
+The user runs `install` and `voice` in a normal shell with DSH Web stopped; the script refuses while port 3080
+is listening. Do not call `dsh plugin add` directly, edit the profile, or use a local checkout. `enable` and
+`pair` are safe for the agent; `pair` writes a local QR page and never prints the payload.
 
 The release is pinned in [`compatibility.json`](compatibility.json): use its `recommended` versions, never
 `@latest` or a local checkout. The task is the gateway, not building or testing the app; a real user already
 has the APK installed.
 
 The runbook also contains a copy-paste prompt for the user and the exact places where an agent must stop for
-human approval (sudo, DSH Web restart, public tunnel, Cloudflare login).
+human approval (sudo, DSH Web restart/stop, public tunnel, Cloudflare login).
 
 ## Quick start (end users)
 
 ### 1. Install the gateway plugin
 
-On the machine that runs DSH:
+On the machine that runs DSH, from a clone of this repository. Stop DSH Web first — adding a bundle to a
+running Web process hot-reloads the plugin tree and can leave `sessionController` unavailable until a full
+process restart:
 
 ```bash
-# the release verified with this app
-dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
+# Linux systemd
+sudo systemctl stop dsh-web
+# or Ctrl+C the terminal that is running `dsh web`
+
+node scripts/setup-gateway.mjs install --yes
 ```
 
-Do not use `@latest`; the upstream release line is not part of this app release's verified combination.
-See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+The script installs the pinned tag from [`compatibility.json`](compatibility.json), refuses while port 3080 is
+listening, and re-runs the checker. Do not use `@latest` or the Web plugin panel for this release; see
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-Restart DSH Web:
+Optional voice input: with DSH Web still stopped, run `node scripts/setup-gateway.mjs voice --yes`. It installs
+the matching `0.2.1-rc.5` voice bundle and pre-downloads the ~241 MB SenseVoice model; the app shows
+“语音未启用” until that provider is ready. Do not install the older `0.1.7-alpha.1` bundle on DSH `0.2.1-rc.5`.
+
+Start DSH Web with your normal command, then:
 
 ```bash
-dsh web
+node scripts/setup-gateway.mjs check
 ```
 
 ### 2. Enable the gateway and show a pairing code
 
-Open DSH Web → **Mobile devices → Connection & pairing** (移动设备 → 连接与配对):
+```bash
+node scripts/setup-gateway.mjs enable
+node scripts/setup-gateway.mjs pair --open
+```
 
-1. Enable the gateway.
-2. Choose a connection method. On the same Wi-Fi, LAN direct is the shortest path; for remote access, enable a
-   Cloudflare Quick Tunnel or a named Tunnel.
-3. Generate the pairing QR code.
+Or open DSH Web → **Mobile devices → Connection & pairing** (移动设备 → 连接与配对). The script writes a local
+QR page; the pairing code is single-use and expires in five minutes.
 
-If the host provides the `dsh-pair` helper, it can print the same pairing payload in the terminal.
+If the Web UI says the Quick Tunnel public entry has not passed verification while the tunnel is online, the
+host's local DNS may be poisoned; the tunnel can still be live. Use `pair` to create a payload, and if the
+phone also cannot resolve the hostname, enable a VPN or Private DNS (DoH) on the phone, or use Tailscale / a
+named Tunnel. The app deliberately rejects plain `ws://` for public addresses.
 
 ### 3. Install the app
 

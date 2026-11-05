@@ -26,24 +26,45 @@ The gateway panel is the source of truth for connection status, paired devices, 
 
 ### 2.1 Install and enable the gateway plugin
 
-On the DSH host, install the release this app was verified with:
+On the DSH host, from a clone of this repository. Stop DSH Web first: adding a bundle to a running Web process
+hot-reloads the plugin tree and can leave `sessionController` unavailable until the whole process is restarted.
 
 ```bash
-dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
+# Linux systemd
+sudo systemctl stop dsh-web
+# or Ctrl+C the terminal that is running `dsh web`
+
+node scripts/setup-gateway.mjs install --yes
 ```
 
-Do not use `@latest`; upstream is a different release line and is not part of this app release's verified
-combination. See [COMPATIBILITY.md](COMPATIBILITY.md).
+The script installs the pinned release and refuses while port 3080 is listening. Do not use `@latest`; upstream
+is a different release line and is not part of this app release's verified combination. See
+[COMPATIBILITY.md](COMPATIBILITY.md).
 
-Restart DSH Web:
+Optional voice input, while DSH Web is still stopped:
 
 ```bash
-dsh web
+node scripts/setup-gateway.mjs voice --yes
 ```
 
-Open the DSH Web UI → **Mobile devices → Connection & pairing** (移动设备 → 连接与配对), enable the gateway,
-and choose how the phone should reach it. For a first test on the same Wi-Fi, LAN direct is the shortest path.
-For use outside the LAN, enable a tunnel and wait until its public address is ready.
+This installs the bundle matching DSH `0.2.1-rc.5` and pre-downloads the ~241 MB SenseVoice model. The app shows
+“语音未启用” until the provider is ready; do not install the older `0.1.7-alpha.1` bundle.
+
+Start DSH Web with your normal command, then enable the gateway:
+
+```bash
+node scripts/setup-gateway.mjs enable
+```
+
+Open the DSH Web UI → **Mobile devices → Connection & pairing** (移动设备 → 连接与配对), or use
+`node scripts/setup-gateway.mjs pair --open`, and choose how the phone should reach it. For a first test on the
+same Wi-Fi, LAN direct is the shortest path. For use outside the LAN, enable a tunnel and wait until its public
+address is ready.
+
+If the Web UI says the Quick Tunnel public entry has not passed verification while the tunnel is online, the
+host's local DNS may be poisoned; the tunnel can still be live. Use `pair` to create a payload. If the phone
+also cannot resolve the hostname, enable a VPN or Private DNS (DoH) on the phone, or use Tailscale / a named
+Tunnel.
 
 ### 2.2 Generate a pairing code
 
