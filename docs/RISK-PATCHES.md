@@ -1,5 +1,10 @@
 # 风险补丁与修复清单（非标准状态）
 
+> **2026-11-05 更新：第 1 节的 `0.1.7-alpha.1` 跨 rc 豁免已过时。** DSH `0.2.1-rc.5` 有匹配的官方
+> `@deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.5`（依赖精确匹配，不需要版本豁免）。
+> 在 rc.5 上不要再执行下面的 `allow-version`；用 `node scripts/setup-gateway.mjs voice` 安装匹配版本。
+> 本节仅作为历史记录保留。
+
 > 这份文档只记「服务器/依赖被我们手工改过、升级时可能崩」的地方。
 > 不记普通代码变更（那些看 git log）。
 > 最后更新：2026-10-29

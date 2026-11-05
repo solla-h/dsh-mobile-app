@@ -12,10 +12,20 @@
     "gateway": {
       "name": "dsh-plugin-mobile-gateway",
       "version": "0.12.0-rdv.1",
+      "source": "github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1",
       "install": "dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1"
     },
     "dsh": {
       "version": "0.2.1-rc.5"
+    },
+    "voice": {
+      "name": "@deepseek-ai/dsh-experimental-voice-input-bundle",
+      "version": "0.2.1-rc.5",
+      "source": "@deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.5",
+      "model": {
+        "origin": "https://hf-mirror.com",
+        "bytes": 241357257
+      }
     }
   },
   "verified": [

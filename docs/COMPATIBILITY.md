@@ -24,6 +24,17 @@ Not covered by this entry:
 
 “Not covered” means “stop and ask”, not “try it and see”.
 
+Voice input is an **optional host add-on**, not part of the gateway protocol entry above. For DSH
+`0.2.1-rc.5`, use the matching official bundle:
+
+| Voice bundle | DSH | Notes |
+| --- | --- | --- |
+| `@deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.5` | `0.2.1-rc.5` | Exact dependency match; no profile exemption needed. |
+
+The older `0.1.7-alpha.1` line is disabled by DSH compatibility rules on `0.2.1-rc.5`; do not use it. The app
+already supports voice; the host bundle and its model are what make the voice entry ready. The setup script
+installs and pre-downloads it only after the user confirms.
+
 ## How the app checks at runtime
 
 The gateway's `hello` frame includes:
@@ -43,34 +54,41 @@ on the actual host.
 
 ## Agent preflight
 
-An agent installing the gateway must use the exact `recommended` values:
+Do not run `dsh plugin add` directly. The setup surface is
+[`scripts/setup-gateway.mjs`](../scripts/setup-gateway.mjs):
+
+```bash
+node scripts/setup-gateway.mjs check          # read-only; the agent may run this
+node scripts/setup-gateway.mjs install --yes  # the user runs this with DSH Web stopped
+```
+
+The script uses exactly the pinned value below; never use `@latest`, a local checkout, a `link:` dependency, or
+a profile backup. If the user's DSH is not `0.2.1-rc.5`, the script refuses to install; stop and ask; do not
+auto-upgrade DSH.
 
 ```bash
 dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
 ```
 
-Never use `@latest`, a local checkout, a `link:` dependency, or a profile backup. If the user's DSH is not
-`0.2.1-rc.5`, stop and ask before installing; do not auto-upgrade DSH.
-
-The repository contains a dependency-free checker:
+The underlying dependency-free checker is also available on its own:
 
 ```bash
 # From a clone of this repository:
 node scripts/check-compat.mjs --profile web
 
-# Or download the manifest and checker to a temp directory:
-# (Linux/macOS)
+# Or download the manifest and checker to a temp directory (the setup script also needs
+# scripts/setup-gateway.mjs; see AGENT-SETUP.md for the full three-file snippet):
 tmp="$(mktemp -d)"
 curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/compatibility.json \
   -o "$tmp/compatibility.json"
 curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scripts/check-compat.mjs \
   -o "$tmp/check-compat.mjs"
-node "$tmp/check-compat.mjs" --manifest "$tmp/compatibility.json" --profile web
+node "$tmp/check-compat.mjs" --manifest "$tmp/compatibility.json" --profile web --json
 ```
 
-The checker reads the plugin spec from `~/.dsh/profiles/<profile>/package.json`, runs `dsh --version`, and
-fails on a local path, an unverified plugin, an unverified DSH version, or a protocol mismatch. It never prints
-pairing tokens or secrets.
+The checker reads the plugin spec from `~/.dsh/profiles/<profile>/package.json`, verifies the **installed**
+package version under `node_modules`, runs `dsh --version`, and fails on a local path, an unverified plugin, an
+unverified DSH version, or a protocol mismatch. It never prints pairing tokens or secrets.
 
 ## Release rule
 
@@ -80,7 +98,8 @@ Every app release must update `compatibility.json` and this table:
 2. record the exact gateway plugin version and install source;
 3. record the exact DSH version used for the real-device regression;
 4. record the protocol number and platform;
-5. run `node scripts/check-compat.mjs` with the release versions;
-6. update the README's requirements section.
+5. run `node scripts/setup-gateway.mjs check` (or `check-compat.mjs --profile web`) with the release versions;
+6. if voice is part of the release, record the voice bundle version and verify it on a stopped DSH Web;
+7. update the README's requirements section.
 
 Do not ship a release whose docs say “install the latest gateway”. “Latest” is not a version.
