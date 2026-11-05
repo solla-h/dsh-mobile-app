@@ -32,12 +32,12 @@
     {
       "app": "0.1.0",
       "appBuild": "224d30c6",
-      "gateway": "0.12.0-rdv.1",
+      "gateway": "0.12.0-rdv.3",
       "dsh": "0.2.1-rc.5",
       "protocol": 3,
       "platforms": ["android"],
       "verifiedAt": "2026-11-05",
-      "notes": "Fork release with rendezvous-v1; EAS preview APK. iOS and other DSH/gateway versions are not covered by this entry."
+      "notes": "Fork release with rendezvous-v1. Real-device Android regression: pairing, session list, text reply, hold-to-talk voice. iOS and other DSH/gateway versions are not covered by this entry."
     }
   ],
   "policy": {

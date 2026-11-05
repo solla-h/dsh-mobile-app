@@ -1,11 +1,11 @@
 {
   "name": "dsh-mobile-app",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "license": "MIT",
   "main": "index.ts",
   "dependencies": {
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
-    "@types/jest": "30.0.0",
     "expo": "~58.0.23",
     "expo-asset": "~58.0.20",
     "expo-audio": "~58.0.11",
@@ -20,8 +20,6 @@
     "expo-secure-store": "~58.0.2",
     "expo-sharing": "~58.0.22",
     "expo-status-bar": "~58.0.4",
-    "jest": "~30.5.2",
-    "jest-expo": "~58.0.14",
     "markdown-it": "^14.3.3",
     "react": "19.3.0",
     "react-native": "0.88.1",
@@ -30,10 +28,13 @@
   "devDependencies": {
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
+    "@types/jest": "30.0.0",
     "@types/markdown-it": "^14.2.0",
     "@types/react": "~19.3.0",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -43,6 +44,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
+    "test:node": "node --test scripts/__tests__/setup-gateway-parse.test.mjs",
+    "test:all": "npm test && npm run test:node",
     "typecheck": "tsc --noEmit"
   },
   "jest": {
