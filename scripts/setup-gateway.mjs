@@ -419,9 +419,15 @@ async function restartWeb(info) {
     const fd = fs.openSync(logFile, 'a');
     const env = { ...process.env, ...(info.env ?? {}) };
     const child = process.platform === 'win32'
-      ? spawn('cmd.exe', ['/d', '/s', '/c', info.commandLine], {
+      ? spawn('cmd.exe', ['/d', '/s', '/c', `"${info.commandLine}"`], {
           cwd: info.cwd ?? process.cwd(),
           env,
+          // Windows command lines start with a quoted executable. Node's default
+          // argument quoting escapes those quotes as \"...\", which cmd.exe then
+          // treats as the program name; the restart fails before DSH starts.
+          // Pass the command line verbatim, wrapped in the outer quotes cmd /s /c
+          // expects.
+          windowsVerbatimArguments: true,
           detached: true,
           stdio: ['ignore', fd, fd],
           windowsHide: true,
