@@ -105,9 +105,10 @@ node scripts/setup-gateway.mjs install --yes
 脚本会安装 [`compatibility.json`](compatibility.json) 里的固定 tag，3080 在监听时直接拒绝，并重新跑检查。
 不要用 `@latest` 或 Web 插件面板；详见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
 
-可选语音：DSH Web 仍停着时运行 `node scripts/setup-gateway.mjs voice --yes`。它会安装与
-`0.2.1-rc.5` 匹配的语音 bundle，并预下载约 241 MB 的 SenseVoice 模型；模型 ready 之前 App 会显示
-「语音未启用」。不要在 DSH `0.2.1-rc.5` 上装旧的 `0.1.7-alpha.1`。
+安装脚本会问 `Enable voice input now? [Y/n]`。回答 Y 会安装与 `0.2.1-rc.5` 匹配的语音 bundle，并预下载
+约 241 MB 的 SenseVoice 模型；模型 ready 之前 App 会显示「语音未启用」。用 `--no-voice` 跳过，或以后在
+DSH Web 停着时运行 `node scripts/setup-gateway.mjs voice`。不要在 DSH `0.2.1-rc.5` 上装旧的
+`0.1.7-alpha.1`。
 
 用你平时的方式启动 DSH Web，然后：
 

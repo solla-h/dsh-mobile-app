@@ -117,9 +117,10 @@ The script installs the pinned tag from [`compatibility.json`](compatibility.jso
 listening, and re-runs the checker. Do not use `@latest` or the Web plugin panel for this release; see
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-Optional voice input: with DSH Web still stopped, run `node scripts/setup-gateway.mjs voice --yes`. It installs
-the matching `0.2.1-rc.5` voice bundle and pre-downloads the ~241 MB SenseVoice model; the app shows
-“语音未启用” until that provider is ready. Do not install the older `0.1.7-alpha.1` bundle on DSH `0.2.1-rc.5`.
+The install script asks `Enable voice input now? [Y/n]`. Answer Y to install the matching `0.2.1-rc.5` voice
+bundle and pre-download the ~241 MB SenseVoice model; the app shows “语音未启用” until that provider is ready.
+Use `--no-voice` to skip, or run `node scripts/setup-gateway.mjs voice` later with DSH Web stopped. Do not
+install the older `0.1.7-alpha.1` bundle on DSH `0.2.1-rc.5`.
 
 Start DSH Web with your normal command, then:
 

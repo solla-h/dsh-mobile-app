@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node scripts/setup-gateway.mjs check   [--profile web] [--port 3080] [--json]
- *   node scripts/setup-gateway.mjs install [--profile web] [--yes]
+ *   node scripts/setup-gateway.mjs install [--profile web] [--yes] [--no-voice]
  *   node scripts/setup-gateway.mjs enable  [--port 3080]
  *   node scripts/setup-gateway.mjs pair    [--port 3080] [--url URL] [--out FILE] [--open]
  *
@@ -25,6 +25,7 @@ import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +52,18 @@ function flag(name) {
 
 function fail(message) {
   throw new SetupError(message);
+}
+
+async function confirm(question, defaultYes = true) {
+  if (!process.stdin.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(question)).trim().toLowerCase();
+    if (!answer) return defaultYes;
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    rl.close();
+  }
 }
 
 function readManifest() {
@@ -335,10 +348,31 @@ async function cmdInstall(yes) {
     return 1;
   }
   console.log('compat: PASS');
-  console.log(
-    'optional: voice input is available. Keep DSH Web stopped, then run ' +
-      '"node scripts/setup-gateway.mjs voice"; it asks for confirmation and downloads the model.',
-  );
+
+  const voice = manifest.recommended.voice;
+  if (voice && !flag('no-voice')) {
+    const modelBytes = voice.model?.bytes ?? 241357257;
+    const enableVoice = await confirm(
+      `Enable voice input now? Installs ${voice.source} and downloads ` +
+        `~${Math.round(modelBytes / 1_000_000)} MB. [Y/n] `,
+    );
+    if (enableVoice) {
+      try {
+        await cmdVoice(true, true);
+      } catch (error) {
+        console.error(`voice setup failed: ${error.message}`);
+        console.error('The gateway is installed; start DSH Web and retry voice later with it stopped.');
+      }
+    } else {
+      console.log(
+        'voice input skipped; later: stop DSH Web, then run "node scripts/setup-gateway.mjs voice".',
+      );
+    }
+  } else if (voice) {
+    console.log(
+      'voice input skipped (--no-voice); later: stop DSH Web, then run "node scripts/setup-gateway.mjs voice".',
+    );
+  }
   console.log('next: start DSH Web with your normal command, then run enable and pair.');
   return 0;
 }
@@ -652,7 +686,7 @@ async function cmdPair() {
 function usage() {
   console.log(`usage:
   node scripts/setup-gateway.mjs check   [--profile web] [--port 3080] [--json]
-  node scripts/setup-gateway.mjs install [--profile web] [--yes]
+  node scripts/setup-gateway.mjs install [--profile web] [--yes] [--no-voice]
   node scripts/setup-gateway.mjs enable  [--port 3080]
   node scripts/setup-gateway.mjs pair    [--port 3080] [--url URL] [--out FILE] [--open]
   node scripts/setup-gateway.mjs voice   [--profile web] [--yes] [--no-download]

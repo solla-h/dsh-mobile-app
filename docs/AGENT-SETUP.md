@@ -141,7 +141,10 @@ The script:
 1. refuses if port 3080 is listening — this is the guard against the hot-install `sessionController` failure;
 2. checks the DSH version against `compatibility.json`;
 3. installs exactly the pinned GitHub tag from `compatibility.json`;
-4. re-runs the checker and fails if the installed package version is wrong.
+4. re-runs the checker and fails if the installed package version is wrong;
+5. asks `Enable voice input now? [Y/n]` when stdin is a terminal; `--no-voice` skips. The voice step installs
+   the matching bundle and downloads the model. If it fails, the gateway is still installed; start DSH Web and
+   retry later with DSH Web stopped.
 
 Do **not** use the Web plugin panel or `dsh plugin add` directly for this release: the panel’s catalog entry
 is not pinned to the recommended tag. Do **not** “just try it” while DSH Web is running; a page refresh or a
@@ -156,7 +159,8 @@ version from `compatibility.json` (currently `@deepseek-ai/dsh-experimental-voic
 and pre-downloads the SenseVoice model (about 241 MB) to the DSH home. The model is required: the app shows
 “语音未启用” until a provider is `ready`/`standby`, and the mobile app has no “prepare model” button.
 
-With DSH Web still stopped:
+`install` offers this as an `Enable voice input now? [Y/n]` prompt. Use the separate command for a later
+install; DSH Web must be stopped:
 
 ```bash
 node scripts/setup-gateway.mjs voice
