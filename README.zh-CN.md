@@ -9,11 +9,12 @@
 
 > [!IMPORTANT]
 > **给 DSH Agent / AI Agent：** 如果用户把这个仓库交给你，要求安装或配置手机网关，
-> **请先阅读 [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)** 并按手册执行。手册定义了 Agent 能做什么、
-> 安装/重启/启用/配对的准确步骤和安全边界。不要照下面的人类快速开始自行猜。
+> **请先阅读 [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) 和 [`compatibility.json`](compatibility.json)**
+> 并按手册执行。必须使用固定的 gateway/DSH 版本；不要用 `@latest`、本机源码 checkout 或 profile 备份。
+> 不要照下面的人类快速开始自行猜，也不要在用户没要求时构建 App。
 
 [English](README.md) · [使用说明](docs/USER-GUIDE.zh-CN.md) · [Agent 安装手册](docs/AGENT-SETUP.md) ·
-[地址簿设计](docs/rendezvous-design.md)
+[版本兼容](docs/COMPATIBILITY.md) · [地址簿设计](docs/rendezvous-design.md)
 
 ## 为什么做这个客户端
 
@@ -60,11 +61,11 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 
 - **Node.js 22.13+**（开发用；Expo SDK 58 / React Native 0.88 的要求）。
 - 已安装 DSH，并安装 `dsh-plugin-mobile-gateway`。App 使用 `dsh-mobile-v1`。
-  已验证 DSH `0.2.1-rc.x`、网关 `0.11.2` 和下面的 fork release。
+  本版本已验证的组合是 **DSH `0.2.1-rc.5`** + fork release
+  [`v0.12.0-rdv.1`](https://github.com/solla-h/dsh-plugin-mobile-gateway/releases/tag/v0.12.0-rdv.1)；
+  安装前先看 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
 - 可选地址簿：网关需要支持 `rendezvous-v1`，并需要一个 Cloudflare 账号来托管 Worker。
-  本仓库使用 fork 的 release
-  [`v0.12.0-rdv.1`](https://github.com/solla-h/dsh-plugin-mobile-gateway/releases/tag/v0.12.0-rdv.1)
-  验证；截至编写时，上游 0.11.2 还没有包含地址簿。
+  上面的 fork release 已包含地址簿；上游 release 不在本版本的验证组合内。
 - 扫码配对需要相机权限；语音输入需要麦克风权限。
 
 ## 给 DSH Agent 的说明
@@ -72,6 +73,9 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 如果用户把这个仓库交给你，要求安装或配置手机网关，**不要照下面的人类快速开始自行猜**。
 请阅读 [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)，按其中的检查清单执行：环境预检、安装、重启、启用、
 入口选择、配对、验证和安全规则。
+
+版本绑定在 [`compatibility.json`](compatibility.json)：只用里面的 `recommended` 版本，不要用 `@latest`
+或本机 checkout。任务是网关，不是构建/测试 App；真实用户已经装好 APK。
 
 手册里还有一段可以直接交给用户的中文提示词，以及所有必须停下来等人工确认的节点
 （sudo、重启 DSH Web、公网隧道、Cloudflare 登录）。
@@ -83,12 +87,12 @@ App 只连接网关，不直接使用 DSH 内部的 agent 协议。认证、设�
 在运行 DSH 的机器上：
 
 ```bash
-# 上游插件（核心手机网关）
-dsh plugin --profile web add dsh-plugin-mobile-gateway@latest
-
-# 或带地址簿功能的 fork release
+# 与当前 App 版本一起验证过的 release
 dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
 ```
+
+不要用 `@latest`；上游 release 不在本 App 版本的验证组合内。详见
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
 
 重启 DSH Web：
 

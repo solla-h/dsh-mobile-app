@@ -425,6 +425,7 @@
 | 2026-11-03 | F4/F5（下午修复） | **做（已落地）** | F4：聚焦页卡片补「待发送 N」徽标；F5：切网关先摆按网关的 sessions 缓存、不再空成「连接断开」 | 提交 `0cb5706`；两项真机实证 PASS（STATUS-11-03 §8.2） |
 | 2026-11-03 | LayoutAnimation 波及清单（新记录） | **候选（小，观感级）** | ThinkPill/ActivityGroup/ToolGroup/TrajectoryView 的交互折叠动画在 Android 同为死代码（点开/收起瞬跳）；修法照 `RowFadeIn` 手写 Animated | 入 AGENTS.md 防再踩；按日常使用反馈再排（STATUS-11-03 §8.3） |
 | 2026-11-04 | REPAIR-1 内建检修 Agent（新需求） | **记录，待讨论（用户明确先不做）** | dsh 社区迭代快、升级易坏，用户不在电脑边时无法手动修；希望 App 内置一个平时隐藏的检修 Agent，出现问题时被唤醒 | 见下方「§12 新需求记录」 |
+| 2026-11-05 | COMPAT-1 App / 网关 / DSH 版本绑定（新需求） | **做（文档/清单/预检已落地；真机回归待重试）** | 上游协议、插件与 DSH 迭代快，文档若只写“装最新版”，用户装到的版本可能和 App 发布时验证过的组合不一致 | `compatibility.json` + `docs/COMPATIBILITY.md` + `scripts/check-compat.mjs`；App 对 hello 的 protocol/dshVersion 做提示；Agent 手册改为固定版本 |
 
 ## 12. 新需求记录（2026-11-04）
 
@@ -436,3 +437,20 @@
 - **唤醒**：在聚焦屏快速连点宠物「大肥鱼」5 次；蓝色形象变成红色愤怒形象（参考仙剑奇侠传龙葵变身），可选播放仙剑 BGM 增加氛围。
 - **变身之后**：App 连接的是用户服务端的 Pi Agent，用户直接给 Pi 发指令检修 dsh（看日志、回滚版本、改配置、重启服务），实现「不在电脑边也能放心升级」。
 - **待讨论**：Pi Agent SDK 在宿主的运行形态与授权模型；与现有 `dsh-mobile-v1` 网关的连接方式（复用 WS 还是新通道）；变身状态的退出/超时；红色宠物素材与 BGM 版权；检修动作的审批/回滚/审计；离线与宿主已挂时的降级路径；与现有审批安全门（APPROVAL-1）的关系。
+
+### COMPAT-1 App / 网关 / DSH 版本绑定与兼容矩阵
+
+> 用户提出，先记录。触发条件：上游协议仓库、`dsh-plugin-mobile-gateway` 和 DSH 都可能持续更新，而 App 不会自动跟进适配。
+
+- **问题**：安装文档如果只写“去哪里下载什么插件”或 `@latest`，用户装到的插件版本可能不是 App 发布时验证过的组合，出现帧格式、能力位或审批语义不一致。
+- **要求**：每个 App 发布版本必须绑定并公开一组已验证组合：
+  - App 版本 / 构建号；
+  - `dsh-plugin-mobile-gateway` 插件版本（或明确的允许范围）；
+  - DSH 版本（或明确的允许范围）；
+  - 协议版本 `dsh-mobile-v1`，以及所依赖的能力位。
+- **Agent 安装手册**：`AGENT-SETUP.md` 必须使用固定版本 / 范围，禁止把 `@latest` 当默认；给出兼容矩阵和 preflight 检查；版本不匹配时停下来让用户决定，不自动升级。
+- **发布流程**：每次 App 发版更新矩阵，并做一次固定版本的真机回归；上游升级另开兼容性验证，不把“最新”当默认。
+- **可选实现**：握手或状态帧带 `protocolVersion`、`gatewayVersion`、`minAppVersion`；App 对不支持版本明确提示；能力位继续用于可选功能降级。
+- **现状证据**：当前 App 0.1.0 的验证组合是 gateway `0.12.0-rdv.1` + DSH `0.2.1-rc.5`；DSH rc.5 下语音插件因 `compatibility.json` 只列 rc.3 被禁用，说明版本漂移已经实际发生。
+- **已知缺口**：`0.12.0-rdv.1` 的 `hello.dshVersion` 是编译期常量 `0.2.1-rc.2`，不是宿主实际版本；App 暂不据此告警，实际 DSH 版本由 Agent 的 `dsh --version` 检查。下一版网关应上报实际 DSH 版本和插件版本，App 再启用运行时检查。
+- **待讨论**：兼容矩阵放在 `docs/COMPATIBILITY.md` 还是机器可读的 `compatibility.json`；是否由 CI 校验；是否允许网关向后兼容多个 App 版本，以及旧 App 的最低可用网关版本。

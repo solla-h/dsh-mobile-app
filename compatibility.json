@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "app": {
+    "version": "0.1.0",
+    "build": "224d30c6"
+  },
+  "protocol": {
+    "name": "dsh-mobile-v1",
+    "version": 3
+  },
+  "recommended": {
+    "gateway": {
+      "name": "dsh-plugin-mobile-gateway",
+      "version": "0.12.0-rdv.1",
+      "install": "dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1"
+    },
+    "dsh": {
+      "version": "0.2.1-rc.5"
+    }
+  },
+  "verified": [
+    {
+      "app": "0.1.0",
+      "appBuild": "224d30c6",
+      "gateway": "0.12.0-rdv.1",
+      "dsh": "0.2.1-rc.5",
+      "protocol": 3,
+      "platforms": ["android"],
+      "verifiedAt": "2026-11-05",
+      "notes": "Fork release with rendezvous-v1; EAS preview APK. iOS and other DSH/gateway versions are not covered by this entry."
+    }
+  ],
+  "policy": {
+    "requireExactMatch": true,
+    "allowLocalCheckout": false,
+    "onMismatch": "stop-and-ask"
+  }
+}

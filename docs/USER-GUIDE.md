@@ -26,15 +26,14 @@ The gateway panel is the source of truth for connection status, paired devices, 
 
 ### 2.1 Install and enable the gateway plugin
 
-On the DSH host:
+On the DSH host, install the release this app was verified with:
 
 ```bash
-# upstream plugin
-dsh plugin --profile web add dsh-plugin-mobile-gateway@latest
-
-# or the fork release with the address book feature
 dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
 ```
+
+Do not use `@latest`; upstream is a different release line and is not part of this app release's verified
+combination. See [COMPATIBILITY.md](COMPATIBILITY.md).
 
 Restart DSH Web:
 

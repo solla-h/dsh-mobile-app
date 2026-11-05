@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { checkGatewayCompatibility } from './src/protocol/compat';
 import { parsePairingPayload } from './src/protocol/pairing';
 import { mapQueue, type QueuedMessage } from './src/protocol/chat';
 import {
@@ -289,6 +290,7 @@ function AppBody() {
   );
 
   const connected = state === 'ready' && hello?.authenticated === true;
+  const gatewayCompat = hello ? checkGatewayCompatibility(hello) : null;
 
   /** 聚焦网格的输入：只看待办 / 正在跑，最多 4 条，摘要来自大纲缓存。 */
   const focusItems = useMemo<FocusItem[]>(() => {
@@ -1622,6 +1624,9 @@ function AppBody() {
             </Text>
           </Pressable>
         ) : null}
+        {gatewayCompat?.message ? (
+          <Text style={styles.compatHint}>{gatewayCompat.message}</Text>
+        ) : null}
         {error ? (
           <Pressable onPress={() => setError(null)} hitSlop={6}>
             <Text style={styles.error}>{error} · 点击关闭</Text>
@@ -2148,6 +2153,12 @@ const makeStyles = (t: Palette) =>
   dotOff: { backgroundColor: t.text.muted },
   statusText: { color: t.text.secondary, fontSize: 12 },
   hint: { color: t.text.muted, fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
+  compatHint: {
+    color: t.semantic.dangerText,
+    fontSize: 13,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
   error: { color: t.semantic.dangerText, fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
   metaRow: {
     flexDirection: 'row',

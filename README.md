@@ -10,11 +10,12 @@ A third-party, open-source mobile client for **DeepSeek Harness (DSH)**. It conn
 
 > [!IMPORTANT]
 > **For DSH agents / AI agents:** If a user gives you this repository and asks you to install or configure the
-> mobile gateway, **read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) first** and follow it. It defines what an
-> agent may do, the install/restart/enable/pairing steps, and the safety boundaries. Do not improvise from the
-> human quick start.
+> mobile gateway, **read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) and [`compatibility.json`](compatibility.json)
+> first** and follow them. Use the pinned gateway/DSH versions; never use `@latest`, a local checkout, or a
+> profile backup. Do not improvise from the human quick start, and do not build the app unless the user asks.
 
-[简体中文](README.zh-CN.md) · [User guide](docs/USER-GUIDE.md) · [Agent setup](docs/AGENT-SETUP.md) · [Rendezvous design](docs/rendezvous-design.md)
+[简体中文](README.zh-CN.md) · [User guide](docs/USER-GUIDE.md) · [Agent setup](docs/AGENT-SETUP.md) ·
+[Compatibility](docs/COMPATIBILITY.md) · [Rendezvous design](docs/rendezvous-design.md)
 
 ## Why another client?
 
@@ -68,11 +69,12 @@ device keys, session/event projections, and the optional rendezvous publisher.
 
 - **Node.js 22.13+** for development (Expo SDK 58 / React Native 0.88 requirement).
 - A DSH installation with `dsh-plugin-mobile-gateway`. The app speaks `dsh-mobile-v1`.
-  Tested with DSH `0.2.1-rc.x` and gateway `0.11.2` / the fork release below.
-- For the optional address book: a gateway build with `rendezvous-v1` and a Cloudflare account for the managed
-  Worker deployment. This repository is tested with the fork release
+  This release is verified with **DSH `0.2.1-rc.5`** and the fork release
   [`v0.12.0-rdv.1`](https://github.com/solla-h/dsh-plugin-mobile-gateway/releases/tag/v0.12.0-rdv.1);
-  at the time of writing, upstream 0.11.2 does not include rendezvous yet.
+  see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before installing anything.
+- For the optional address book: a gateway build with `rendezvous-v1` and a Cloudflare account for the managed
+  Worker deployment. The fork release above includes it; upstream releases are not part of this verified
+  combination.
 - Camera permission for QR pairing; microphone permission for voice input.
 
 ## For DSH agents
@@ -80,6 +82,10 @@ device keys, session/event projections, and the optional rendezvous publisher.
 If a user gives you this repository and asks you to install or configure the mobile gateway, **do not follow the
 human quick start by guessing**. Read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) and follow its checklist:
 preflight, install, restart, enable, endpoint selection, pairing, verification, and safety rules.
+
+The release is pinned in [`compatibility.json`](compatibility.json): use its `recommended` versions, never
+`@latest` or a local checkout. The task is the gateway, not building or testing the app; a real user already
+has the APK installed.
 
 The runbook also contains a copy-paste prompt for the user and the exact places where an agent must stop for
 human approval (sudo, DSH Web restart, public tunnel, Cloudflare login).
@@ -91,12 +97,12 @@ human approval (sudo, DSH Web restart, public tunnel, Cloudflare login).
 On the machine that runs DSH:
 
 ```bash
-# upstream plugin (core mobile gateway)
-dsh plugin --profile web add dsh-plugin-mobile-gateway@latest
-
-# or the fork used for the address book feature
+# the release verified with this app
 dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.1
 ```
+
+Do not use `@latest`; the upstream release line is not part of this app release's verified combination.
+See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 Restart DSH Web:
 
