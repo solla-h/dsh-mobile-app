@@ -258,7 +258,8 @@ npx expo-doctor       # dependency and config checks
 ```
 
 Expo Go is useful for UI work, but native behavior (camera, secure storage, audio, background reconnect) should
-be verified in a development or preview build.
+be verified in a development or preview build. The package is marked `private` because this is an app, not an
+npm library; it is not published to the npm registry.
 
 ### Local demo without a DSH host
 

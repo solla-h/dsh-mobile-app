@@ -237,6 +237,7 @@ npx expo-doctor       # 依赖与配置检查
 ```
 
 Expo Go 适合调 UI，但相机、安全存储、音频、后台重连等原生行为，应在开发构建或 preview 构建里验证。
+`package.json` 标记为 `private`，因为这是一个 App 而不是 npm 库，不会发布到 npm registry。
 
 ### 没有 DSH 宿主时的本地演示
 

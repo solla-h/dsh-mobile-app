@@ -7,7 +7,7 @@
 - 原型「溟月」出自 B 站 @上善无形；DeepSeek 版设计出自 B 站 @ZipZipPipe
 - 授权：**CC BY-NC-SA 4.0**（署名 · 非商业 · 相同方式共享）
 
-本项目对素材做的处理（全部可复现，脚本见对话记录 / git 历史）：
+本项目对素材做的处理（全部可复现）：
 
 1. 从 `dsh-pet/assets/webm/<动作名>.webm`（640×360 VP9-alpha）用 ffmpeg
    `-c:v libvpx-vp9 -pix_fmt rgba` 抽帧，12fps；
