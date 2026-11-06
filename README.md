@@ -7,7 +7,8 @@ A third-party, open-source mobile client for **DeepSeek Harness (DSH)**. It conn
 [`dsh-plugin-mobile-gateway`](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) plugin over the
 `dsh-mobile-v1` WebSocket protocol.
 
-> **Status: public alpha (`v0.1.0-alpha.1`).** Android has been tested on a real device with DSH `0.2.1-rc.5`
+> **Status: public alpha.** Signed Android APKs are distributed through [GitHub Releases](https://github.com/solla-h/dsh-mobile-app/releases).
+> Android has been tested on a real device with DSH `0.2.1-rc.5`
 > and gateway `0.12.0-rdv.3` (pairing, text reply, and hold-to-talk voice). iOS is not yet verified, and the app
 > is not on an app store. The protocol and UI may still change. This project is not affiliated with DeepSeek or
 > Expo.
@@ -172,9 +173,12 @@ named Tunnel. The app deliberately rejects plain `ws://` for public addresses.
 
 ### 3. Install the app
 
-There is no app-store build yet. Build a preview APK from this repository (see [Build](#build)), or use a local
-development build. Install it on the phone, open it, grant camera access, and scan the QR code. If the camera is
-not available, choose the manual paste path and paste the pairing payload.
+Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases), select a release with APK assets, and
+download `dsh-mobile-v*.apk` from **Assets** (the older alpha.1 is source-only). Allow your browser or file
+manager to install that APK on Android, then open DSH Mobile. No Expo account or development server is needed.
+Grant camera access and scan the gateway QR code, or use the manual paste path. For an update, install over the
+existing app to retain pairings and drafts; do not uninstall first. `SHA256SUMS` and `build-info.json` accompany
+the APK; see [download verification](docs/RELEASING.md).
 
 The pairing payload is short-lived (five minutes by default) and contains a device token. Treat the QR code like a
 password.
@@ -216,7 +220,14 @@ No address book is required for the core app; without it, a changed public URL s
 
 ## Build
 
-### Preview APK with EAS (recommended)
+### GitHub Actions release builds
+
+Pushing a release tag runs the quality checks, builds with Expo prebuild and Gradle on a standard GitHub Ubuntu
+x64 runner, signs the APK, and publishes it with checksums through a draft release. This uses no EAS cloud
+builds or Expo token. Standard hosted runners are free for this public repository; paid larger runners are not
+used. See [the release runbook](docs/RELEASING.md) for signing secrets, version bumps and retry instructions.
+
+### Preview APK with EAS (optional)
 
 ```bash
 git clone https://github.com/solla-h/dsh-mobile-app.git
@@ -244,7 +255,8 @@ npm install
 npx expo run:android   # requires JDK 17+ and Android SDK; builds a debug app
 ```
 
-For a release APK locally, configure a keystore and use Gradle; EAS is the supported path in this repository.
+The official release path uses Gradle on GitHub Actions; EAS remains an optional personal preview path.
+Generated native directories are never committed or edited by the release workflow.
 
 ### Development
 

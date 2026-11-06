@@ -7,7 +7,8 @@
 [`dsh-plugin-mobile-gateway`](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) 插件，以
 `dsh-mobile-v1` WebSocket 协议连接 DSH 宿主。
 
-> **状态：公开 alpha（`v0.1.0-alpha.1`）。** Android 已在真机上通过 DSH `0.2.1-rc.5` + 网关
+> **状态：公开 alpha。** 签名 Android APK 通过 [GitHub Releases](https://github.com/solla-h/dsh-mobile-app/releases) 分发。
+> Android 已在真机上通过 DSH `0.2.1-rc.5` + 网关
 > `0.12.0-rdv.3` 验证（配对、文字回复、按住说话）；iOS 尚未验证，App 也未上架应用商店。协议和界面
 > 仍可能变化。本项目与 DeepSeek、Expo 官方无关。
 
@@ -156,8 +157,11 @@ node scripts/setup-gateway.mjs pair --open
 
 ### 3. 安装 App
 
-目前没有应用商店版本。请从本仓库构建 preview APK（见[构建](#构建)），或使用本地开发构建。
-安装后打开 App，允许相机，扫描二维码。相机不可用时，可以退回手动粘贴配对串。
+打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，选择带 APK 的版本，从 **Assets**
+下载 `dsh-mobile-v*.apk`（旧 alpha.1 仅有源码）。在 Android 上允许浏览器或文件管理器安装该 APK，
+然后打开 DSH Mobile；无需 Expo 账号或开发服务器。允许相机后扫描网关二维码，也可手动粘贴配对串。
+升级时直接覆盖安装，保留配对记录和草稿，不要先卸载。Release 同时提供 `SHA256SUMS` 和
+`build-info.json`，[发布手册](docs/RELEASING.md)有下载校验步骤。
 
 配对载荷默认只有五分钟有效期，且包含设备 token。请像对待密码一样对待二维码。
 
@@ -195,7 +199,14 @@ Worker 属于你自己的 Cloudflare 账号。Cloudflare 能看到请求元数�
 
 ## 构建
 
-### 用 EAS 构建 preview APK（推荐）
+### GitHub Actions 发布构建
+
+推送发布 tag 后，流水线先跑质量检查，再在标准 GitHub Ubuntu x64 runner 上用 Expo prebuild + Gradle
+构建，签名并验证 APK，通过草稿 Release 上传 APK 和校验值后发布。不调用 EAS 云构建、不需要 Expo token，
+也不消耗 EAS 月度次数。公开仓库的标准托管 runner 免费；本项目不使用收费的大规格 runner。
+签名 secret、版本递增和失败重试见[发布手册](docs/RELEASING.md)。
+
+### 用 EAS 构建 preview APK（可选）
 
 ```bash
 git clone https://github.com/solla-h/dsh-mobile-app.git
@@ -223,7 +234,8 @@ npm install
 npx expo run:android   # 需要 JDK 17+ 和 Android SDK；构建 debug 包
 ```
 
-本地 release APK 需要自行配置 keystore 和 Gradle；本仓库支持的主路径是 EAS。
+正式 APK 通过 GitHub Actions 上的 Gradle 构建；EAS 保留为个人 preview 的可选路径。
+发布流水线不会提交或手动修改生成的原生目录。
 
 ### 开发
 

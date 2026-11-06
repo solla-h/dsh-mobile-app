@@ -103,6 +103,17 @@ git grep -nIE '<sensitive-pattern>' -- .
 - [x] 检查 `docs/AGENT-SETUP.md` 里「不要读某文档」的表述，改成「这些是开发记录，
       不是安装面」，避免公开后显得像在隐藏内容。
 
+### 2.5 APK 自动发布（2026-11-06）
+
+- [x] CI 可复用：PR/主分支执行质量检查，发布时检查精确的 tag commit。
+- [x] 标准 GitHub Ubuntu x64 runner 使用 Expo prebuild + Gradle；不占用 EAS 云构建次数。
+- [x] 签名材料仅放在 `android-release` 环境，限制主分支/发布 tag；证书与之前的 preview APK 一致。
+- [x] Android versionCode 提升到 2；发布校验 tag、manifest 和历史版本号。
+- [x] APK 签名、包名、版本、独立 JS bundle 和 SHA-256 校验纳入发布门禁。
+- [ ] GitHub Actions 完成真实构建并发布 `v0.1.0-alpha.2` 的 APK、SHA256SUMS、build-info.json。
+- [ ] 从 Release 下载 APK，验证下载校验值和附件完整性。
+- [ ] 新 APK 真机旅程：覆盖安装 → 保留配对 → 进入会话 → 发送/语音 → 返回首页。
+
 ## 3. P2：发布后继续
 
 - [ ] `App.tsx` 状态机拆分（当前文件过大，影响贡献者阅读）。

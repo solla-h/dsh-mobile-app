@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-11-06
+
+### Added
+
+- Signed Android APK releases built by GitHub Actions, with SHA-256 checksums and source/build metadata.
+- Tag validation and reusable quality checks before building; signature, package and version checks before
+  publishing. Release assets are uploaded to a draft and verified before publication.
+- Release runbook covering signing credentials, upgrades and failed builds.
+
+### Changed
+
+- Android version code increases from 1 to 2. The signing certificate is retained from the prior preview APK.
+- Builds run on standard GitHub Ubuntu runners using Expo prebuild and Gradle, without EAS cloud quota or an
+  Expo access token. Existing EAS profiles remain available for personal previews.
+
+### Verification scope
+
+- APK signature and metadata verification are automated. Real-device pairing/voice evidence still refers to
+  the earlier preview build; this new APK needs its own installation and user-journey verification.
+
 ## [0.1.0-alpha.1] - 2026-11-05
 
 ### Added

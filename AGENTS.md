@@ -32,6 +32,15 @@ Run lint and typecheck before declaring any task done.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
+## Android release automation
+
+Official APK releases use `.github/workflows/android-release.yml`: quality checks → Expo prebuild → Gradle
+on a standard GitHub Ubuntu x64 runner → signing → draft Release upload and verification → publication.
+This public-repository path does not use EAS cloud quota or an Expo token. See `docs/RELEASING.md`.
+Signing secrets belong only to the `android-release` environment. Never move a published release tag or
+replace its assets. Increase `expo.android.versionCode` for each new APK release. Native directories remain
+generated and untracked. EAS profiles below remain an optional personal preview path.
+
 ## Building with EAS
 
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
