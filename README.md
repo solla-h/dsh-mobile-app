@@ -1,6 +1,6 @@
 # DSH Mobile
 
-[English](README.en.md) · [下载 Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
+[官网 fatwhale.app](https://fatwhale.app) · [English](README.en.md) · [下载 Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
 [使用说明](docs/USER-GUIDE.zh-CN.md) · [版本兼容](docs/COMPATIBILITY.md)
 
 [![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
@@ -41,6 +41,21 @@ Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在�
 使用本地假网关与合成会话数据，不包含真实账号或配对凭据。App 界面目前以中文为主。
 
 ## 快速开始
+
+### 让 Codex / DSH Agent 帮你配置
+
+把下面这段话交给**能访问目标 DSH 宿主终端**的 Agent；只有仓库链接无法说明你想安装网关还是开发 App。
+
+```text
+请帮我配置 DSH Mobile：https://github.com/solla-h/dsh-mobile-app
+先阅读 docs/AGENT-SETUP.md 和 compatibility.json，按固定版本准备宿主并运行只读 check。
+需要安装或重启时，先运行 handoff，把完整交接文件和一条安装命令给我，我会在普通终端执行。
+完成后继续检查、启用网关并生成本地配对页，只告诉我页面路径，不要输出配对凭据。
+不要构建 App，不要擅自升级现有 DSH；账号授权、手机安装和扫码由我完成。
+```
+
+Agent 可代办检查和大部分配置步骤；你仍需提供可用的模型配置、执行交接命令，并在手机上完成安装和扫码。
+运行在 DSH Web 中的 Agent 不能自行停止承载自己的 Web 进程。详细边界见 [Agent 安装手册](docs/AGENT-SETUP.md)。
 
 ### 1. 准备自己的 DSH 宿主和网关
 
@@ -118,7 +133,7 @@ node scripts/setup-gateway.mjs pair --open
 | [发布手册](docs/RELEASING.md) | APK 构建、签名、下载校验与失败处理 |
 | [开发与验证](docs/DEVELOPMENT.md) / [设计原则](docs/DESIGN.md) | 代码职责、测试旅程、无障碍与交互约定 |
 | [发布验证状态](docs/OPEN-SOURCE-READINESS.md) | 自动化与真机证据、已知边界、暂缓范围 |
-| [宣传站仓库](https://github.com/solla-h/dsh-mobile-site) | fatwhale.app 的独立开发、部署与更新（正式站点尚未上线） |
+| [官网](https://fatwhale.app) / [网站仓库](https://github.com/solla-h/dsh-mobile-site) | 产品介绍、下载与安装入口；网站独立开发、部署与更新 |
 | [地址簿设计](docs/rendezvous-design.md) | `rendezvous-v1` 的加密与恢复机制 |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | 贡献、漏洞报告、变更记录与仓库约定 |
 
