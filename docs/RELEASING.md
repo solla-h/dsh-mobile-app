@@ -90,11 +90,11 @@ Numbers cannot have leading zeros. For example:
 
 | Field | First APK release |
 | --- | --- |
-| Tag / filename | `v0.1.0-alpha.2` / `dsh-mobile-v0.1.0-alpha.2.apk` |
+| Tag / filename | `v0.1.0-alpha.3` / `dsh-mobile-v0.1.0-alpha.3.apk` |
 | `package.json` version | `0.1.0` |
 | `app.json` expo.version | `0.1.0` |
 | `compatibility.json` app.version | `0.1.0` |
-| `app.json` expo.android.versionCode | `2` |
+| `app.json` expo.android.versionCode | `3` |
 
 Android versionName uses the version core; the tag and filename preserve the prerelease suffix.
 VersionCode must be a positive integer ≤ 2,100,000,000 and greater than every other `v*` tag's value.
@@ -104,15 +104,15 @@ Older tags without an explicit versionCode count as 1. The workflow never bumps 
 2. Validate metadata, then tag the merged commit (use a new tag for each release):
 
    ```bash
-   node scripts/release-metadata.mjs v0.1.0-alpha.2
-   git tag -a v0.1.0-alpha.2 -m "DSH Mobile v0.1.0-alpha.2"
-   git push origin v0.1.0-alpha.2
+   node scripts/release-metadata.mjs v0.1.0-alpha.3
+   git tag -a v0.1.0-alpha.3 -m "DSH Mobile v0.1.0-alpha.3"
+   git push origin v0.1.0-alpha.3
    ```
 
 3. Watch **Actions → Android release**. If the trigger was missed, dispatch from master:
 
    ```bash
-   gh workflow run android-release.yml --ref master -f tag=v0.1.0-alpha.2
+   gh workflow run android-release.yml --ref master -f tag=v0.1.0-alpha.3
    ```
 
 Never move a published tag or replace its APK. If code needs changing, create a new version/tag.
@@ -120,7 +120,8 @@ Never move a published tag or replace its APK. If code needs changing, create a 
 ## Download, install and verify
 
 Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases) and choose a release with an APK
-(alpha.1 is source-only). Download the APK, `SHA256SUMS` and `build-info.json` together.
+(alpha.1 is source-only; alpha.2 failed publication and has no released APK). Download the APK,
+`SHA256SUMS` and `build-info.json` together.
 
 On Linux, in the download directory:
 
@@ -132,7 +133,7 @@ On Windows PowerShell, compare the displayed hashes with the corresponding SHA25
 
 ```powershell
 Get-Content .\SHA256SUMS
-Get-FileHash .\dsh-mobile-v0.1.0-alpha.2.apk -Algorithm SHA256
+Get-FileHash .\dsh-mobile-v0.1.0-alpha.3.apk -Algorithm SHA256
 Get-FileHash .\build-info.json -Algorithm SHA256
 ```
 

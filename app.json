@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "app.dshmobile.client",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#0B0C0F",
         "foregroundImage": "./assets/android-icon-foreground.png",

@@ -6,7 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-11-06
+
+### Fixed
+
+- Recognize build-tools 37 certificate output (`V2 Signer:` / `V3.0 Signer:`). The old parser read an empty
+  fingerprint and blocked publication even though the APK was correctly signed. All reported certificate
+  fingerprints must still match the pinned release identity; mismatched or missing certificates fail closed.
+- Add signing-script regression checks to CI for old/new output, repeated certificates and rejection cases.
+
+### Changed
+
+- Android version code increases to 3. The failed alpha.2 tag is preserved; no alpha.2 APK was published.
+- Real-device verification of this new APK remains pending; prior preview evidence is unchanged.
+
 ## [0.1.0-alpha.2] - 2026-11-06
+
+The native build succeeded, but certificate-output parsing blocked publication. This tag has no released APK.
 
 ### Added
 

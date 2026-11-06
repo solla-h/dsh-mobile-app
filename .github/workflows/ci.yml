@@ -33,6 +33,7 @@ jobs:
       - run: npm ci
       - run: npm test -- --runInBand
       - run: npm run test:node
+      - run: bash scripts/__tests__/sign-android-release.test.sh
       - run: npm run typecheck
       - run: npm run lint
       - run: npx --yes expo-doctor@1.21.6
