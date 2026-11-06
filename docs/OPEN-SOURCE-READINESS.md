@@ -112,8 +112,10 @@ git grep -nIE '<sensitive-pattern>' -- .
 - [x] APK 签名、包名、版本、独立 JS bundle 和 SHA-256 校验纳入发布门禁。
 - [x] alpha.2 原生构建成功；build-tools 37 的签名输出格式导致指纹解析失败，未发布 APK。
       已修复并补充回归检查：旧/新格式、跨签名方案重复证书、错证书/多证书/缺失证书拒绝。
-- [ ] GitHub Actions 完成真实构建并发布 `v0.1.0-alpha.3` 的 APK、SHA256SUMS、build-info.json。
-- [ ] 从 Release 下载 APK，验证下载校验值和附件完整性。
+- [x] GitHub Actions 完成真实构建并发布 `v0.1.0-alpha.3` 的 APK、SHA256SUMS、build-info.json。
+      [发布记录](https://github.com/solla-h/dsh-mobile-app/actions/runs/42233248539)，源码 `052e9c96`。
+- [x] 从 Release 下载全部三个附件，SHA-256 校验通过；独立使用 build-tools 37 验证 APK 签名，
+      证书与原 preview 一致，versionCode 3。
 - [ ] 新 APK 真机旅程：覆盖安装 → 保留配对 → 进入会话 → 发送/语音 → 返回首页。
 
 ## 3. P2：发布后继续
@@ -121,8 +123,8 @@ git grep -nIE '<sensitive-pattern>' -- .
 - [ ] `App.tsx` 状态机拆分（当前文件过大，影响贡献者阅读）。
 - [ ] 补 UI / E2E 测试（Detox 或等价方案），至少覆盖配对 → 列表 → 会话 → 发送。
 - [ ] 无障碍检查（动态字体、屏幕阅读器标签、对比度）。
-- [ ] i18n：当前中英混排，抽出文案表。
-- [ ] iOS 真机验证；没有设备就在 README 明确写「未验证」。
+- [ ] i18n：当前中英混排，抽出文案表。**用户于 2026-11-06 决定暂缓**；不影响中英文 README 维护。
+- [ ] iOS 版本及真机验证。**用户于 2026-11-06 决定暂缓**；README 保留「未验证」，本轮仅宣传 Android。
 - [ ] 分支保护：master 需要 PR + CI；禁止 force-push（历史重写完成后开启）。
 - [ ] 评估是否把 `docs/HANDOFF.md`、`STATUS-*` 等历史记录迁到 `docs/archive/` 或私有仓库。
 
