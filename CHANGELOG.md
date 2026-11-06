@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-11-07
+
 ### Added
 
 - Real-App integration journeys for pairing, send/receive/return, cached offline launch and draft retention.
@@ -24,7 +26,7 @@ All notable changes to this project are documented here. The format is based on
 - Make the project homepage Chinese-first with an English link, and keep current contributor/design/validation documentation.
 - Remove obsolete discussion records, prompts and UI prototypes from the current documentation tree.
 - Move website development to the independent `solla-h/dsh-mobile-site` repository.
-- Increase Android version code to 4 for the next APK. Physical-device upgrade, voice, TalkBack and large-text checks remain pending.
+- Increase Android version code to 4. Physical-device upgrade, voice, camera, TalkBack and large-text checks remain pending.
 
 ## [0.1.0-alpha.3] - 2026-11-06
 
