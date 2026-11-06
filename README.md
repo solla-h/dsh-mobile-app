@@ -11,9 +11,8 @@
 DSH Mobile 是第三方、开源的 **DeepSeek Harness（DSH）** Android 客户端，连接你自己运行的 DSH 宿主。
 Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在等我、我接下来要说什么」。
 
-> **Android 公开 alpha。** [`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3)
-> 已发布，构建、签名和实际下载校验通过；新包真机旅程仍待验证，详见下方验证表。
-> `alpha.3` 请使用 `wss://`；局域网 `ws://` 的 Android 网络许可修复已通过测试，待下一版 APK 发布。
+> **Android 公开 alpha。** [`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4)
+> 已发布，构建、签名、本地合成网关的完整模拟器旅程和实际下载校验通过；新包真机旅程仍待验证，详见下方验证表。
 > iOS 暂缓且未验证，没有应用商店版本。本项目与 DeepSeek、Expo 官方无关。
 
 > [!IMPORTANT]
@@ -49,21 +48,37 @@ DSH Mobile 不自带模型，也不托管 DSH 服务。你需要一台运行 **D
 `dsh-plugin-mobile-gateway`。本版本锁定 **DSH `0.2.1-rc.5` + 网关 `0.12.0-rdv.3`**，
 详见 [`compatibility.json`](compatibility.json) 和[版本兼容](docs/COMPATIBILITY.md)。
 
-按[使用说明](docs/USER-GUIDE.zh-CN.md)或 [Agent 安装手册](docs/AGENT-SETUP.md) 安装；
+**使用的是 [DSH Mobile 配套维护版网关](https://github.com/solla-h/dsh-plugin-mobile-gateway)**，基于
+[上游项目](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway)持续维护。安装脚本自动选择我们的固定
+GitHub 标签；同名 npm 包属于上游发行线，请不要替换成 `npm install dsh-plugin-mobile-gateway` 或 `@latest`。
+你不需要克隆或编译网关。
+
+尚未安装 DSH 时，先按[首次准备宿主](docs/USER-GUIDE.zh-CN.md#1-开始之前)安装固定版本并在 Web 中完成一次对话。
+已有宿主则在宿主终端取得安装工具并只读检查：
+
+```bash
+git clone https://github.com/solla-h/dsh-mobile-app.git
+cd dsh-mobile-app
+node scripts/setup-gateway.mjs check
+```
+
+这些脚本不需要 `npm ci` 或构建手机 App；宿主安装插件需要 `pnpm`，版本和准备步骤见使用说明。
+按[使用说明](docs/USER-GUIDE.zh-CN.md)或
+[Agent 安装手册](docs/AGENT-SETUP.md)完成安装；
 过程中会暂时停止并重启 DSH Web。让 AI agent 代办时，把上面的 Agent 提醒和手册一起交给它。
 语音是可选能力，宿主需要安装匹配的语音插件并准备好识别模型。
 
 ### 2. 下载并安装 APK
 
-打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，从 `v0.1.0-alpha.3` 的 **Assets**
-下载 [`dsh-mobile-v0.1.0-alpha.3.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.3/dsh-mobile-v0.1.0-alpha.3.apk)。
+打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，从 `v0.1.0-alpha.4` 的 **Assets**
+下载 [`dsh-mobile-v0.1.0-alpha.4.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.4/dsh-mobile-v0.1.0-alpha.4.apk)。
 允许浏览器或文件管理器安装；不需要 Expo 账号或开发服务器。同页的 `SHA256SUMS` 与 `build-info.json`
 用于校验下载和签名，步骤见[发布手册](docs/RELEASING.md)。升级时覆盖安装，保留配对记录和草稿，
 不要先卸载。
 
 ### 3. 生成配对码并扫码
 
-在宿主上、从本仓库目录启用网关并生成配对码：
+网关安装并重启 DSH Web 后，在宿主的本仓库目录启用网关并生成配对码：
 
 ```bash
 node scripts/setup-gateway.mjs enable
@@ -79,8 +94,9 @@ node scripts/setup-gateway.mjs pair --open
 
 | 项目 | 状态 |
 | --- | --- |
+| APK 声明的安装下限 | Android 7.0 / API 24；不代表所有版本和设备均已实测 |
 | Android 16 真机，较早的 preview 构建 | 已验证：配对、会话列表、文字回复、按住说话 |
-| `v0.1.0-alpha.3` APK | CI 与实际下载/签名校验通过；真机旅程尚未验证 |
+| `v0.1.0-alpha.4` APK | CI、签名 APK 的模拟器旅程及独立下载/签名校验通过；真机旅程尚未验证 |
 | iOS | 暂缓，尚未验证 |
 | 应用商店 | 无；当前需要侧载 APK 或开发构建 |
 
@@ -98,6 +114,7 @@ node scripts/setup-gateway.mjs pair --open
 | [使用说明（中文）](docs/USER-GUIDE.zh-CN.md) / [User guide](docs/USER-GUIDE.md) | 配对、日常使用、审批、附件、语音、离线与故障排查 |
 | [Agent 安装手册](docs/AGENT-SETUP.md) | 给 AI agent 的交接契约、安全/危险步骤、人工确认点 |
 | [`compatibility.json`](compatibility.json) / [版本兼容](docs/COMPATIBILITY.md) | 固定版本、已验证组合、运行时协议检查 |
+| [网关维护与兼容](docs/GATEWAY-MAINTENANCE.md) | 配套 fork、上游同步、版本选择、联合验证与 Agent 约束 |
 | [发布手册](docs/RELEASING.md) | APK 构建、签名、下载校验与失败处理 |
 | [开发与验证](docs/DEVELOPMENT.md) / [设计原则](docs/DESIGN.md) | 代码职责、测试旅程、无障碍与交互约定 |
 | [发布验证状态](docs/OPEN-SOURCE-READINESS.md) | 自动化与真机证据、已知边界、暂缓范围 |

@@ -13,8 +13,9 @@ gateways, the optional address book, offline behavior, and troubleshooting.
 
 You need:
 
-- A machine running DSH Web.
-- `dsh-plugin-mobile-gateway` installed in the DSH profile that runs Web.
+- Node.js 22.13+, npm, pnpm and Git on the host; the phone does not need them. The steps below pin pnpm to `11.9.0`.
+- A machine running DSH Web `0.2.1-rc.5`, with a configured model and one successful text conversation.
+- The [DSH Mobile maintained gateway](https://github.com/solla-h/dsh-plugin-mobile-gateway) installed in the DSH profile that runs Web.
 - A network path from the phone to the gateway:
   - the same Wi-Fi (LAN direct), or
   - a Cloudflare Quick Tunnel / named Tunnel, or
@@ -27,14 +28,61 @@ needed. For updates, install over the existing app to preserve pairings and draf
 first. See [RELEASING.md](RELEASING.md#download-install-and-verify) for checksum/signature checks and
 [validation status](OPEN-SOURCE-READINESS.md) for the limits of current evidence.
 
+**First-time DSH host setup:** run these pinned commands only on a machine without DSH. For an existing
+installation, start with the `check` below instead of overwriting or upgrading it. Choose your DSH workspace
+directory and start Web there:
+
+```bash
+npm install --global pnpm@11.9.0
+npm install --global @deepseek-ai/dsh@0.2.1-rc.5
+pnpm --version
+dsh --version
+dsh web
+```
+
+Open the local URL printed by DSH, configure a model and complete one text conversation. Enter model keys
+only in the host configuration, never in issues or shared chat logs. See the
+[official DSH documentation](https://github.com/deepseek-ai/deepseek-harness) for host usage.
+Leave Web running and obtain the setup tools in another normal terminal:
+
+```bash
+git clone https://github.com/solla-h/dsh-mobile-app.git
+cd dsh-mobile-app
+node scripts/setup-gateway.mjs check
+```
+
+These tools need neither `npm ci` nor an app build, but DSH needs `pnpm` on PATH to install plugins.
+On an existing DSH host, also run `pnpm --version`; if it is missing, run only the pnpm installation command
+above in a normal terminal, without reinstalling or upgrading DSH. A missing gateway is expected on first setup; continue
+to section 2.1. If the DSH version differs, resolve that first; the tools do not auto-upgrade DSH.
+
+The gateway source is `github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3`, as specified in
+`compatibility.json`. The same-named npm package is the upstream release line. Do not use `@latest` or
+install both gateways together. See [maintenance and compatibility](GATEWAY-MAINTENANCE.md) for how we
+integrate upstream changes and verify supported combinations.
+
 The gateway panel is the source of truth for connection status, paired devices, and the optional address book.
 
 ## 2. Pair the phone
 
 ### 2.1 Install and enable the gateway plugin
 
-On the DSH host, from a clone of this repository. Stop DSH Web first: adding a bundle to a running Web process
-hot-reloads the plugin tree and can leave `sessionController` unavailable until the whole process is restarted.
+On the DSH host, use a normal terminal in this repository, not the DSH Web chat. The one-command path is:
+
+```bash
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web --tunnel quick --pair --open
+```
+
+It stops the Web process, installs the pinned gateway and optional voice, restarts Web, enables the gateway,
+starts a Quick Tunnel and opens the pairing page. The Web chat disappears during the restart; reopen the
+original session afterward. On Windows, run from the directory where you normally start `dsh web`, replacing
+`scripts/setup-gateway.mjs` with its quoted absolute path in this repository to preserve the working directory.
+If that directory is unclear or you prefer to manage the restart, use the manual path below.
+For installation through an agent inside DSH Web, generate the complete handoff first as described in the
+[Agent guide](AGENT-SETUP.md), so the remaining commands are available after Web stops.
+
+Manual alternative: stop DSH Web first. Adding a bundle to a running Web process hot-reloads the plugin tree
+and can leave `sessionController` unavailable until the whole process is restarted.
 
 ```bash
 # Linux systemd

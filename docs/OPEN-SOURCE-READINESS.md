@@ -7,12 +7,15 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 
 ## 已发布版本
 
-`v0.1.0-alpha.3` 提供签名 APK、`SHA256SUMS` 和 `build-info.json`。
-[发布运行](https://github.com/solla-h/dsh-mobile-app/actions/runs/42233248539)
-完成原生构建、签名和附件上传；发布后独立下载的文件哈希与签名证书校验通过，Android versionCode 为 3。
+[`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4)
+提供签名 APK、`SHA256SUMS` 和 `build-info.json`。
+[发布运行](https://github.com/solla-h/dsh-mobile-app/actions/runs/42261625299)
+完成原生构建、签名、签名产物的完整模拟器旅程和附件上传。发布后独立下载的文件哈希、APK 密码学签名、
+包名与版本校验通过，Android versionCode 为 4，包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
 
-已确认 `alpha.3` 的 release Manifest 没有开启明文网络许可，Android 会阻止局域网 `ws://` 连接。
-该版本请使用 `wss://`；修复已加入下一版配置与回归检查。这是源码/产物确认，尚非真机实测。
+`alpha.4` 修复了 `alpha.3` 阻止私有网络 `ws://` 连接的 Android 配置。已检查下载 APK 的 Manifest，
+并由 Android 模拟器通过实际原生 WebSocket 完成旅程；客户端仍拒绝公网明文网关地址。
+上述结论属于源码/产物/自动化确认，尚非新 APK 的真机实测。
 
 官方 APK 使用 GitHub Ubuntu runner、Expo prebuild 和 Gradle 构建，不使用 EAS 云构建配额。
 发布 tag 必须来自已合入 `master` 的提交，已发布 tag 和附件不替换。操作流程见[发布手册](RELEASING.md)。
@@ -27,7 +30,7 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 | 代码组织 | 配对、列表、重命名和样式已从 `App.tsx` 提取；连接、导航和全局状态继续集中协调 |
 | UI 集成测试 | 真实 App 的配对→列表→会话→收发→返回，以及离线冷启动/草稿保留旅程 |
 | 无障碍基础 | 主要操作名称/角色/状态、会话自定义操作、转盘调整动作；文字和相机覆盖层对比度回归检查 |
-| 原生 Android 旅程 | [PR 模拟器旅程已通过](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)：配对、列表/历史、收发、返回、重启后保留配对；正式 APK 发布前单独验证签名产物 |
+| 原生 Android 旅程 | [PR 测试 APK](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)与[正式签名 APK](https://github.com/solla-h/dsh-mobile-app/actions/runs/42261625299)均已通过：配对、列表/历史、收发、返回、重启后保留配对 |
 | 文档 | 当前使用、安装、兼容、开发、设计与发布说明；原始讨论、状态日记和过期设计草稿不作为当前文档保留 |
 
 单维护者模式不要求另一位维护者批准 PR，但 PR、CI 与对话处理规则仍生效。
@@ -40,7 +43,7 @@ expo-doctor（20/20）和工作流语法检查。远端结果以
 - **源码/测试确认：** 上述单元与 UI 集成测试；Android 14 模拟器中，编译后的测试 APK 完成了本地合成网关旅程，
   截图、JUnit 与网关事件记录均已核对。该证据不覆盖生产网关、真实网络切换、语音/相机或实体设备手势。
 - **真机实测：** 较早的 Android 16 preview 构建验证过配对、会话列表、文字回复和按住说话；
-  具体组合见兼容记录。该结果不自动覆盖 `alpha.3` 或后续 APK。
+  具体组合见兼容记录。该结果不自动覆盖 `alpha.4` 或后续 APK。
 - **尚未验证：** 新 APK 的覆盖安装与配对保留、真实语音/相机、TalkBack 遍历、200% 系统字号、
   单手操作与真实网络切换。固定几何的转盘文字仍有局部字号上限。
 

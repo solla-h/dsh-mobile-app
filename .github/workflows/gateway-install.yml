@@ -1,0 +1,46 @@
+name: Gateway installation check
+
+on:
+  pull_request:
+    paths:
+      - 'compatibility.json'
+      - 'scripts/setup-gateway.mjs'
+      - 'scripts/check-compat.mjs'
+      - '.github/workflows/gateway-install.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-install-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: Install the pinned gateway on a clean host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - name: Install the recommended DSH CLI and pinned package manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          dsh_version=$(node -p 'require("./compatibility.json").recommended.dsh.version')
+          npm install --global pnpm@11.9.0 "@deepseek-ai/dsh@$dsh_version"
+          pnpm --version
+          dsh --version
+      - name: Install the exact gateway release through the user setup command
+        run: node scripts/setup-gateway.mjs install --yes --no-voice
+      - name: Verify the installed source and package versions
+        run: node scripts/check-compat.mjs --profile web --json
+      - name: Verify repeat installation is safe
+        run: node scripts/setup-gateway.mjs install --yes --no-voice
+      # This installs a real release package. It does not start a model, open a tunnel,
+      # approve native builds, download voice models, or claim a full app/host journey.

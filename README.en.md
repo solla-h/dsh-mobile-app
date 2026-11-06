@@ -12,10 +12,9 @@ DSH Mobile is a third-party, open-source Android client for **DeepSeek Harness (
 DSH host. The agent runs on the host; the phone keeps three things at hand: what is running, what is waiting
 for me, and what I want to say next.
 
-> **Public Android alpha.** [`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3)
-> is published. Build, signature, and downloaded-file checks passed; the new APK's real-device journey is still
-> pending. See the verification table below. Use `wss://` with `alpha.3`; the Android permission fix for private
-> `ws://` gateways has passed testing and awaits the next APK release.
+> **Public Android alpha.** [`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4)
+> is published. Build, signature, the complete local-fixture emulator journey and independent downloaded-file checks passed;
+> the new APK's real-device journey is still pending. See the verification table below.
 > iOS is deferred and unverified; there is no app-store release. This project is not affiliated with DeepSeek or Expo.
 
 > [!IMPORTANT]
@@ -56,22 +55,38 @@ DSH Mobile does not bundle a model or host DSH for you. You need a machine runni
 gateway `0.12.0-rdv.3`**; see [`compatibility.json`](compatibility.json) and
 [Compatibility](docs/COMPATIBILITY.md).
 
-Follow the [User guide](docs/USER-GUIDE.md) or the [Agent setup guide](docs/AGENT-SETUP.md). Installation
+**Use the [DSH Mobile maintained gateway](https://github.com/solla-h/dsh-plugin-mobile-gateway)**, a fork of
+[the upstream project](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway). The setup script selects
+our exact GitHub tag. The same-named npm package belongs to the upstream release line; do not substitute
+`npm install dsh-plugin-mobile-gateway` or `@latest`. You do not need to clone or build the gateway.
+
+For a new DSH host, follow [first-time host setup](docs/USER-GUIDE.md#1-before-you-start), including one
+working conversation in DSH Web. On an existing host, obtain the setup tools and run the read-only check:
+
+```bash
+git clone https://github.com/solla-h/dsh-mobile-app.git
+cd dsh-mobile-app
+node scripts/setup-gateway.mjs check
+```
+
+These scripts do not require `npm ci` or building the mobile app; plugin installation needs `pnpm` on the
+host (version and preparation steps are in the user guide). Complete installation with the
+[User guide](docs/USER-GUIDE.md) or [Agent setup guide](docs/AGENT-SETUP.md). Installation
 briefly stops and restarts DSH Web. If an AI agent is doing it, give it the agent notice above together with
 the guide. Voice is optional: the host needs the matching voice plugin and a prepared recognition model.
 
 ### 2. Download and install the APK
 
 Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases) and download
-[`dsh-mobile-v0.1.0-alpha.3.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.3/dsh-mobile-v0.1.0-alpha.3.apk)
-from the **Assets** of `v0.1.0-alpha.3`. Allow your browser or file manager to install it; no Expo account or
+[`dsh-mobile-v0.1.0-alpha.4.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.4/dsh-mobile-v0.1.0-alpha.4.apk)
+from the **Assets** of `v0.1.0-alpha.4`. Allow your browser or file manager to install it; no Expo account or
 development server is needed. The same release provides `SHA256SUMS` and `build-info.json` for download and
 signature verification; see the [release runbook](docs/RELEASING.md). To update, install over the existing app
 to keep pairings and drafts; do not uninstall first.
 
 ### 3. Generate a pairing code and scan it
 
-On the host, from a clone of this repository, enable the gateway and create a pairing code:
+After installing the gateway and restarting DSH Web, enable the gateway from this repository on the host and create a pairing code:
 
 ```bash
 node scripts/setup-gateway.mjs enable
@@ -89,8 +104,9 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 
 | Item | Status |
 | --- | --- |
+| APK-declared installation minimum | Android 7.0 / API 24; this does not establish coverage of every OS version or device |
 | Android 16 device, earlier preview build | Verified: pairing, session list, text reply, hold-to-talk voice |
-| `v0.1.0-alpha.3` APK | CI and independent download/signature checks passed; real-device journey pending |
+| `v0.1.0-alpha.4` APK | CI, signed-APK emulator journey and independent download/signature checks passed; real-device journey pending |
 | iOS | Deferred; not verified |
 | App stores | None; sideload the APK or use a development build |
 
@@ -111,6 +127,7 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 | [User guide](docs/USER-GUIDE.md) / [使用说明（中文）](docs/USER-GUIDE.zh-CN.md) | Pairing, daily use, approvals, attachments, voice, offline behavior, troubleshooting |
 | [Agent setup guide](docs/AGENT-SETUP.md) | Handoff contract for AI agents, safe/unsafe steps, human approval points |
 | [`compatibility.json`](compatibility.json) / [Compatibility](docs/COMPATIBILITY.md) | Pinned versions, verified combination, runtime protocol checks |
+| [Gateway maintenance](docs/GATEWAY-MAINTENANCE.md) | Maintained fork, upstream synchronization, version selection, joint verification and Agent constraints |
 | [Release runbook](docs/RELEASING.md) | APK build, signing, download verification, failure handling |
 | [Development and validation](docs/DEVELOPMENT.md) / [Design principles (Chinese)](docs/DESIGN.md) | Code responsibilities, test journeys, accessibility and interaction conventions |
 | [Release validation status (Chinese)](docs/OPEN-SOURCE-READINESS.md) | Automated and device evidence, known limits and deferred scope |

@@ -12,17 +12,34 @@ mobile gateway on a host, stop here and use [docs/AGENT-SETUP.md](docs/AGENT-SET
   session screen. Do not add routes, `_layout.tsx` files, or template navigation advice.
 - The app is an Android-first public alpha. iOS is deferred and unverified. App-wide i18n is
   deferred; Chinese and English READMEs are maintained separately.
-- The server is the third-party plugin `dsh-plugin-mobile-gateway` (protocol `dsh-mobile-v1`).
+- The server is the DSH Mobile maintained fork of the third-party plugin
+  [`solla-h/dsh-plugin-mobile-gateway`](https://github.com/solla-h/dsh-plugin-mobile-gateway)
+  (protocol `dsh-mobile-v1`). Its upstream is `Clarklevis1995/dsh-plugin-mobile-gateway`.
+  Install the exact GitHub tag in `compatibility.json`; the upstream npm package is a different release line.
 - Version lock: the app release is bound to the exact combination in
   [`compatibility.json`](compatibility.json). Currently DSH `0.2.1-rc.5`, gateway `0.12.0-rdv.3`,
   protocol v3, voice bundle `0.2.1-rc.5`. Never use `@latest` as a default, and never mix a local
   checkout into a release test.
-- Gateway source can be ahead of the npm package. “In the source tree” does not mean “running on the
-  gateway”. Verify against the installed package when behavior matters.
+- Gateway checkout, tagged package and installed process can differ. Verify the actual installed package
+  and fully restarted host when behavior matters; source inspection alone is not deployment evidence.
 - Expo/React Native APIs change every SDK release. Before writing code that touches Expo, EAS, or
   React Native, read the versioned docs for the installed major:
   `https://docs.expo.dev/versions/v58.0.0/` and `https://reactnative.dev/docs/0.88/`. Do not answer
   from memory.
+
+## Gateway coordination
+
+- Read [Gateway maintenance](docs/GATEWAY-MAINTENANCE.md) before changing the recommended backend,
+  setup checks, wire protocol or gateway-dependent behavior. In the gateway repository, read its own
+  `AGENTS.md` and maintainer guide; this app repository does not own gateway runtime code.
+- Keep `compatibility.json` as the app's recommendation source. Upstream updates and gateway `main`
+  are candidates until the exact release package has passed the documented compatibility journey.
+- Review upstream changes in a separate PR; never silently upgrade DSH or voice while syncing the fork.
+  Equal protocol numbers do not prove equal host/plugin compatibility.
+- Preserve package/plugin identity, saved pairing, gateway identity and rendezvous state during upgrades.
+  Do not install the upstream and maintained gateway together or rewrite a released tag.
+- Update Chinese/English setup docs with source/version changes. Keep prior real-device evidence attached
+  to its original build; app fixture tests and gateway package tests do not establish a real-host journey.
 
 ## Actual structure
 
@@ -62,7 +79,7 @@ or app config change. Docs-only changes need a relative-link check instead of a 
 Official Android APKs use [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml):
 
 ```
-quality checks -> Expo prebuild -> Gradle on ubuntu-24.04 -> sign/verify -> draft Release -> publish
+quality checks -> Expo prebuild -> Gradle on ubuntu-24.04 -> sign/verify -> signed APK journey -> draft Release -> publish
 ```
 
 - This public-repository path does **not** use EAS cloud quota or an Expo token. EAS projects in the
@@ -168,7 +185,7 @@ Current install, compatibility, and user documents:
 - [README](README.md) / [README.en](README.en.md) / [README.zh-CN](README.zh-CN.md)
 - [User guide](docs/USER-GUIDE.md) / [使用说明](docs/USER-GUIDE.zh-CN.md)
 - [Agent setup](docs/AGENT-SETUP.md) and [`compatibility.json`](compatibility.json)
-- [Compatibility](docs/COMPATIBILITY.md) and [Releasing](docs/RELEASING.md)
+- [Compatibility](docs/COMPATIBILITY.md), [gateway maintenance](docs/GATEWAY-MAINTENANCE.md), and [releasing](docs/RELEASING.md)
 
 Development references:
 
