@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format is based on
 - Android emulator/Maestro journey checks for pull requests and signed release APKs before publication.
 - Contrast regression checks and accessible names, states and actions across the primary navigation flow.
 
+### Fixed
+
+- Enable Android release-build networking for private LAN/Tailscale/USB `ws://` gateways. Public cleartext pairing URLs remain rejected by the client.
+- Keep dial preview and gesture focus synchronized after accessibility adjustments, including a cancelled preview followed by an adjustment at the list edge.
+
 ### Changed
 
 - Extract pairing, session-list and rename views from the main app coordinator while preserving state ownership.

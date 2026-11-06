@@ -5,7 +5,7 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 
 这份说明按真实使用顺序覆盖：配对、日常使用、审批、附件、语音、多网关、可选地址簿、离线行为与故障排查。
 
-> App 仍是实验性版本，与 DeepSeek、Expo 官方无关。请搭配兼容的网关版本使用。
+> App 是 Android 公开 alpha，与 DeepSeek、Expo 官方无关。请使用锁定的网关组合；iOS 暂缓且未验证。
 
 ## 1. 开始之前
 
@@ -18,6 +18,11 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
   - Cloudflare Quick Tunnel / 命名 Tunnel，或
   - 其他可达入口（例如 Tailscale）。
 - 手机上已安装 DSH Mobile。
+
+从 [GitHub Releases](https://github.com/solla-h/dsh-mobile-app/releases) 下载 APK，允许浏览器或文件管理器
+安装后打开；不需要 Expo 账号或开发服务器。更新时覆盖安装以保留配对记录和草稿，不要先卸载。
+下载与签名校验见[发布手册](RELEASING.md#download-install-and-verify)，当前证据边界见
+[发布验证状态](OPEN-SOURCE-READINESS.md)。
 
 网关面板是连接状态、已配对设备和可选地址簿的唯一事实来源。
 

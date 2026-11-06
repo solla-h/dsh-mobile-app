@@ -179,7 +179,7 @@ jobs:
 
           Verify the download with SHA256SUMS. build-info.json records the source commit, Android version code and signing certificate fingerprint.
 
-          Built from $RELEASE_SHA by GitHub Actions. APK signature and package metadata verified; this build still needs real-device installation and user-journey verification. iOS is not included.
+          Built from $RELEASE_SHA by GitHub Actions. APK signature and package metadata verified. An Android emulator passed pairing, send/receive, return and relaunch against a synthetic local gateway. Physical-device installation/upgrade, voice, camera and screen-reader journeys still need verification. iOS is not included.
 
           Use the exact gateway/DSH combination in compatibility.json. Source code is MIT; bundled pet animations are CC BY-NC-SA 4.0 (non-commercial).
           EOF

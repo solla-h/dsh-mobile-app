@@ -1,87 +1,73 @@
-# 网关协议覆盖表（dsh-plugin-mobile-gateway@0.11.1）
+# 客户端协议覆盖（dsh-mobile-v1）
 
-> 口径：网关 `lib/index.mjs` 里所有 `msg.type === '...'` 分支（共 60 个，含 `string` 这类噪声）；
-> App 侧对照 `src/protocol/types.ts` 的 `ClientFrame` 联合类型（42 个）。
+> 口径：本文只描述 **App 侧**已实现的客户端契约，对照 [compatibility.json](../compatibility.json)
+> 里 pin 的组合（协议 v3、网关 `0.12.0-rdv.3`）。不数帧：`src/protocol/types.ts` 的联合类型只代表
+> 「声明过」，是否接入以真实发送点和处理器为准；网关内部落点以 pin 版本的 `PROTOCOL.md` 为准，
+> 不要用本地 checkout 推断在装网关的行为。证据等级：下表为源码/单测确认；真机结论另见
+> [COMPATIBILITY.md](COMPATIBILITY.md)。
 
-## 1. 已接（42）
+## 1. 已接入的客户端能力 → 模块
 
-| 能力 | 客户端消息 | 网关落到 |
+| 能力 | 客户端帧 | 实现模块（发送 / 消费） |
 | --- | --- | --- |
-| 心跳 | `ping` | 本地回 `pong` |
-| 会话列表 | `sessions` | `api.sessions.list`（只裁 projections） |
-| 工作区/项目 | `workspaces` | 一次性 `workspace/follow` 开场 baseline 摊平返回 |
-| 全文搜索 | `search` | `sessions.search`，单次上限 20 条 |
-| 历史 | `history` | `api.sessions.history` |
-| 订阅 | `subscribe` / `unsubscribe` | 本地（subscribed/error） |
-| 发消息 | `message` | 本地（含排队/插话、附件回执） |
-| 审批 | `approval-response` | 本地（一次性） |
-| 提问 | `question-answer` / `question-cancel` | 本地 |
-| 取消回合 | `session-cancel` | `api.sessions.cancel` |
-| 新建/改名/归档 | `session-create` / `session-rename` / `session-archive` | `sessions.create` / `rename` / `workspace.archiveSession` |
-| 目录浏览 | `directories` | 宿主的目录服务 |
-| 分叉 | `fork` | `api.sessions.fork` |
-| 命令面板 | `commands` / `command-execute` / `command-options` / `command-select` | `skills.*` |
-| 任务 | `tasks` | 本地 |
-| 目标 | `goal` / `goal-edit` / `goal-pause` / `goal-resume` / `goal-clear` | 本地 |
-| 智能体预设 | `agent-presets` / `session-agent-preset` / `select-agent-preset` | `agentPresets.list` 等 |
-| 会话统计 | `session-stats` | 本地 |
-| 附件/文件 | `attachment` / `file-resolve` / `file-list` / `file-download-*` / `file-upload-*` | 附件与上传模块 |
-| 队列编辑 | `queue-update` | `api.sessions.updateQueue` |
+| 心跳与断线重连 | `ping` | [../src/transport/gateway-client.ts](../src/transport/gateway-client.ts)、[connection-policy.ts](../src/transport/connection-policy.ts) |
+| 会话列表、归档、重命名推送 | `sessions`、`session-archive`、`session-rename` | `App.tsx`、[AllSessionsView.tsx](../src/ui/home/AllSessionsView.tsx)、[focus.ts](../src/protocol/focus.ts) |
+| 工作区（首页看板） | `workspaces` | [projects.ts](../src/protocol/projects.ts)、[rows.ts](../src/ui/home/rows.ts)、`App.tsx` |
+| 历史、订阅、实时流、轮次级大纲 | `history`、`subscribe`/`unsubscribe` | [chat.ts](../src/protocol/chat.ts)、[outline.ts](../src/protocol/outline.ts)、[outline-cache.ts](../src/protocol/outline-cache.ts)、[history-cache.ts](../src/transport/history-cache.ts) |
+| 发消息、排队、插话 | `message`、`queue-update` | [outbox.ts](../src/transport/outbox.ts)、[SessionScreen.tsx](../src/ui/SessionScreen.tsx) |
+| 审批、提问 | `approval-response`、`question-answer`/`question-cancel` | [interactions.ts](../src/protocol/interactions.ts)、[pending.ts](../src/protocol/pending.ts)、[ApprovalDock.tsx](../src/ui/dock/ApprovalDock.tsx) |
+| 取消回合 | `session-cancel` | [SessionScreen.tsx](../src/ui/SessionScreen.tsx) |
+| 新建、改名、归档、分叉 | `session-create`、`session-rename`、`session-archive`、`fork` | `App.tsx`、[SessionScreen.tsx](../src/ui/SessionScreen.tsx)、[RenameSessionModal.tsx](../src/ui/home/RenameSessionModal.tsx) |
+| 目录浏览与新建 | `directories`、`directory-create`、`workspace-create` | [directories.ts](../src/protocol/directories.ts)、[DirectoryPicker.tsx](../src/ui/DirectoryPicker.tsx)、`App.tsx` |
+| 命令面板 | `commands`、`command-execute`、`command-options`、`command-select` | [commands.ts](../src/protocol/commands.ts)、[CommandPalette.tsx](../src/ui/CommandPalette.tsx)、`SessionScreen` |
+| 任务与目标 | `tasks`、`goal`、`goal-pause`/`goal-resume`/`goal-clear` | [tasks.ts](../src/protocol/tasks.ts)、[TasksSheet.tsx](../src/ui/TasksSheet.tsx)、`SessionScreen` |
+| 智能体预设 | `agent-presets`、`session-agent-preset`、`select-agent-preset` | [presets.ts](../src/protocol/presets.ts)、`SessionScreen`、[HostInfoSheet.tsx](../src/ui/home/HostInfoSheet.tsx) |
+| 会话统计与上下文压力条 | `session-stats` | [chat.ts](../src/protocol/chat.ts)（tokenUsage）、`SessionScreen` |
+| 模型、权限预设、宿主信息、全局默认 | `models`、`select-model`、`permission`、`permission-options`、`host`、`defaults`、`set-default` | [runtime.ts](../src/protocol/runtime.ts)、[ModelPermissionBar.tsx](../src/ui/session/ModelPermissionBar.tsx)、[HostInfoSheet.tsx](../src/ui/home/HostInfoSheet.tsx) |
+| 定时任务（须走 control 连接） | `schedule-catalog`、`schedule-update`/`schedule-delete`/`schedule-history` | [schedules.ts](../src/protocol/schedules.ts)、[SchedulesView.tsx](../src/ui/home/SchedulesView.tsx)、[ScheduleSheet.tsx](../src/ui/home/ScheduleSheet.tsx) |
+| 语音输入（依赖宿主 bundle） | `speech-catalog`、`speech-transcribe`、`speech-cancel` | [speech.ts](../src/protocol/speech.ts)、[useVoiceInput.ts](../src/ui/voice/useVoiceInput.ts) |
+| 插件管理（control 连接，单独通道） | `plugin-*` 请求族 | [plugins.ts](../src/protocol/plugins.ts)、[usePluginManager.ts](../src/ui/plugins/usePluginManager.ts) |
+| 文件 | `file-resolve`、`file-download-*`、`file-upload-*`、`attachment` | [files.ts](../src/protocol/files.ts)、[file-download.ts](../src/transport/file-download.ts)、[file-upload.ts](../src/transport/file-upload.ts)、[FileCards.tsx](../src/ui/FileCards.tsx) |
+| 地址簿 | `rendezvous-config` | [rendezvous.ts](../src/protocol/rendezvous.ts)、[transport/rendezvous.ts](../src/transport/rendezvous.ts) → [rendezvous-design.md](rendezvous-design.md) |
 
-## 1.1 实测记录（2026-10-29，dsh-host）
+插件管理是唯一走宽松类型的 `request(type, params)` 通道（`usePluginManager.ts`），
+帧名不在 `ClientFrame` 联合里逐个列出；**不要**用联合类型反推 App 的覆盖范围。
 
-`workspaces` 与 `search` 已经在真网关上跑通（临时探针直连 `127.0.0.1:3080`，配对后打帧）。
-四个会直接影响 UI 的事实：
+## 2. 已声明但全仓库没有发送点（别当成已接入）
 
-- **工作区覆盖率极低**：30 个会话里只有 3 个落在唯一的工作区里，其余 27 个的 cwd 全是
-  `/home/dsh/workspace`。首页看板不能只按 `workspaces` 分组，必须给没被认领的会话按 cwd
-  兜底分组——`deriveProjects` 已按这个实现。
-- **归档会话照样出现在 `sessions` 里**：18/30 是归档的，`sessions` 帧一个不少地返回，
-  只能靠 `session-archives` / `workspaces.archivedSessionIds` 才知道该隐藏。
-- **搜索命中只有 `sessionId` + `snippet`**，没有标题和分数；20 条命中里 12 条是归档会话。
-  没有翻页参数，`hasMore: true` 只表示「还有更多」。
-- `sessions.items[].updatedAt` 实测是**毫秒**（`1793240232363`），PROTOCOL.md 的示例写的是秒
-  （`1786937352`）；`workspaces.items[].createdAt/updatedAt` 反而是 ISO-8601 字符串。
+- `search`：服务端全文搜索。[search.ts](../src/protocol/search.ts) 的解析、`normalizeQuery` 与单测已在，
+  但列表搜索框（`App.tsx` → `AllSessionsView`）仍是本地过滤，没有 `type:'search'` 发送点。
+- 仅类型声明、无发送点：`speech-subscribe`、`providers`（有 `mapProviders` 映射但没发）、
+  `default-model`、`save-default-model`、`schedule-list`、`file-list`、`goal-edit`。
+  （`goal-pause`/`goal-resume`/`goal-clear` 是动态拼帧发送的，见 `SessionScreen.tsx`。）
 
-> 注意这两条的**接入深度**：目前只有类型定义 + 纯函数 + 单测，`App.tsx` 里还没有任何
-> `client.send({type:'workspaces'})` / `{type:'search'}` 的发送点，也没有对应的 `case` 分支。
-> 也就是说表里的「已接」指协议层已验通，线上界面还没消费。
+## 3. 客户端契约要点（实现时反复踩到的）
 
-两个使用上的坑：
+- `workspaces` 不是廉价列表：一次请求对应网关开一条 `workspace/follow` 取开场 baseline。
+  App 只在连接建立、新建工作区等时机重发，不做轮询（`App.tsx`，`types.ts` 注释）。
+- 归档会话仍会出现在 `sessions` 里；隐藏靠 `session-archives` 帧与 `workspaces.archivedSessionIds`
+  （[projects.ts](../src/protocol/projects.ts)、[focus.ts](../src/protocol/focus.ts)）。
+- `workspaces` 只覆盖显式创建的工作区；没归组的会话按 `cwd` 兜底分组，否则看板会漏会话
+  （[projects.ts](../src/protocol/projects.ts)）。
+- 服务端搜索命中只有 `sessionId` + `snippet`，单次上限 20 条、无翻页参数，命中可能落在归档会话上
+  （`types.ts` 注释、[search.ts](../src/protocol/search.ts)）。
+- 时间字段口径：`sessions.items[].updatedAt` 按 epoch 毫秒排序；`workspaces` 的 `createdAt`/`updatedAt`
+  是 ISO-8601 字符串，客户端不解析（`types.ts`）。
+- `ServerFrame` 是宽松联合：未知 kind 静默丢弃，不报错也没有反应；接新帧要看实际处理器，不能只看类型
+  （`types.ts`）。
+- `hello.protocol` 与 pin 版本不一致时只提示、不断连（[compat.ts](../src/protocol/compat.ts)）。
 
-- `workspaces` 不是廉价的列表查询：网关每次都会开一条 `workspace/follow` 流、取开场 baseline
-  再断开。别拿它做轮询，重新拉取只在需要刷新分组时做。
-- 成员变化和置顶变化**没有推送帧**，网关只转发 `archived`；想看到变化只能重新发一次 `workspaces`。
+协议行为约束（可写帧、goal 双层嵌套、`fork` 的 `historyFormatVersion` 等）见
+[AGENTS.md](../AGENTS.md)「Protocol constraints」；那里是维护契约，这里是覆盖地图。
 
-## 2. 网关有、App 没接（按能力分组）
+## 4. 证据与验证方式
 
-| 能力 | 客户端消息 | 网关落到 | 对 App 的价值 |
-| --- | --- | --- | --- |
-| 新建项目 | `workspace-create` | `api.workspace.create` | 手机上直接开新项目 |
-| 新建目录 | `directory-create` | 宿主目录服务 | 新建会话时建目录 |
-| 模型选择 | `models` / `select-model` / `providers` / `default-model` / `save-default-model` | `llm.models` / `sessions.selectModel` 等 | 会话内切模型、看 provider |
-| 权限预设 | `permission` / `permission-options` / `defaults` / `set-default` | `permissionPresets.*` / `settings.describe` | 会话里改权限模式（只读/工作区写/全权） |
-| 上下文用量 | `context-usage` | 本地投影 `tokenUsage` + `contextPressure` | 比 `session-stats` 更细的上下文压力 |
-| 定时任务 | `schedule-catalog` / `schedule-list` / `schedule-history` / `schedule-update` / `schedule-delete` | `schedule.*` | 手机上看/改 cron |
-| 子代理 | `subagents` / `agent-team` | 本地（错误/空） | 看子代理树 |
-| 插件安装 | `plugin-install` | 本地 | 手机上装插件（优先级低） |
-| 宿主信息 | `host` | `api.host.describe` | 版本/能力位 |
+- 纯函数单测：`npm test`（`src/protocol/__tests__`、`src/transport/__tests__`，各能力各自的映射与负例）。
+- UI 旅程：`npx jest src/ui/__tests__/app-journey --runInBand`（配对→发送→返回；离线冷启动保会话）。
+- 可控失败：`node docs/tools/fake-gateway.mjs`（`no-ack`、`no-hello`、`half-open`、`no-history`、`no-create`），
+  用法见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+- 未覆盖：iOS、非 pin 版本网关、真机（真机与发布级结论以 `compatibility.json` 的 verified 条目和
+  [COMPATIBILITY.md](COMPATIBILITY.md) 为准）。上表是源码/单测口径，不等于在装网关验证。
 
-## 3. 网关发了、App 没消费的帧（部分）
-
-`subscribed`、`permission`、`context-usage`、`models`、`providers`、`schedule-*`、
-`session-archived`、`session-renamed`、`workspaces`、`permission-options`、`defaults`、`set-default`。
-
-App 的 `ServerFrame` 是宽松联合（未知类型落 `{kind: string}`），所以这些帧现在会被**静默丢弃**——不报错，但也没反应。
-
-## 4. 建议的接入顺序
-
-1. **`permission` / `permission-options`** —— 现在审批只能一条条批，不能切「只读/工作区写/全权」模式。
-2. `context-usage` —— 比 `session-stats` 细，顶部水位线可以用真实压力值。
-3. `schedule-*` —— 等首页 tab 结构定下来再决定接不接。
-4. 其余（模型切换、插件安装）按需。
-
-## 5. 结论
-
-协议层没有「mobile 阉割版」：会话、历史、文件、审批、目标、任务、命令、预设都在，
-项目/置顶/归档/搜索/权限/模型也都有。**缺的是 App 的接入**，不是网关的能力。
+结论：会话、历史、文件、审批、目标、任务、命令、预设、运行时配置、定时任务、插件、语音、地址簿都有
+真实模块与发送点；缺口集中在 §2 的未发送帧，而不是网关能力。

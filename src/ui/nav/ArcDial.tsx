@@ -243,6 +243,9 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
     const picked = list[target];
     setOpen(false);
     setIndex(target);
+    focus.setValue(target);
+    focusIndexRef.current = target;
+    lastTickIndexRef.current = target;
     if (picked && picked.sessionId !== activeId) {
       tickFeedback();
       onSelect(picked.sessionId);

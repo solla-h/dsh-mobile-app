@@ -11,6 +11,9 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 [发布运行](https://github.com/solla-h/dsh-mobile-app/actions/runs/42233248539)
 完成原生构建、签名和附件上传；发布后独立下载的文件哈希与签名证书校验通过，Android versionCode 为 3。
 
+已确认 `alpha.3` 的 release Manifest 没有开启明文网络许可，Android 会阻止局域网 `ws://` 连接。
+该版本请使用 `wss://`；修复已加入下一版配置与回归检查。这是源码/产物确认，尚非真机实测。
+
 官方 APK 使用 GitHub Ubuntu runner、Expo prebuild 和 Gradle 构建，不使用 EAS 云构建配额。
 发布 tag 必须来自已合入 `master` 的提交，已发布 tag 和附件不替换。操作流程见[发布手册](RELEASING.md)。
 
@@ -24,11 +27,11 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 | 代码组织 | 配对、列表、重命名和样式已从 `App.tsx` 提取；连接、导航和全局状态继续集中协调 |
 | UI 集成测试 | 真实 App 的配对→列表→会话→收发→返回，以及离线冷启动/草稿保留旅程 |
 | 无障碍基础 | 主要操作名称/角色/状态、会话自定义操作、转盘调整动作；文字和相机覆盖层对比度回归检查 |
-| 原生 Android 旅程 | 已接入 PR 与发布 workflow；首次实际模拟器运行结果仍待 CI 确认 |
+| 原生 Android 旅程 | 已接入 PR 与发布 workflow；首次运行被模拟器 Launcher 弹窗阻挡，修复后待重跑 |
 | 文档 | 当前使用、安装、兼容、开发、设计与发布说明；原始讨论、状态日记和过期设计草稿不作为当前文档保留 |
 
 单维护者模式不要求另一位维护者批准 PR，但 PR、CI 与对话处理规则仍生效。
-本地合并检查已通过：34 个 Jest suites / 340 个测试、Node 脚本测试、签名脚本回归、typecheck、lint、
+本地合并检查已通过：35 个 Jest suites / 341 个测试、Node 脚本测试、签名脚本回归、typecheck、lint、
 expo-doctor（20/20）和工作流语法检查。远端结果以
 [Actions](https://github.com/solla-h/dsh-mobile-app/actions) 为准。
 

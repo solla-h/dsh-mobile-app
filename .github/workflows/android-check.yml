@@ -8,6 +8,7 @@ on:
       - 'app.json'
       - 'package*.json'
       - 'src/**'
+      - 'plugins/**'
       - '.maestro/**'
       - 'scripts/ci/**'
       - 'docs/tools/fake-gateway.mjs'

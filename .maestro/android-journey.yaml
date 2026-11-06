@@ -9,11 +9,21 @@ appId: app.dshmobile.client
 ---
 - launchApp:
     clearState: true
-# Fresh install: the pairing card is the only possible screen.
-- extendedWaitUntil:
-    visible:
-      id: pairing-manual-toggle
-    timeout: 20000
+# A fresh emulator can show a Pixel Launcher ANR while its first boot settles.
+# Retry only entry readiness; dismiss that named system dialog, never an app ANR.
+- retry:
+    maxRetries: 1
+    commands:
+      - runFlow:
+          when:
+            visible: "Pixel Launcher isn't responding"
+          commands:
+            - tapOn:
+                id: android:id/aerr_close
+      - extendedWaitUntil:
+          visible:
+            id: pairing-manual-toggle
+          timeout: 20000
 - takeScreenshot: 01-pairing
 # Pair manually (no camera / QR): paste the fixture payload.
 - tapOn:
