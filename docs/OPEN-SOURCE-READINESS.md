@@ -31,6 +31,9 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 | UI 集成测试 | 真实 App 的配对→列表→会话→收发→返回，以及离线冷启动/草稿保留旅程 |
 | 无障碍基础 | 主要操作名称/角色/状态、会话自定义操作、转盘调整动作；文字和相机覆盖层对比度回归检查 |
 | 原生 Android 旅程 | [PR 测试 APK](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)与[正式签名 APK](https://github.com/solla-h/dsh-mobile-app/actions/runs/42261625299)均已通过：配对、列表/历史、收发、返回、重启后保留配对 |
+| 固定版本安装 | [Linux / Windows 安装 CI](https://github.com/solla-h/dsh-mobile-app/actions/runs/42273169756)通过：实际安装固定 DSH、网关，校验来源与版本，再次执行安装；不覆盖 Web 模型配置、隧道、语音或手机连接 |
+| 网关维护 | [维护规范](GATEWAY-MAINTENANCE.md)、双仓库 Agent 入口和网关主分支保护已落实；[网关源码与打包安装 CI](https://github.com/solla-h/dsh-plugin-mobile-gateway/actions/runs/42273457988)通过（可选 libdatachannel 互操作检查跳过） |
+| 官网 | [fatwhale.app](https://fatwhale.app) 的中英文页面可访问，下载与安装文档入口已核对；由[独立仓库](https://github.com/solla-h/dsh-mobile-site)维护，APK 发布不依赖网站部署 |
 | 文档 | 当前使用、安装、兼容、开发、设计与发布说明；原始讨论、状态日记和过期设计草稿不作为当前文档保留 |
 
 单维护者模式不要求另一位维护者批准 PR，但 PR、CI 与对话处理规则仍生效。
@@ -54,6 +57,5 @@ expo-doctor（20/20）和工作流语法检查。远端结果以
 
 - App 全面 i18n 和 iOS 版本暂缓；中文主页与英文 README 继续同步维护。
 - 当前没有应用商店版本。
-- 宣传站在[独立仓库](https://github.com/solla-h/dsh-mobile-site)开发；本仓库的 APK 发布不依赖网站部署。
 
 本页记录当前可核验状态，不是内部讨论记录或未来功能承诺。

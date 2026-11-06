@@ -1,6 +1,6 @@
 # DSH Mobile
 
-[简体中文](README.md) · [Download Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
+[Website](https://fatwhale.app/en/) · [简体中文](README.md) · [Download Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
 [User guide](docs/USER-GUIDE.md) · [Compatibility](docs/COMPATIBILITY.md)
 
 [![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
@@ -47,6 +47,23 @@ using a local fake gateway and synthetic conversations. No real account or pairi
 The app interface is currently primarily Chinese.
 
 ## Quick start
+
+### Ask Codex / a DSH agent to help
+
+Give this prompt to an agent **with terminal access to the target DSH host**. A repository URL alone does not
+say whether you want to configure the gateway or develop the app.
+
+```text
+Help me configure DSH Mobile: https://github.com/solla-h/dsh-mobile-app
+Read docs/AGENT-SETUP.md and compatibility.json first. Prepare the pinned host version and run the read-only check.
+If installation or a restart is needed, run handoff first and give me the complete handoff file and one install command to run in a normal terminal.
+Then continue checking, enable the gateway and generate a local pairing page. Report only its path, never pairing credentials.
+Do not build the app or upgrade an existing DSH without approval. I will handle account authorization, phone installation and scanning.
+```
+
+The agent can handle inspection and most configuration steps. You still provide a working model configuration,
+run the handoff command, and install/scan on the phone. An agent running inside DSH Web must not stop the Web
+process hosting it. See the [Agent setup guide](docs/AGENT-SETUP.md) for the exact boundaries.
 
 ### 1. Prepare your own DSH host and gateway
 
@@ -131,7 +148,7 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 | [Release runbook](docs/RELEASING.md) | APK build, signing, download verification, failure handling |
 | [Development and validation](docs/DEVELOPMENT.md) / [Design principles (Chinese)](docs/DESIGN.md) | Code responsibilities, test journeys, accessibility and interaction conventions |
 | [Release validation status (Chinese)](docs/OPEN-SOURCE-READINESS.md) | Automated and device evidence, known limits and deferred scope |
-| [Website repository](https://github.com/solla-h/dsh-mobile-site) | Independent development and deployment for fatwhale.app (production site not live yet) |
+| [Website](https://fatwhale.app/en/) / [Website repository](https://github.com/solla-h/dsh-mobile-site) | Product overview, downloads and setup entry points; independent website development and deployment |
 | [Rendezvous design](docs/rendezvous-design.md) | Encryption and recovery for `rendezvous-v1` |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | Contributions, vulnerability reports, change log, repository conventions |
 
