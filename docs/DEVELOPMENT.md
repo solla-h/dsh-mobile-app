@@ -66,8 +66,9 @@ installs it in an Android emulator and runs [Maestro](../.maestro/android-journe
 local fixture, open a session, send text, receive the fixture reply, return and relaunch with pairing retained.
 The driver also checks gateway traffic so an optimistic local echo cannot count as a received reply.
 
-The release pipeline runs that journey against its signed APK before publishing. PR test APKs use
-only generated development signing and are temporary CI artifacts, not official downloads.
+The release pipeline runs that journey against its signed APK before publishing. PR test APKs build
+only the emulator's x86_64 ABI and use generated development signing; they are temporary CI artifacts,
+not official downloads. Official release builds retain all supported ABIs.
 Screenshots, test reports and diagnostics use synthetic fixture data. Check the workflow result;
 adding a workflow is not evidence that it has passed. The workflow does not need production tokens,
 Cloudflare access, an Expo token or a physical phone.

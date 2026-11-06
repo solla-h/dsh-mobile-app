@@ -32,6 +32,8 @@ appId: app.dshmobile.client
     id: pairing-payload
 - inputText: ${PAIRING_PAYLOAD}
 - assertVisible: ${PAIRING_PAYLOAD}
+# The multiline payload and IME can cover the connect button on a small screen.
+- hideKeyboard
 - tapOn:
     id: pairing-connect
 # Home tabs mean `paired` + `hello` arrived and the gateway was saved.

@@ -58,7 +58,9 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
         run: >-
           ./gradlew app:assembleRelease --no-daemon --max-workers=2
+          -PreactNativeArchitectures=x86_64
           -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
+      # Test only: build the emulator ABI. Official release builds still include every ABI.
       # Generated development signing only. Official release credentials are never used in PR jobs.
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

@@ -124,6 +124,9 @@ are the constraints that have already caused bugs:
 - While the app is backgrounded, JS timers stop and `lastFrameAt` freezes. On foreground,
   `GatewayClient.watchForeground()` resets the baseline and sends a ping; otherwise a healthy
   connection is declared dead on the first heartbeat.
+- The Android config plugin permits app-wide cleartext traffic so private LAN/Tailscale/USB
+  `ws://` gateways work. `isPairingUrlAllowed` enforces the gateway endpoint restriction; preserve
+  its rejection of public cleartext addresses. Keep the generated-manifest regression check.
 - Offline sends go to the persisted `outbox` and flush in order after `ready`. File sends are
   online-only because the receipt is bound to the connection.
 - Cache sessions per gateway (`sessions-<gatewayId>.json`). Cold start reads the cache before

@@ -85,7 +85,7 @@ Pairing payloads contain a one-time device token. Do not screenshot or share a l
 4. Point the camera at the QR code.
 
 If the camera is unavailable or permission was denied, tap **Paste pairing payload manually** (手动粘贴配对串),
-paste the text, and tap **Pair and connect** (配对并连接).
+paste the text, and tap **Pair and connect** (配对并连接). Dismiss the keyboard first if it covers the button.
 
 A pairing code can only be used once and expires after about five minutes. If it expires, generate a new one on
 the host. Pairing succeeds only after the app receives a long-lived device token; the token is stored in the
