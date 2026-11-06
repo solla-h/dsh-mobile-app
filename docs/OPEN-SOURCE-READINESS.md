@@ -108,9 +108,11 @@ git grep -nIE '<sensitive-pattern>' -- .
 - [x] CI 可复用：PR/主分支执行质量检查，发布时检查精确的 tag commit。
 - [x] 标准 GitHub Ubuntu x64 runner 使用 Expo prebuild + Gradle；不占用 EAS 云构建次数。
 - [x] 签名材料仅放在 `android-release` 环境，限制主分支/发布 tag；证书与之前的 preview APK 一致。
-- [x] Android versionCode 提升到 2；发布校验 tag、manifest 和历史版本号。
+- [x] Android versionCode 提升到 3；发布校验 tag、manifest 和历史版本号。
 - [x] APK 签名、包名、版本、独立 JS bundle 和 SHA-256 校验纳入发布门禁。
-- [ ] GitHub Actions 完成真实构建并发布 `v0.1.0-alpha.2` 的 APK、SHA256SUMS、build-info.json。
+- [x] alpha.2 原生构建成功；build-tools 37 的签名输出格式导致指纹解析失败，未发布 APK。
+      已修复并补充回归检查：旧/新格式、跨签名方案重复证书、错证书/多证书/缺失证书拒绝。
+- [ ] GitHub Actions 完成真实构建并发布 `v0.1.0-alpha.3` 的 APK、SHA256SUMS、build-info.json。
 - [ ] 从 Release 下载 APK，验证下载校验值和附件完整性。
 - [ ] 新 APK 真机旅程：覆盖安装 → 保留配对 → 进入会话 → 发送/语音 → 返回首页。
 

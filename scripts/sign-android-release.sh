@@ -32,7 +32,9 @@ mkdir -p dist
   --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
   --v4-signing-enabled false --out "dist/$APK_NAME" "$signing_dir/aligned.apk"
 "$tools/apksigner" verify --verbose --print-certs "dist/$APK_NAME" > "$signing_dir/verification.txt"
-actual=$(awk '/^Signer #1 certificate SHA-256 digest:/ {print tolower($NF)}' "$signing_dir/verification.txt")
+# Build-tools 37 uses scheme labels such as "V2 Signer:" instead of "Signer #1".
+# All reported certificates must match; duplicate entries across schemes are expected.
+actual=$(awk '/ certificate SHA-256 digest:/ {print tolower($NF)}' "$signing_dir/verification.txt" | sort -u)
 [[ "$actual" == "$expected" ]] || { printf 'APK signed by unexpected certificate\n' >&2; exit 1; }
 "$tools/zipalign" -c -P 16 4 "dist/$APK_NAME"
 [[ $("$analyzer" manifest application-id "dist/$APK_NAME") == app.dshmobile.client ]]

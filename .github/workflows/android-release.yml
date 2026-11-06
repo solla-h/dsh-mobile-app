@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag on master (for example v0.1.0-alpha.2)
+        description: Existing release tag on master (for example v0.1.0-alpha.3)
         type: string
         required: true
 
