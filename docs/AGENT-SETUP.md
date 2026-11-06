@@ -70,8 +70,10 @@ Host tools must include Node.js 22.13+, npm, Git and `pnpm` on PATH; the documen
 `npm install --global pnpm@11.9.0` in a normal terminal; do not reinstall or upgrade DSH to resolve this.
 
 The gateway's `hello` advertises the protocol number and a build-time DSH version, but not the plugin version;
-the app only enforces the protocol. The checker below verifies the profile spec, the **installed package**
-version under `node_modules`, and the actual DSH (`dsh --version`). Source/version inspection does not verify
+the app warns on an unverified protocol. The checker below requires the profile dependency to identify the
+pinned GitHub owner, repository and tag, checks the **installed package** version under `node_modules`, and
+reads the actual DSH (`dsh --version`). A manual `--plugin` override cannot replace the profile evidence.
+Source/version inspection does not verify
 artifact integrity, the running process's loaded code, or live protocol behavior. A full restart and the
 actual phone connection are still required.
 
@@ -209,6 +211,12 @@ The one-command path:
 8. opens a Quick Tunnel, waits for the public URL, and re-checks DNS/TLS/WebSocket until ready (or prints a
    warning and continues);
 9. writes and opens the pairing QR page.
+
+Before stopping Web for an installation, the script checks that pnpm is available. If gateway installation
+or the post-install source/version check fails, `--restart-web` attempts to restore the captured Web process.
+The command still fails and reports that the profile may be partially changed; restarting is not a rollback
+or proof that the plugin works. If automatic recovery is unavailable or fails, use the normal DSH Web start
+command and resolve the installation error before pairing.
 
 Use `--dry-run` to see the plan (including the captured DSH Web command) without stopping or installing anything.
 

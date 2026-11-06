@@ -111,9 +111,15 @@ curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scrip
 node "$tmp/check-compat.mjs" --manifest "$tmp/compatibility.json" --profile web --json
 ```
 
-The checker reads the plugin spec from `~/.dsh/profiles/<profile>/package.json`, verifies the **installed**
-package version under `node_modules`, runs `dsh --version`, and fails on a local path, an unverified plugin, an
-unverified DSH version, or a protocol mismatch. It never prints pairing tokens or secrets.
+The checker requires the profile dependency to name the pinned GitHub owner, repository and release tag.
+Equivalent GitHub URL spellings of that one source are accepted in the installed profile; `compatibility.json`
+itself retains the canonical `github:solla-h/dsh-plugin-mobile-gateway#v<version>` form required by the installer.
+Another repository, a mutable ref, npm version/range/alias or local path fails even if the installed version matches.
+A manual `--plugin` override still requires the actual profile dependency and installed package.
+
+It verifies the installed package version under `node_modules` and runs `dsh --version`. A protocol value is
+checked only when supplied with `--protocol`; the checker does not query a live handshake. It never prints
+pairing tokens or secrets. This is a declared-source/version check, not artifact or resolved-commit verification.
 
 ## Release rule
 

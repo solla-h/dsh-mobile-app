@@ -697,6 +697,41 @@ async function cmdCheck(asJson) {
   return ok ? 0 : 1;
 }
 
+export function requirePnpm(runCommand = spawnSync) {
+  const command = process.platform === 'win32' ? 'cmd.exe' : 'pnpm';
+  const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm --version'] : ['--version'];
+  const result = runCommand(command, args, { encoding: 'utf8', timeout: 15000 });
+  if (result.error || result.status !== 0) {
+    fail('pnpm is unavailable on PATH; install pnpm@11.9.0 first. DSH Web has not been stopped.');
+  }
+}
+
+export async function installGatewayRelease(spec, { install = runDsh, check = runChecker, restart } = {}) {
+  try {
+    if (install(['plugin', '--profile', PROFILE, 'add', spec]) !== 0) {
+      fail('dsh plugin add failed; the profile may be partially changed.');
+    }
+    const after = check();
+    if (after.code !== 0) {
+      for (const error of after.parsed?.errors ?? []) console.error(`  - ${error}`);
+      fail('compatibility check failed after install');
+    }
+  } catch (error) {
+    if (restart) {
+      try {
+        await restart();
+        console.error('DSH Web restarted after the failed installation; resolve the install error before pairing.');
+      } catch (restartError) {
+        console.error(`Automatic restart failed: ${restartError.message}`);
+        console.error('Use your normal DSH Web command to restore the host and inspect the installation.');
+      }
+    } else {
+      console.error('If the host is stopped, use your normal DSH Web command to restore it after resolving the install error.');
+    }
+    throw error;
+  }
+}
+
 async function cmdInstall(yes) {
   const manifest = readManifest();
   const pinned = manifest.recommended.gateway;
@@ -772,6 +807,8 @@ async function cmdInstall(yes) {
     return 1;
   }
 
+  if (needStop) requirePnpm();
+
   if (needStop && listening) {
     if (!listenerPid) {
       fail(`DSH Web is listening on ${PORT} but the owning process was not found; stop it manually.`);
@@ -789,15 +826,9 @@ async function cmdInstall(yes) {
 
   if (needGateway) {
     console.log(`installing ${spec} into profile "${PROFILE}"...`);
-    if (runDsh(['plugin', '--profile', PROFILE, 'add', spec]) !== 0) {
-      fail('dsh plugin add failed; nothing else was changed.');
-    }
-    const after = runChecker();
-    if (after.code !== 0) {
-      console.error('setup-gateway: compatibility check failed after install:');
-      for (const error of after.parsed?.errors ?? []) console.error(`  - ${error}`);
-      return 1;
-    }
+    await installGatewayRelease(spec, {
+      restart: listening && wantRestart && canRestart ? () => restartWeb(processInfo) : null,
+    });
     console.log('compat: PASS');
   } else {
     console.log(`setup-gateway: ${PLUGIN_NAME}@${pinned.version} is already installed; skipping install.`);
@@ -1305,8 +1336,8 @@ async function main() {
   return 2;
 }
 
-const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+const invokedDirectly = process.argv[1] && fs.existsSync(process.argv[1]) &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
 
 if (invokedDirectly) {
   try {

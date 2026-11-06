@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Maintained gateway fork policy and Agent entry points, with exact GitHub-tag installation and upstream synchronization rules.
+- Clean-host installation and repeat-install checks on Linux and Windows using the pinned DSH and gateway releases.
+
+### Fixed
+
+- Reject same-version gateway packages from another source, including attempts to bypass profile checks with manual version overrides.
+- Check for pnpm before stopping DSH Web; attempt to restore the captured Web process after gateway installation or compatibility-check failure when restart was requested.
+- Run compatibility/setup commands correctly through symlinked paths.
+
+### Changed
+
+- Complete the first-time host setup guides with pinned tool prerequisites, Windows working-directory guidance and explicit verification limits.
+
 ## [0.1.0-alpha.4] - 2026-11-07
 
 ### Added
