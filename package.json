@@ -28,6 +28,7 @@
   "devDependencies": {
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
+    "@testing-library/react-native": "14.1.0",
     "@types/jest": "30.0.0",
     "@types/markdown-it": "^14.2.0",
     "@types/react": "~19.3.0",
@@ -51,7 +52,8 @@
   "jest": {
     "preset": "jest-expo",
     "testMatch": [
-      "<rootDir>/src/**/__tests__/**/*.test.ts"
+      "<rootDir>/src/**/__tests__/**/*.test.ts",
+      "<rootDir>/src/**/__tests__/**/*.test.tsx"
     ],
     "transformIgnorePatterns": [
       "/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|@noble))",

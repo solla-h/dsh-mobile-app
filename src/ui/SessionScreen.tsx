@@ -2298,10 +2298,28 @@ export function SessionScreen({
         onOpenChange={setDialOpen}
       />
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={12} style={styles.back}>
-          <Text style={styles.backText}>‹</Text>
+        <Pressable
+          testID="session-back"
+          onPress={onBack}
+          hitSlop={12}
+          style={styles.back}
+          accessibilityRole="button"
+          accessibilityLabel="返回会话列表"
+        >
+          <Text style={styles.backText} allowFontScaling={false}>
+            ‹
+          </Text>
         </Pressable>
-        <Pressable style={styles.titleWrap} onLongPress={() => setInfoSheet(true)} delayLongPress={320}>
+        <Pressable
+          style={styles.titleWrap}
+          onLongPress={() => setInfoSheet(true)}
+          delayLongPress={320}
+          accessibilityHint="长按查看会话信息"
+          accessibilityActions={[{ name: 'longpress', label: '会话信息' }]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'longpress') setInfoSheet(true);
+          }}
+        >
           <Text style={styles.title} numberOfLines={1}>
             {session.projections?.values.title ?? '未命名会话'}
           </Text>
@@ -2312,18 +2330,30 @@ export function SessionScreen({
           <StatusPill text="THINKING" tone="busy" />
         ) : null}
         {todos && todos.length > 0 ? (
-          <Pressable style={styles.outlineButton} onPress={() => setTasksOpen(true)}>
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => setTasksOpen(true)}
+            accessibilityRole="button"
+          >
             <Text style={styles.outlineText}>
               任务 {todos.filter((item) => item.status === 'completed').length}/{todos.length}
             </Text>
           </Pressable>
         ) : goal ? (
-          <Pressable style={styles.outlineButton} onPress={() => setTasksOpen(true)}>
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => setTasksOpen(true)}
+            accessibilityRole="button"
+          >
             <Text style={styles.outlineText}>目标</Text>
           </Pressable>
         ) : null}
         {outline.length > 0 ? (
-          <Pressable style={styles.outlineButton} onPress={() => setOutlineOpen(true)}>
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => setOutlineOpen(true)}
+            accessibilityRole="button"
+          >
             <Text style={styles.outlineText}>轮次</Text>
           </Pressable>
         ) : null}
@@ -2339,6 +2369,8 @@ export function SessionScreen({
             tapFeedback();
             setViewMode('chat');
           }}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: viewMode === 'chat' }}
         >
           <Text style={[styles.viewTabText, viewMode === 'chat' ? styles.viewTabTextOn : null]}>
             对话
@@ -2350,6 +2382,8 @@ export function SessionScreen({
             tapFeedback();
             setViewMode('trajectory');
           }}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: viewMode === 'trajectory' }}
         >
           <Text style={[styles.viewTabText, viewMode === 'trajectory' ? styles.viewTabTextOn : null]}>
             轨迹
@@ -2786,8 +2820,15 @@ export function SessionScreen({
                     >
                       {label}
                     </Text>
-                    <Pressable hitSlop={8} onPress={() => removePickedFile(item.id)}>
-                      <Text style={styles.fileChipClose}>×</Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => removePickedFile(item.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`移除附件 ${item.name}`}
+                    >
+                      <Text style={styles.fileChipClose} allowFontScaling={false}>
+                        ×
+                      </Text>
                     </Pressable>
                   </View>
                 );
@@ -2800,8 +2841,15 @@ export function SessionScreen({
               <Text style={styles.quoteText} numberOfLines={1}>
                 {quote.code.split('\n')[0].trim()}
               </Text>
-              <Pressable hitSlop={8} onPress={() => setQuote(null)}>
-                <Text style={styles.quoteClose}>×</Text>
+              <Pressable
+                hitSlop={8}
+                onPress={() => setQuote(null)}
+                accessibilityRole="button"
+                accessibilityLabel="取消引用"
+              >
+                <Text style={styles.quoteClose} allowFontScaling={false}>
+                  ×
+                </Text>
               </Pressable>
             </View>
           ) : null}
@@ -2816,20 +2864,28 @@ export function SessionScreen({
           <CommandPalette groups={paletteGroups} onPick={pickCommand} />
           <View style={styles.composer}>
             <Pressable
+              testID="session-attach"
               style={[styles.attach, picking ? styles.attachDisabled : null]}
               onPress={askImageSource}
               disabled={picking}
+              accessibilityRole="button"
+              accessibilityLabel="添加附件"
+              accessibilityState={{ disabled: picking }}
             >
               {picking ? (
                 <ActivityIndicator size="small" color={t.text.muted} />
               ) : (
-                <Text style={styles.attachText}>＋</Text>
+                <Text style={styles.attachText} allowFontScaling={false}>
+                  ＋
+                </Text>
               )}
             </Pressable>
             {/* 麦克风嵌在输入框内部右侧：未录音浅灰图标，录音时绿底 + 淡绿呼吸光晕 */}
             <View style={styles.inputWrap}>
               <TextInput
                 ref={composerRef}
+                testID="session-composer-input"
+                accessibilityLabel="消息输入框"
                 style={styles.input}
                 value={draft}
                 onChangeText={setDraft}
@@ -2877,6 +2933,7 @@ export function SessionScreen({
                 {...voicePanRef.current.panHandlers}
                 style={styles.micTouch}
                 hitSlop={{ top: 8, bottom: 8, right: 6, left: 0 }}
+                accessible
                 accessibilityRole="button"
                 accessibilityLabel={recording ? '松开结束录音' : '按住说话'}
                 accessibilityHint="按住说话，松手发送，上滑取消"
@@ -2927,6 +2984,7 @@ export function SessionScreen({
               </View>
             </View>
             <Pressable
+              testID="session-send"
               style={[
                 styles.send,
                 showStop ? styles.sendStop : null,
@@ -2936,8 +2994,15 @@ export function SessionScreen({
               onPress={showStop ? cancelTurn : send}
               accessibilityRole="button"
               accessibilityLabel={showStop ? '停止本回合' : '发送'}
+              accessibilityState={{ disabled: showStop ? cancelling : !canSend }}
             >
-              {showStop ? <View style={styles.stopGlyph} /> : <Text style={styles.sendText}>↑</Text>}
+              {showStop ? (
+                <View style={styles.stopGlyph} />
+              ) : (
+                <Text style={styles.sendText} allowFontScaling={false}>
+                  ↑
+                </Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -3080,7 +3145,12 @@ function MessageRow({
             <>
               <View style={styles.localImages}>
                 {message.localUris.map((uri) => (
-                  <Pressable key={uri} onPress={() => setPreview(uri)}>
+                  <Pressable
+                    key={uri}
+                    onPress={() => setPreview(uri)}
+                    accessibilityRole="button"
+                    accessibilityLabel="查看图片"
+                  >
                     <Image source={{ uri }} style={styles.localImage} resizeMode="cover" />
                   </Pressable>
                 ))}
@@ -3180,7 +3250,11 @@ function MessageRow({
         ) : null}
         {message.text || (!message.reasoning && message.streaming) || message.failure ? (
           <AnswerCard failed={Boolean(message.failure)}>
-            <Pressable onLongPress={() => onLongPress(message)} delayLongPress={320}>
+            <Pressable
+              onLongPress={() => onLongPress(message)}
+              delayLongPress={320}
+              accessibilityHint="长按打开消息操作"
+            >
               {message.text ? (
                 <MarkdownView
                   text={message.text}
@@ -3209,6 +3283,7 @@ function MessageRow({
         onLongPress={() => onLongPress(message)}
         delayLongPress={320}
         style={[styles.bubble, styles.bubbleUser]}
+        accessibilityHint="长按打开消息操作"
       >
         {'images' in message && message.images?.length ? (
           <MessageImages refs={message.images} cache={attachmentCache} onNeed={onNeedAttachment} />

@@ -1,0 +1,78 @@
+# Deterministic native Android user journey for the signed release APK.
+# Runs only against docs/tools/fake-gateway.mjs over `adb reverse` (synthetic
+# fake conversation, loopback URL); never point this flow at a real gateway.
+#
+# Required env (passed by scripts/ci/android-journey.sh):
+#   PAIRING_PAYLOAD  base64url pairing string returned by GET /pair.json
+#   JOURNEY_MESSAGE  ASCII message text sent inside the session
+appId: app.dshmobile.client
+---
+- launchApp:
+    clearState: true
+# Fresh install: the pairing card is the only possible screen.
+- extendedWaitUntil:
+    visible:
+      id: pairing-manual-toggle
+    timeout: 20000
+- takeScreenshot: 01-pairing
+# Pair manually (no camera / QR): paste the fixture payload.
+- tapOn:
+    id: pairing-manual-toggle
+- tapOn:
+    id: pairing-payload
+- inputText: ${PAIRING_PAYLOAD}
+- assertVisible: ${PAIRING_PAYLOAD}
+- tapOn:
+    id: pairing-connect
+# Home tabs mean `paired` + `hello` arrived and the gateway was saved.
+- extendedWaitUntil:
+    visible: 全部会话
+    timeout: 30000
+- takeScreenshot: 02-paired-home
+# "All sessions" list from the fake gateway.
+- tapOn: 全部会话
+- extendedWaitUntil:
+    visible:
+      id: session-row-fake-session-1
+    timeout: 30000
+- takeScreenshot: 03-session-list
+- tapOn:
+    id: session-row-fake-session-1
+- extendedWaitUntil:
+    visible:
+      id: session-composer-input
+    timeout: 20000
+- takeScreenshot: 04-session
+# Send one ASCII message and wait for the fake gateway's assistant reply.
+# The reply is a distinct text: the optimistic local echo alone cannot prove
+# that the receive path (socket event -> message row) worked.
+- tapOn:
+    id: session-composer-input
+- inputText: ${JOURNEY_MESSAGE}
+- assertVisible: ${JOURNEY_MESSAGE}
+- tapOn:
+    id: session-send
+- extendedWaitUntil:
+    visible: "fake-gateway reply: ${JOURNEY_MESSAGE}"
+    timeout: 30000
+- takeScreenshot: 05-reply
+# Back to the list, then relaunch: the saved pairing must survive.
+- tapOn:
+    id: session-back
+- extendedWaitUntil:
+    visible:
+      id: session-row-fake-session-1
+    timeout: 20000
+- takeScreenshot: 06-back-to-list
+- launchApp
+- extendedWaitUntil:
+    visible: 全部会话
+    timeout: 30000
+- assertNotVisible:
+    id: pairing-manual-toggle
+- tapOn: 全部会话
+- extendedWaitUntil:
+    visible:
+      id: session-row-fake-session-1
+    timeout: 30000
+- takeScreenshot: 07-relaunch-pairing-retained

@@ -3,16 +3,11 @@ import { randomUUID } from 'expo-crypto';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   BackHandler,
-  FlatList,
   KeyboardAvoidingView,
-  Modal,
   Pressable,
-  StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -22,7 +17,6 @@ import { parsePairingPayload } from './src/protocol/pairing';
 import { mapQueue, type QueuedMessage } from './src/protocol/chat';
 import {
   applyPendingFrame,
-  describePending,
   pendingItems,
   type PendingMap,
 } from './src/protocol/pending';
@@ -43,7 +37,11 @@ import {
   type SpeechCatalog,
 } from './src/protocol/speech';
 import { useVoiceInput, type VoiceStopReason } from './src/ui/voice/useVoiceInput';
+import { AllSessionsView } from './src/ui/home/AllSessionsView';
 import { BottomTabBar } from './src/ui/home/BottomTabBar';
+import { AddGatewayModal, PairingCard } from './src/ui/home/PairingViews';
+import { RenameSessionModal } from './src/ui/home/RenameSessionModal';
+import { makeAppStyles } from './src/ui/home/appStyles';
 import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
 import { HostInfoSheet } from './src/ui/home/HostInfoSheet';
@@ -74,23 +72,12 @@ import { ScanScreen } from './src/ui/ScanScreen';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
 import { SessionScreen } from './src/ui/SessionScreen';
 import { useTheme, useThemedStyles } from './src/ui/theme';
-import type { Palette } from './src/theme/tokens';
 
 /** 会话列表按网关分开缓存，切换网关时不会串味。 */
 const sessionsCacheKey = (gatewayId: string) => `sessions-${gatewayId}`;
 
 /** session-create / 语音新会话的兜底：15s 没回包就撤悬挂状态（12–30s 区间取中）。 */
 const CREATE_TIMEOUT_MS = 15000;
-
-/** 列表上的相对时间：比绝对时间戳好读，也不用为「耗时」去拉 session-stats。 */
-function ago(at: number): string {
-  if (!at) return '';
-  const diff = Date.now() - at;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' 分钟前';
-  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' 小时前';
-  return Math.floor(diff / 86_400_000) + ' 天前';
-}
 
 function hostOf(url: string): string {
   try {
@@ -111,7 +98,7 @@ const STATE_LABEL: Record<ConnectionState, string> = {
 export default function App() {
   return (
     <SafeAreaProvider>
-      {/* 必须包在 AppBody 外面：AppBody 自己就调用 useThemedStyles(makeStyles)，
+      {/* 必须包在 AppBody 外面：AppBody 自己就调用 useThemedStyles(makeAppStyles)，
           放进它的 return 里的话，顶栏、设备条、搜索框、重命名弹窗这些样式读到的
           永远是默认倍率，字号调大后和子页面不一致。 */}
       <FontScaleProvider>
@@ -123,7 +110,7 @@ export default function App() {
 
 function AppBody() {
   const t = useTheme();
-  const styles = useThemedStyles(makeStyles);
+  const styles = useThemedStyles(makeAppStyles);
   const client = useMemo(() => new GatewayClient(), []);
   /**
    * 第二条连接，只跑 control 通道：它不订阅任何会话，
@@ -1588,6 +1575,9 @@ function AppBody() {
             style={styles.headerTitleBlock}
             onPress={() => setGatewaySheet(true)}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`网关：${hello?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? '未配置网关'}`}
+            accessibilityHint="打开网关菜单，切换或添加网关"
           >
             <Text style={styles.title}>
               DSH{gateways.length > 1 ? <Text style={styles.titleCount}> {gateways.length}</Text> : null}
@@ -1597,7 +1587,12 @@ function AppBody() {
               <Text style={styles.subtitleChevron}> ›</Text>
             </Text>
           </Pressable>
-          <View style={styles.statusPill}>
+          <View
+            style={styles.statusPill}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel={`连接状态：${STATE_LABEL[state]}`}
+          >
             <View
               style={[
                 styles.statusDot,
@@ -1613,6 +1608,10 @@ function AppBody() {
           <Pressable
             onPress={saved && !detail.includes('重新配对') ? handleReconnect : undefined}
             hitSlop={6}
+            accessibilityRole={saved && !detail.includes('重新配对') ? 'button' : 'text'}
+            accessibilityHint={
+              saved && !detail.includes('重新配对') ? '点按重新连接网关' : undefined
+            }
           >
             <Text style={styles.hint}>
               {detail}
@@ -1628,7 +1627,12 @@ function AppBody() {
           <Text style={styles.compatHint}>{gatewayCompat.message}</Text>
         ) : null}
         {error ? (
-          <Pressable onPress={() => setError(null)} hitSlop={6}>
+          <Pressable
+            onPress={() => setError(null)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityHint="点按关闭提示"
+          >
             <Text style={styles.error}>{error} · 点击关闭</Text>
           </Pressable>
         ) : null}
@@ -1693,6 +1697,7 @@ function AppBody() {
                 <Pressable
                   style={styles.gatePill}
                   onPress={() => openSession(blocked[0])}
+                  accessibilityRole="button"
                   accessibilityHint="跳到第一个等待审批或回答的会话"
                 >
                   <View style={styles.pendingDot} />
@@ -1749,143 +1754,33 @@ function AppBody() {
                 speechReady={voiceReady}
               />
             ) : (
-            <>
-            <Pressable style={styles.metaRow} onPress={() => setHostSheet(true)}>
-              <Text style={styles.metaLabel}>设备</Text>
-              <Text style={styles.metaValue}>{hello?.device?.name ?? '未知'}</Text>
-              <Text style={styles.metaLabel}>协议</Text>
-              <Text style={styles.metaValue}>v{hello?.protocol ?? '?'}</Text>
-              <Text style={styles.metaAction}>宿主 ›</Text>
-            </Pressable>
-            {sessions.length > 3 ? (
-              <View style={styles.searchWrap}>
-                <TextInput
-                  style={styles.searchInput}
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder="搜索标题或目录"
-                  placeholderTextColor={t.text.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="search"
-                />
-                {search ? (
-                  <Pressable hitSlop={10} onPress={() => setSearch('')} style={styles.searchClear}>
-                    <Text style={styles.searchClearText}>×</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null}
-            <View style={styles.dirHead}>
-              <Text style={styles.dirTitle} maxFontSizeMultiplier={1.3}>
-                全部工作区与会话目录
-              </Text>
-              <Text style={styles.dirCount}>{visibleSessions.length} 个</Text>
-              <Pressable
-                style={[styles.newButton, !connected && styles.newButtonOff]}
-                onPress={() => setCreateSheet(true)}
-                disabled={creating || !connected}
-              >
-                {creating ? (
-                  <ActivityIndicator size="small" color={t.text.secondary} />
-                ) : (
-                  <Text style={[styles.newButtonText, !connected && styles.newButtonTextOff]}>+ 新建</Text>
-                )}
-              </Pressable>
-            </View>
-            <Text style={styles.dirSub} maxFontSizeMultiplier={1.3}>
-              按工作区分组 · 无框排版 · 长按一行有更多操作
-            </Text>
-            <FlatList
-              data={rows}
-              keyExtractor={(row) => (row.kind === 'group' ? 'g:' + row.id : row.item.sessionId)}
-              // 草稿/待发标记不在 item 里，得靠 extraData 才会重绘。
-              extraData={`${outboxTick}:${draftIds.join(',')}`}
-              contentContainerStyle={styles.listContent}
-              ListEmptyComponent={
-                <Text style={styles.empty}>
-                  {!connected
-                    ? '连接断开，正在重连…'
-                    : search
-                      ? '没有匹配的会话'
-                      : showArchived
-                        ? '还没有会话'
-                        : '还没有会话'}
-                </Text>
-              }
-              ListFooterComponent={
-                archived.length > 0 ? (
-                  <Pressable style={styles.archiveToggle} onPress={() => setShowArchived((v) => !v)}>
-                    <Text style={styles.archiveToggleText}>
-                      {showArchived ? '隐藏已归档' : `已归档 ${archived.length} 个 · 显示`}
-                    </Text>
-                  </Pressable>
-                ) : undefined
-              }
-              renderItem={({ item: row }) => {
-                if (row.kind === 'group') {
-                  return (
-                    <Pressable
-                      style={styles.groupHead}
-                      onPress={() =>
-                        setCollapsedGroups((current) => ({
-                          ...current,
-                          [row.id]: !current[row.id],
-                        }))
-                      }
-                    >
-                      <Text style={styles.groupCaret}>{row.collapsed ? '▸' : '▾'}</Text>
-                      <Text style={styles.groupTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                        {row.title}
-                      </Text>
-                      <Text style={styles.groupCount}>{row.count}</Text>
-                    </Pressable>
-                  );
+              <AllSessionsView
+                connected={connected}
+                creating={creating}
+                sessionCount={sessions.length}
+                visibleCount={visibleSessions.length}
+                rows={rows}
+                search={search}
+                onChangeSearch={setSearch}
+                pending={pending}
+                draftIds={draftIds}
+                outboxTick={outboxTick}
+                archivedCount={archived.length}
+                showArchived={showArchived}
+                onToggleShowArchived={() => setShowArchived((current) => !current)}
+                onToggleGroup={(groupId) =>
+                  setCollapsedGroups((current) => ({
+                    ...current,
+                    [groupId]: !current[groupId],
+                  }))
                 }
-                const item = row.item;
-                const waiting = pendingItems(pending, item.sessionId);
-                return (
-                  <Pressable
-                    style={[styles.card, row.indent && styles.cardIndent]}
-                    onPress={() => openSession(item)}
-                    onLongPress={() => openSessionMenu(item)}
-                    delayLongPress={320}
-                  >
-                    <View style={styles.cardHeader}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>
-                        {item.projections?.values.title ?? '未命名会话'}
-                      </Text>
-                      {item.running ? <View style={styles.runningDot} /> : null}
-                    </View>
-                    <Text style={styles.cardMeta} numberOfLines={1}>
-                      {`${ago(item.updatedAt)} · ${item.cwd ?? ''}`}
-                    </Text>
-                    {waiting.length > 0 ? (
-                      <View style={styles.pendingPill}>
-                        <View style={styles.pendingDot} />
-                        <Text style={styles.pendingText} numberOfLines={1}>
-                          {describePending(waiting)}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {(() => {
-                      const pendingCount = outbox.countFor(item.sessionId);
-                      const hasDraft = draftIds.includes(item.sessionId);
-                      if (!pendingCount && !hasDraft) return null;
-                      return (
-                        <View style={styles.tagRow}>
-                          {pendingCount > 0 ? (
-                            <Text style={styles.tagWarn}>待发送 {pendingCount}</Text>
-                          ) : null}
-                          {hasDraft ? <Text style={styles.tag}>草稿</Text> : null}
-                        </View>
-                      );
-                    })()}
-                  </Pressable>
-                );
-              }}
-            />
-            </>
+                deviceName={hello?.device?.name}
+                protocol={hello?.protocol}
+                onOpenHost={() => setHostSheet(true)}
+                onCreate={() => setCreateSheet(true)}
+                onOpenSession={openSession}
+                onOpenSessionMenu={openSessionMenu}
+              />
             )}
             <BottomTabBar
               tabs={[
@@ -1903,46 +1798,15 @@ function AppBody() {
             />
           </View>
         ) : (
-          <View style={styles.pairCard}>
-            <Text style={styles.sectionTitle}>配对</Text>
-            <Text style={styles.pairHint}>
-              在服务器上运行 dsh-pair，扫描它打印的二维码。配对码 5 分钟内有效。
-            </Text>
-            <Pressable
-              style={[styles.primaryButton, busy && styles.buttonDisabled]}
-              disabled={busy}
-              onPress={() => setScanning(true)}
-            >
-              {busy ? <ActivityIndicator color={t.bg.canvas} /> : <Text style={styles.primaryText}>扫码配对</Text>}
-            </Pressable>
-
-            <Pressable style={styles.linkButton} onPress={() => setManual((current) => !current)}>
-              <Text style={styles.linkText}>{manual ? '收起手动输入' : '手动粘贴配对串'}</Text>
-            </Pressable>
-
-            {manual ? (
-              <View>
-                <TextInput
-                  style={styles.input}
-                  multiline
-                  placeholder="粘贴配对内容（Base64URL）"
-                  placeholderTextColor={t.text.muted}
-                  value={pairingText}
-                  onChangeText={setPairingText}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Pressable
-                  style={[styles.primaryButton, !pairingText.trim() && styles.buttonDisabled]}
-                  disabled={!pairingText.trim() || busy}
-                  onPress={handlePair}
-                >
-                  <Text style={styles.primaryText}>配对并连接</Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-          </View>
+          <PairingCard
+            pairingText={pairingText}
+            onChangePairingText={setPairingText}
+            manual={manual}
+            onToggleManual={() => setManual((current) => !current)}
+            busy={busy}
+            onScan={() => setScanning(true)}
+            onPair={handlePair}
+          />
         )}
       </KeyboardAvoidingView>
 
@@ -1995,88 +1859,29 @@ function AppBody() {
         onClose={() => setGatewaySheet(false)}
       />
 
-      <Modal
+      <AddGatewayModal
         visible={addGateway}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setAddGateway(false)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setAddGateway(false)}>
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>添加网关</Text>
-            <Text style={styles.modalHint}>在服务器上运行 dsh-pair，扫码或粘贴它输出的配对串。</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalInputTall]}
-              multiline
-              placeholder="粘贴配对内容（Base64URL）"
-              placeholderTextColor={t.text.muted}
-              value={pairingText}
-              onChangeText={setPairingText}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                style={styles.modalAction}
-                onPress={() => {
-                  setAddGateway(false);
-                  setScanning(true);
-                }}
-              >
-                <Text style={styles.modalActionText}>扫码</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalAction}
-                disabled={!pairingText.trim() || busy}
-                onPress={() => {
-                  setAddGateway(false);
-                  handlePair();
-                }}
-              >
-                <Text
-                  style={[styles.modalPrimaryText, !pairingText.trim() || busy ? styles.modalDisabled : null]}
-                >
-                  配对并连接
-                </Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        pairingText={pairingText}
+        onChangePairingText={setPairingText}
+        busy={busy}
+        onClose={() => setAddGateway(false)}
+        onScan={() => {
+          setAddGateway(false);
+          setScanning(true);
+        }}
+        onPair={() => {
+          setAddGateway(false);
+          handlePair();
+        }}
+      />
 
-      <Modal
+      <RenameSessionModal
         visible={renaming !== null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setRenaming(null)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setRenaming(null)}>
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>重命名会话</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={renameDraft}
-              onChangeText={setRenameDraft}
-              placeholder="会话名称"
-              placeholderTextColor={t.text.muted}
-              autoFocus
-              maxLength={80}
-              onSubmitEditing={submitRename}
-              returnKeyType="done"
-            />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalAction} onPress={() => setRenaming(null)}>
-                <Text style={styles.modalActionText}>取消</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={submitRename}>
-                <Text style={styles.modalPrimaryText}>保存</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        value={renameDraft}
+        onChangeValue={setRenameDraft}
+        onClose={() => setRenaming(null)}
+        onSubmit={submitRename}
+      />
 
       <DirectoryPicker
         visible={dirPicker}
@@ -2091,253 +1896,3 @@ function AppBody() {
     </SafeAreaView>
   );
 }
-
-const makeStyles = (t: Palette) =>
-  StyleSheet.create({
-  safe: { flex: 1, backgroundColor: t.bg.canvas },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-  },
-  modalCard: {
-    width: '100%',
-    backgroundColor: t.bg.canvas,
-    borderRadius: 16,
-    padding: 18,
-    gap: 14,
-  },
-  modalTitle: { color: t.text.primary, fontSize: 16, fontWeight: '700' },
-  modalInput: {
-    backgroundColor: t.bg.surface,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: t.text.primary,
-    fontSize: 15,
-  },
-  modalHint: { color: t.text.muted, fontSize: 12, lineHeight: 18, marginTop: -6 },
-  modalInputTall: { minHeight: 76, textAlignVertical: 'top' },
-  modalDisabled: { opacity: 0.4 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  modalAction: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  modalActionText: { color: t.text.muted, fontSize: 14, fontWeight: '600' },
-  modalPrimaryText: { color: t.semantic.diffAddText, fontSize: 14, fontWeight: '700' },
-  flex: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
-  },
-  headerTitleBlock: { flex: 1, paddingRight: 12 },
-  title: { color: t.text.primary, fontSize: 28, fontWeight: '700', letterSpacing: 0.5 },
-  titleCount: { color: t.text.muted, fontSize: 14, fontWeight: '600' },
-  subtitle: { color: t.text.muted, fontSize: 13, marginTop: 2 },
-  subtitleChevron: { color: t.text.muted },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: t.bg.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  statusDot: { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
-  dotOn: { backgroundColor: t.semantic.diffAddText },
-  dotBusy: { backgroundColor: t.semantic.gateAmberText },
-  dotOff: { backgroundColor: t.text.muted },
-  statusText: { color: t.text.secondary, fontSize: 12 },
-  hint: { color: t.text.muted, fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
-  compatHint: {
-    color: t.semantic.dangerText,
-    fontSize: 13,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  error: { color: t.semantic.dangerText, fontSize: 13, paddingHorizontal: 20, paddingBottom: 8 },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    gap: 8,
-  },
-  metaLabel: { color: t.text.muted, fontSize: 12 },
-  metaValue: { color: t.text.secondary, fontSize: 12, marginRight: 12 },
-  metaAction: { flex: 1, textAlign: 'right', color: t.text.muted, fontSize: 11 },
-  gatePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 20,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: t.semantic.gateAmberBg,
-  },
-  gatePillText: { flex: 1, color: t.semantic.gateAmberText, fontSize: 13, fontWeight: '600' },
-  gatePillGo: { color: t.semantic.gateAmberText, fontSize: 12, fontWeight: '700' },
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 10,
-    backgroundColor: t.bg.surface,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-  },
-  searchInput: { flex: 1, color: t.text.primary, fontSize: 14, paddingVertical: 9 },
-  searchClear: { paddingHorizontal: 6, paddingVertical: 4 },
-  searchClearText: { color: t.text.muted, fontSize: 18, lineHeight: 20 },
-  tagRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
-  tag: {
-    color: t.text.primary,
-    fontSize: 10,
-    fontWeight: '600',
-    backgroundColor: t.bg.surface,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  tagWarn: {
-    color: t.semantic.gateAmberText,
-    fontSize: 10,
-    fontWeight: '600',
-    backgroundColor: t.semantic.gateAmberBg,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  archiveToggle: { alignItems: 'center', paddingVertical: 14 },
-  archiveToggleText: { color: t.text.muted, fontSize: 12, fontWeight: '600' },
-  sectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingRight: 20,
-  },
-  newButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: t.bg.surface,
-    minWidth: 62,
-    alignItems: 'center',
-  },
-  newButtonOff: {
-    opacity: 0.45,
-  },
-  newButtonTextOff: {
-    color: t.text.muted,
-  },
-  newButtonText: { color: t.text.secondary, fontSize: 12 },
-  sectionTitle: {
-    color: t.text.muted,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  // 底部 Tab 栏是兄弟节点，列表自己留出 72 的内边距，最后一行才不会被压住
-  listContent: { paddingHorizontal: 20, paddingBottom: 72 },
-  // 无框行：不要背景、圆角和阴影，只留一条底部分割线。
-  card: {
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: t.border.subtle,
-  },
-  // 缩进 + 左侧导轨线，层级靠这一条竖线表达
-  cardIndent: {
-    marginLeft: 14,
-    paddingLeft: 12,
-    borderLeftWidth: 1,
-    borderLeftColor: t.border.default,
-  },
-  groupHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 38,
-    gap: 8,
-    marginTop: 4,
-  },
-  dirHead: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingTop: 2,
-  },
-  dirTitle: { flex: 1, color: t.text.primary, fontSize: 20, fontWeight: '700' },
-  dirCount: { color: t.text.muted, fontSize: 11 },
-  dirSub: { color: t.text.muted, fontSize: 11, paddingHorizontal: 20, paddingBottom: 6 },
-  groupCaret: { color: t.text.muted, fontSize: 11, width: 12 },
-  groupTitle: { flex: 1, color: t.text.primary, fontSize: 14, fontWeight: '700' },
-  groupCount: { color: t.text.muted, fontSize: 11 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: t.text.primary, fontSize: 15, fontWeight: '600', flex: 1 },
-  runningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: t.semantic.diffAddText, marginLeft: 8 },
-  cardMeta: { color: t.text.muted, fontSize: 12, marginTop: 6 },
-  pendingPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: t.border.default,
-  },
-  pendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.semantic.gateAmberText, marginRight: 6 },
-  pendingText: { flex: 1, color: t.semantic.gateAmberText, fontSize: 11 },
-  empty: { color: t.text.muted, fontSize: 13, paddingVertical: 20 },
-  pairCard: { paddingTop: 8 },
-  pairHint: { color: t.text.muted, fontSize: 13, paddingHorizontal: 20, paddingBottom: 12 },
-  input: {
-    marginHorizontal: 20,
-    minHeight: 96,
-    borderRadius: 14,
-    backgroundColor: t.bg.canvas,
-    color: t.text.primary,
-    padding: 14,
-    fontSize: 13,
-    textAlignVertical: 'top',
-  },
-  footerRow: { flexDirection: 'row', gap: 10, paddingTop: 4 },
-  footerAction: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: t.bg.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border.subtle,
-  },
-  footerActionText: { color: t.text.muted, fontSize: 13 },
-  linkButton: { alignItems: 'center', paddingVertical: 12 },
-  linkText: { color: t.text.muted, fontSize: 13 },
-  primaryButton: {
-    marginHorizontal: 20,
-    marginTop: 14,
-    backgroundColor: t.action.primaryBg,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonDisabled: { opacity: 0.35 },
-  primaryText: { color: t.bg.canvas, fontSize: 15, fontWeight: '600' },
-  secondaryButton: {
-    marginHorizontal: 20,
-    marginTop: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  secondaryText: { color: t.text.muted, fontSize: 13 },
-});

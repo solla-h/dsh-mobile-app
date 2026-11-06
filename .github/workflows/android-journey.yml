@@ -1,0 +1,89 @@
+name: Android journey
+
+# Release/PR gate for the APK built in this run: installs that exact artifact on a
+# native Android emulator and walks the real user journey (manual pairing -> all
+# sessions -> open session -> send -> see reply -> back -> relaunch keeps the
+# pairing) against docs/tools/fake-gateway.mjs over `adb reverse`.
+# No EAS, no Expo token, no signing secrets, never a production gateway.
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Exact commit the APK artifact was built from
+        type: string
+        required: true
+      artifact_name:
+        description: Name of the APK artifact uploaded by the build job in this run
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CI: '1'
+  JOURNEY_MESSAGE: journey-ping-1
+
+jobs:
+  journey:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download the signed APK from this run
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: dist
+      - name: Download and verify the pinned Maestro CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/maestro.zip"
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 5 \
+            --output "$archive" \
+            'https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.12.1/maestro.zip'
+          printf '%s  %s\n' '54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7' "$archive" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/maestro-cli"
+          unzip -q "$archive" -d "$RUNNER_TEMP/maestro-cli"
+          MAESTRO_CLI_NO_ANALYTICS=true "$RUNNER_TEMP/maestro-cli/maestro/bin/maestro" --version
+          printf 'MAESTRO_BIN=%s\n' "$RUNNER_TEMP/maestro-cli/maestro/bin/maestro" >> "$GITHUB_ENV"
+      - name: Enable KVM access for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the native Android journey on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        timeout-minutes: 45
+        env:
+          APK_DIR: ${{ github.workspace }}/dist
+          ARTIFACT_DIR: ${{ runner.temp }}/journey-artifacts
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          emulator-boot-timeout: 600
+          script: bash scripts/ci/android-journey.sh
+      - name: Upload journey diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: journey-${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/journey-artifacts
+          if-no-files-found: ignore
+          retention-days: 7

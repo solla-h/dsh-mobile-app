@@ -76,7 +76,12 @@ export function FocusHome({
   return (
     <View style={styles.root}>
       <View style={styles.head}>
-        <Text style={styles.headTitle} maxFontSizeMultiplier={1.2} numberOfLines={1}>
+        <Text
+          style={styles.headTitle}
+          maxFontSizeMultiplier={1.2}
+          numberOfLines={1}
+          accessibilityRole="header"
+        >
           ACTIVE FOCUS · 最近会话{items.length > 0 ? `（${items.length}）` : ''}
         </Text>
         <Text style={styles.headHint} maxFontSizeMultiplier={1.2} numberOfLines={1}>
@@ -84,7 +89,14 @@ export function FocusHome({
         </Text>
       </View>
 
-      <Pressable style={styles.wsRow} onPress={onPickWorkspace} hitSlop={6}>
+      <Pressable
+        style={styles.wsRow}
+        onPress={onPickWorkspace}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={`选择新会话工作区，当前 ${workspaceLabel}`}
+        accessibilityHint="之后新建的会话会开在这个目录"
+      >
         <Text style={styles.wsLabel} maxFontSizeMultiplier={1.3}>
           新会话开在
         </Text>
@@ -195,7 +207,9 @@ function FocusCard({
         onRelease();
       }}
       delayLongPress={600}
-      accessibilityHint={waiting ? '长按可以直接语音回复' : '正在进行中'}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title || '未命名会话'}，${waiting ? '待审批' : item.running ? '进行中' : '已就绪'}${unread ? '，有未读' : ''}${item.outboxCount > 0 ? `，${item.outboxCount} 条待发送` : ''}`}
+      accessibilityHint={voiceReady ? '点按进入会话；长按直接语音回复' : '点按进入会话'}
     >
       <View style={styles.cardTop}>
         <StatusDot waiting={waiting} running={item.running} unread={unread} />

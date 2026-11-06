@@ -89,7 +89,9 @@ node scripts/setup-gateway.mjs pair --open
 | [Agent 安装手册](docs/AGENT-SETUP.md) | 给 AI agent 的交接契约、安全/危险步骤、人工确认点 |
 | [`compatibility.json`](compatibility.json) / [版本兼容](docs/COMPATIBILITY.md) | 固定版本、已验证组合、运行时协议检查 |
 | [发布手册](docs/RELEASING.md) | APK 构建、签名、下载校验与失败处理 |
-| [宣传站方案](docs/WEBSITE-PLAN.md) | fatwhale.app 的页面提纲、Cloudflare 部署与更新计划（尚未上线） |
+| [开发与验证](docs/DEVELOPMENT.md) / [设计原则](docs/DESIGN.md) | 代码职责、测试旅程、无障碍与交互约定 |
+| [发布验证状态](docs/OPEN-SOURCE-READINESS.md) | 自动化与真机证据、已知边界、暂缓范围 |
+| [宣传站仓库](https://github.com/solla-h/dsh-mobile-site) | fatwhale.app 的独立开发、部署与更新（正式站点尚未上线） |
 | [地址簿设计](docs/rendezvous-design.md) | `rendezvous-v1` 的加密与恢复机制 |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | 贡献、漏洞报告、变更记录与仓库约定 |
 
@@ -99,7 +101,7 @@ node scripts/setup-gateway.mjs pair --open
 
 ```bash
 npm ci
-npm test             # Jest：协议与传输层
+npm test             # Jest：协议、传输与 App 旅程
 npm run test:node    # setup 脚本测试
 npm run typecheck
 npm run lint

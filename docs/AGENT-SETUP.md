@@ -101,9 +101,8 @@ The agent cannot:
 - approve the phone's camera permission or scan the QR code for the user;
 - complete Cloudflare device authorization for the optional address book;
 - expose ports or change firewall rules without the user's explicit approval;
-- read `docs/HANDOFF.md`, `docs/STATUS-*`, `docs/BACKLOG.md`, `docs/RISK-PATCHES.md`, `docs/home-*`,
-  `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. They are internal engineering
-  notes, not part of the setup surface.
+- read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs. Setup uses only this guide,
+  `compatibility.json`, and the documented setup scripts; private development files are not required.
 
 ## Recommended user prompt
 
@@ -114,8 +113,8 @@ Give the agent the repository path (or a URL to this file), then use a prompt li
 node scripts/setup-gateway.mjs check
 不要运行 install 或 voice，不要直接运行 dsh plugin add，不要修改 profile / cordis.patch.yml，
 不要克隆或使用本机的网关源码 checkout，也不要使用 @latest 或 Web 插件面板。
-不要读 docs/HANDOFF.md、docs/STATUS-*、docs/BACKLOG.md、docs/RISK-PATCHES.md、docs/home-*、
-credentials.json、keys/、.scratch/、profile 备份或 DSH 日志。
+安装只使用本手册、compatibility.json 和文档列出的 setup 脚本。
+不要读 credentials.json、keys/、.scratch/、profile 备份或 DSH 日志。
 
 如果需要安装网关，先运行 handoff（--voice 或 --no-voice），把生成的 DSH-MOBILE-NEXT-STEPS.md
 和里面那条 install --stop-web --restart-web --tunnel quick --pair 命令给我；不要先把停 DSH Web
@@ -408,10 +407,9 @@ print device IDs.
 - Never print pairing codes, device tokens, write secrets, or private keys in chat or logs. `pair` writes them
   to a local page; do not echo the page’s payload.
 - Never read `credentials.json`, `keys/`, `.scratch/`, profile backups, or DSH logs.
-- Never read `docs/HANDOFF.md`, `docs/STATUS-*`, `docs/BACKLOG.md`, `docs/RISK-PATCHES.md`, or `docs/home-*`;
-  they are internal engineering notes, not part of the setup surface. The setup surface is README,
-  AGENT-SETUP, COMPATIBILITY, compatibility.json, the two setup scripts, and the gateway’s own
-  `PROTOCOL.md`.
+- Limit setup research to README, AGENT-SETUP, COMPATIBILITY, `compatibility.json`, the two setup
+  scripts, and the gateway’s own `PROTOCOL.md`. App development and private working notes are not
+  prerequisites for installing the gateway.
 - Do not request `danger-full-access` for a read-only check or for the install. If the sandbox blocks the
   profile, stop and hand the command to the user.
 - Never install from a local path, a `link:` dependency, a profile backup, or `@latest`. Use the pinned

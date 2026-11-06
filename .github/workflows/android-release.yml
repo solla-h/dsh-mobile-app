@@ -127,8 +127,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  journey:
     needs: [prepare, build]
+    uses: ./.github/workflows/android-journey.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.sha }}
+      artifact_name: android-${{ needs.prepare.outputs.tag }}
+
+  publish:
+    needs: [prepare, build, journey]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
