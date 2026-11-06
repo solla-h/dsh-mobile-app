@@ -14,8 +14,9 @@ for me, and what I want to say next.
 
 > **Public Android alpha.** [`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3)
 > is published. Build, signature, and downloaded-file checks passed; the new APK's real-device journey is still
-> pending. See the verification table below. iOS is deferred and unverified; there is no app-store release.
-> This project is not affiliated with DeepSeek or Expo.
+> pending. See the verification table below. Use `wss://` with `alpha.3`; the Android permission fix for private
+> `ws://` gateways has passed testing and awaits the next APK release.
+> iOS is deferred and unverified; there is no app-store release. This project is not affiliated with DeepSeek or Expo.
 
 > [!IMPORTANT]
 > **For DSH / AI agents:** when the user asks you to install or configure the mobile gateway, read
@@ -35,6 +36,16 @@ A phone does not need a shrunken desktop page. It needs three actions:
 - **Leave and come back** — session lists, drafts, and attachment metadata are cached locally. Text messages
   go to an offline outbox and flush in order after reconnect; attachments require a connection. If a public address changes, the optional
   address book (`rendezvous-v1`) helps a paired phone recover the endpoint without a new QR scan.
+
+## Screenshots
+
+| Session list | Receiving a reply |
+| --- | --- |
+| <img src="docs/images/session-list.png" width="280" alt="Sessions grouped by workspace, using synthetic fixture data"> | <img src="docs/images/session-reply.png" width="280" alt="A sent message and the fixture gateway's reply, with the keyboard open"> |
+
+Captured during the [passing Android emulator journey](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)
+using a local fake gateway and synthetic conversations. No real account or pairing credentials are shown.
+The app interface is currently primarily Chinese.
 
 ## Quick start
 
@@ -90,7 +101,8 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 - Voice needs the host-side provider to be ready. The address book needs a gateway with `rendezvous-v1` and the
   user's own Cloudflare account; recovery usually takes one to three minutes, and `workers.dev` may be affected
   by DNS pollution on some networks.
-- The protocol and UI are still evolving; this alpha does not include screenshots or GIFs yet.
+- The protocol and UI are still evolving; see [release validation status](docs/OPEN-SOURCE-READINESS.md) for
+  the distinction between automated checks and physical-device evidence.
 
 ## Documentation map
 

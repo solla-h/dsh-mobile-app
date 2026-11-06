@@ -13,6 +13,7 @@ Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在�
 
 > **Android 公开 alpha。** [`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3)
 > 已发布，构建、签名和实际下载校验通过；新包真机旅程仍待验证，详见下方验证表。
+> `alpha.3` 请使用 `wss://`；局域网 `ws://` 的 Android 网络许可修复已通过测试，待下一版 APK 发布。
 > iOS 暂缓且未验证，没有应用商店版本。本项目与 DeepSeek、Expo 官方无关。
 
 > [!IMPORTANT]
@@ -30,6 +31,15 @@ Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在�
   图片、文件、排队、插话和停止，网关语音就绪时可以按住说话。
 - **离开再回来**：会话列表、草稿和附件元数据有本地缓存，离线文字进发件箱，重连后按顺序补发（附件需在线）；
   公网地址变化时，可选地址簿（`rendezvous-v1`）能帮已配对手机找回入口，不必重新扫码。
+
+## 界面预览
+
+| 会话列表 | 收到回复 |
+| --- | --- |
+| <img src="docs/images/session-list.png" width="280" alt="按工作区分组的会话列表，使用合成演示数据"> | <img src="docs/images/session-reply.png" width="280" alt="会话中发送消息并收到假网关回复，键盘保持打开"> |
+
+截图来自[已通过的 Android 模拟器旅程](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)，
+使用本地假网关与合成会话数据，不包含真实账号或配对凭据。App 界面目前以中文为主。
 
 ## 快速开始
 
@@ -79,7 +89,7 @@ node scripts/setup-gateway.mjs pair --open
   是尽力而为的服务，没有可用性保证。
 - 语音需要宿主侧语音 provider 处于 ready；地址簿需要支持 `rendezvous-v1` 的网关和用户自己的
   Cloudflare 账号，恢复通常要一到三分钟，`workers.dev` 在部分网络可能受 DNS 污染影响。
-- 协议和界面仍在演进；alpha 暂未附截图/GIF。
+- 协议和界面仍在演进；自动化与真机验证的区别见[发布验证状态](docs/OPEN-SOURCE-READINESS.md)。
 
 ## 文档地图
 
