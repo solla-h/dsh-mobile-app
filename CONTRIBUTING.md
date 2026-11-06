@@ -35,8 +35,8 @@ selected. Expo Go only includes its bundled native modules; native additions nee
   abstractions before adding a flag or a branch.
 - **No secrets in the repository.** Never commit pairing payloads, tokens, keys, `credentials.json`, `keys/`,
   or screenshots with hostnames or account IDs.
-- **i18n and accessibility are not optional.** Keep the Chinese/English copy consistent and add labels where a
-  control is icon-only.
+- **Keep documentation languages consistent and preserve accessibility.** Update the Chinese and English README
+  together and label icon-only controls. App-wide localization and the iOS release are deferred for this milestone.
 
 ## Commit and pull request
 

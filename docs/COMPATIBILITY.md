@@ -6,9 +6,10 @@ source of truth for the combination we actually tested.
 
 The machine-readable copy is [`compatibility.json`](../compatibility.json). Update both together.
 
-`v0.1.0-alpha.3` targets a GitHub Actions APK with Android version code 3 and the same app/protocol version.
-The alpha.2 native build succeeded but publication was blocked by certificate-output parsing; it has no released APK.
-The alpha.3 source commit and signing certificate will be recorded in its `build-info.json`. The real-device
+[`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3) provides a GitHub Actions APK
+with Android version code 3 and the same app/protocol version. Its downloaded checksums and APK signature were
+independently verified on 2026-11-06. The alpha.2 build was blocked before publication; it has no released APK.
+The alpha.3 source commit and signing certificate are recorded in its `build-info.json`. The real-device
 entry below describes the earlier EAS preview; it is not a claim that the new CI-produced APK has been tested
 on a phone. The new build needs the installation → pairing → conversation → voice → return-home journey.
 

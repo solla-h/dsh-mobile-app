@@ -1,347 +1,163 @@
 # DSH Mobile
 
+[English](README.en.md) · [下载 Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
+[使用说明](docs/USER-GUIDE.zh-CN.md) · [版本兼容](docs/COMPATIBILITY.md)
+
 [![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](LICENSE)
 
-A third-party, open-source mobile client for **DeepSeek Harness (DSH)**. It connects to a DSH host through the
-[`dsh-plugin-mobile-gateway`](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) plugin over the
-`dsh-mobile-v1` WebSocket protocol.
+**在手机上查看 DSH 进度、处理审批、继续对话。**
 
-> **Status: public alpha.** Signed Android APKs are distributed through [GitHub Releases](https://github.com/solla-h/dsh-mobile-app/releases).
-> Android has been tested on a real device with DSH `0.2.1-rc.5`
-> and gateway `0.12.0-rdv.3` (pairing, text reply, and hold-to-talk voice). iOS is not yet verified, and the app
-> is not on an app store. The protocol and UI may still change. This project is not affiliated with DeepSeek or
-> Expo.
+DSH Mobile 是第三方、开源的 **DeepSeek Harness（DSH）** Android 客户端，连接你自己运行的 DSH 宿主。
+Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在等我、我接下来要说什么」。
+
+> **Android 公开 alpha。** [`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3)
+> 已发布，构建、签名和实际下载校验通过；新包真机旅程仍待验证，详见下方验证表。
+> iOS 暂缓且未验证，没有应用商店版本。本项目与 DeepSeek、Expo 官方无关。
 
 > [!IMPORTANT]
-> **For DSH agents / AI agents:** If a user gives you this repository and asks you to install or configure the
-> mobile gateway, **read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) and [`compatibility.json`](compatibility.json)
-> first** and follow them. Use the pinned gateway/DSH versions; never use `@latest`, a local checkout, or a
-> profile backup. Do not improvise from the human quick start, and do not build the app unless the user asks.
+> **给 DSH / AI Agent：** 用户要求安装或配置手机网关时，先读
+> [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) 和 [`compatibility.json`](compatibility.json)，按其中的
+> handoff 流程执行。只使用锁定的 DSH/gateway 版本；不要用 `@latest`、本机 checkout 或 profile 备份，
+> 也不要在用户没要求时构建 App。
 
-[简体中文](README.zh-CN.md) · [User guide](docs/USER-GUIDE.md) · [Agent setup](docs/AGENT-SETUP.md) ·
-[Compatibility](docs/COMPATIBILITY.md) · [Rendezvous design](docs/rendezvous-design.md)
+## 它解决什么
 
-## Why another client?
+手机上不需要一个缩小的桌面页面，只需要三个动作：
 
-DSH's Web UI is excellent on a desktop. On a phone, the useful part is not a shrunken desktop page: it is a
-small number of decisions — what is running, what is waiting for me, and what do I say next. DSH Mobile is built
-around that loop:
+- **看一眼**：聚焦首页先给出运行中的会话、待处理的审批/提问和最近会话；顶部可以切换多个网关。
+- **说一句**：流式回复、思考/工具轨迹、Markdown 与代码、审批和提问卡都在会话里；输入框支持文字、
+  图片、文件、排队、插话和停止，网关语音就绪时可以按住说话。
+- **离开再回来**：会话列表、草稿和附件元数据有本地缓存，离线文字进发件箱，重连后按顺序补发（附件需在线）；
+  公网地址变化时，可选地址簿（`rendezvous-v1`）能帮已配对手机找回入口，不必重新扫码。
 
-- **Focus first** — running sessions and pending approvals/questions on the first screen.
-- **One-hand flow** — a bottom tab bar, a thumb-sized voice button, and a composer that stays out of the way.
-- **Phone-native transport** — QR pairing, reconnect and offline queues, image/file sharing, and an optional
-  encrypted address book for gateway addresses that change.
+## 快速开始
 
-## Features
+### 1. 准备自己的 DSH 宿主和网关
 
-- **Pair once, switch later** — scan a QR code or paste a pairing payload; multiple gateways can be saved and
-  switched from the top bar.
-- **Focus home** — running sessions, unanswered approvals/questions, recent sessions, and a small status pet.
-- **Sessions** — list, search, create, rename, archive, fork from a message, and open parent/subagent sessions.
-- **Live conversation** — streaming text, thinking/tool trajectory groups, Markdown and code rendering, copy and
-  text selection, re-editing a user message in the composer, queued messages, and “steer” into the current turn.
-- **Human in the loop** — approval and question cards, including approvals raised while you are away; stop the
-  current turn from the composer.
-- **Attachments** — camera/gallery images, file upload with SHA-256 verification (24 MB local limit), file
-  download/preview, and image cards in history.
-- **Voice input** — hold-to-talk when the gateway has a ready speech provider; the transcript is placed in the
-  composer or sent to the selected session.
-- **Plugin and schedule views** — inspect gateway capabilities, manage plugins and settings, and browse schedules.
-- **Resilient connection** — cached session lists, drafts, an offline outbox, automatic reconnect, and a
-  foreground/background-safe heartbeat.
-- **Optional address book** — when the gateway supports `rendezvous-v1`, the phone can recover a changed Quick
-  Tunnel or LAN address without scanning a new QR code. The Worker stores ciphertext only.
+DSH Mobile 不自带模型，也不托管 DSH 服务。你需要一台运行 **DSH Web** 的机器，并在对应 profile 里安装
+`dsh-plugin-mobile-gateway`。本版本锁定 **DSH `0.2.1-rc.5` + 网关 `0.12.0-rdv.3`**，
+详见 [`compatibility.json`](compatibility.json) 和[版本兼容](docs/COMPATIBILITY.md)。
 
-## How it fits together
+按[使用说明](docs/USER-GUIDE.zh-CN.md)或 [Agent 安装手册](docs/AGENT-SETUP.md) 安装；
+过程中会暂时停止并重启 DSH Web。让 AI agent 代办时，把上面的 Agent 提醒和手册一起交给它。
+语音是可选能力，宿主需要安装匹配的语音插件并准备好识别模型。
 
-```text
-┌─────────────────────┐        WebSocket (conversation)       ┌──────────────────────────────┐
-│  DSH Mobile (Expo)  │ ────────────────────────────────────▶ │ dsh-plugin-mobile-gateway    │
-│                     │        WebSocket (control)            │  (runs inside DSH Web)       │
-│  App.tsx state      │ ────────────────────────────────────▶ │                              │
-└─────────┬───────────┘                                       └──────────────┬───────────────┘
-          │                                                                  │
-          │ optional: GET encrypted address                               │ PUT encrypted address
-          ▼                                                                  ▼
-                              Cloudflare Worker (user-owned)
-```
+### 2. 下载并安装 APK
 
-The app talks only to the gateway, not to DSH's internal agent protocol. The gateway owns authentication,
-device keys, session/event projections, and the optional rendezvous publisher.
+打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，从 `v0.1.0-alpha.3` 的 **Assets**
+下载 [`dsh-mobile-v0.1.0-alpha.3.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.3/dsh-mobile-v0.1.0-alpha.3.apk)。
+允许浏览器或文件管理器安装；不需要 Expo 账号或开发服务器。同页的 `SHA256SUMS` 与 `build-info.json`
+用于校验下载和签名，步骤见[发布手册](docs/RELEASING.md)。升级时覆盖安装，保留配对记录和草稿，
+不要先卸载。
 
-## Requirements
+### 3. 生成配对码并扫码
 
-- **Node.js 22.13+** for development (Expo SDK 58 / React Native 0.88 requirement).
-- A DSH installation with `dsh-plugin-mobile-gateway`. The app speaks `dsh-mobile-v1`.
-  This release is bound to **DSH `0.2.1-rc.5`** and the fork gateway version pinned in
-  [`compatibility.json`](compatibility.json); see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
-  for the last verified combination before installing anything.
-- For the optional address book: a gateway build with `rendezvous-v1` and a Cloudflare account for the managed
-  Worker deployment. The fork release above includes it; upstream releases are not part of this verified
-  combination.
-- Camera permission for QR pairing; microphone permission for voice input.
-
-## Tested
-
-| Platform | Status |
-| --- | --- |
-| Android 16, real device | Verified: pairing, session list, text reply, hold-to-talk voice |
-| iOS | Not yet verified |
-| Expo Go | Development shell only; native modules may require a development build |
-
-The compatibility table is the release-level record; “not verified” means “stop and ask”, not “try it and see”.
-Screenshots/GIFs are not included in this alpha yet; the UI is still moving.
-
-## For DSH agents
-
-If a user gives you this repository and asks you to install or configure the mobile gateway, **do not follow the
-human quick start by guessing**. Read [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) and run only:
-
-```bash
-node scripts/setup-gateway.mjs check
-```
-
-Before asking the user to stop DSH Web, run `node scripts/setup-gateway.mjs handoff --voice` (or `--no-voice`)
-and give them the generated `DSH-MOBILE-NEXT-STEPS.md` plus the one-command inside it. The user runs `install`
-and `voice` in a normal shell; the one-command uses `--stop-web --restart-web --tunnel quick --pair` so no step
-is lost when the DSH Web session disappears. Do not call `dsh plugin add` directly, edit the profile, or use a
-local checkout. `handoff`, `enable`, and `pair` are safe for the agent; `pair` writes a local QR page and never
-prints the payload.
-
-The release is pinned in [`compatibility.json`](compatibility.json): use its `recommended` versions, never
-`@latest` or a local checkout. The task is the gateway, not building or testing the app; a real user already
-has the APK installed.
-
-The runbook also contains a copy-paste prompt for the user and the exact places where an agent must stop for
-human approval (sudo, DSH Web restart/stop, public tunnel, Cloudflare login).
-
-## Quick start (end users)
-
-### 1. Install the gateway plugin
-
-On the machine that runs DSH, from a clone of this repository, run this **in a normal terminal** (not in the
-DSH Web chat). It stops DSH Web, installs the pinned gateway, optionally installs voice, restarts DSH Web,
-enables the gateway, starts a Quick Tunnel, and opens the pairing page:
-
-```bash
-node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
-  --tunnel quick --pair --open
-```
-
-Add `--voice` to install the matching `0.2.1-rc.5` voice bundle and pre-download the ~241 MB SenseVoice model
-without a prompt, or `--no-voice` to skip. If neither is given and stdin is a terminal, the script asks
-`Enable voice input now? [Y/n]`. The app shows “语音未启用” until the provider is ready. Do not install the older
-`0.1.7-alpha.1` bundle on DSH `0.2.1-rc.5`.
-
-Run it from the directory where you normally start `dsh web` so the restarted process keeps the same working
-directory on Windows. The DSH Web session disappears while it restarts; reopen the same session from the session
-list afterwards.
-
-Manual fallback: stop DSH Web first (adding a bundle to a running Web process hot-reloads the plugin tree and
-can leave `sessionController` unavailable until a full process restart), then run
-`node scripts/setup-gateway.mjs install --yes`:
-
-```bash
-# Linux systemd
-sudo systemctl stop dsh-web
-# or Ctrl+C the terminal that is running `dsh web`
-
-node scripts/setup-gateway.mjs install --yes
-```
-
-Start DSH Web with your normal command, then run `node scripts/setup-gateway.mjs check`.
-
-The script installs the pinned tag from [`compatibility.json`](compatibility.json), refuses while port 3080 is
-listening (unless `--stop-web` is given), and re-runs the checker. Do not use `@latest` or the Web plugin panel
-for this release; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
-
-### 2. Enable the gateway and show a pairing code
+在宿主上、从本仓库目录启用网关并生成配对码：
 
 ```bash
 node scripts/setup-gateway.mjs enable
 node scripts/setup-gateway.mjs pair --open
 ```
 
-Or open DSH Web → **Mobile devices → Connection & pairing** (移动设备 → 连接与配对). The script writes a local
-QR page; the pairing code is single-use and expires in five minutes.
+也可以打开 DSH Web → **移动设备 → 连接与配对**。配对码一次性、默认五分钟有效；打开 App 扫码，
+或手动粘贴配对串。公网入口必须使用 `wss://`，App 会拒绝公网明文 `ws://`；请把二维码当作密码。
 
-If the Web UI says the Quick Tunnel public entry has not passed verification while the tunnel is online, the
-host's local DNS may be poisoned; the tunnel can still be live. Use `pair` to create a payload, and if the
-phone also cannot resolve the hostname, enable a VPN or Private DNS (DoH) on the phone, or use Tailscale / a
-named Tunnel. The app deliberately rejects plain `ws://` for public addresses.
+完整流程（局域网/隧道、故障排查、多设备）见[使用说明](docs/USER-GUIDE.zh-CN.md)。
 
-### 3. Install the app
+## 已验证范围与边界
 
-Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases), select a release with APK assets, and
-download `dsh-mobile-v*.apk` from **Assets** (the older alpha.1 is source-only). Allow your browser or file
-manager to install that APK on Android, then open DSH Mobile. No Expo account or development server is needed.
-Grant camera access and scan the gateway QR code, or use the manual paste path. For an update, install over the
-existing app to retain pairings and drafts; do not uninstall first. `SHA256SUMS` and `build-info.json` accompany
-the APK; see [download verification](docs/RELEASING.md).
+| 项目 | 状态 |
+| --- | --- |
+| Android 16 真机，较早的 preview 构建 | 已验证：配对、会话列表、文字回复、按住说话 |
+| `v0.1.0-alpha.3` APK | CI 与实际下载/签名校验通过；真机旅程尚未验证 |
+| iOS | 暂缓，尚未验证 |
+| 应用商店 | 无；当前需要侧载 APK 或开发构建 |
 
-The pairing payload is short-lived (five minutes by default) and contains a device token. Treat the QR code like a
-password.
+- 版本必须匹配：本版本只覆盖 DSH `0.2.1-rc.5` + 网关 `0.12.0-rdv.3`；其他组合请先停下确认。
+- 手机和宿主之间需要可达网络：同一 Wi-Fi、Quick Tunnel、命名 Tunnel 或 Tailscale 等；Quick Tunnel
+  是尽力而为的服务，没有可用性保证。
+- 语音需要宿主侧语音 provider 处于 ready；地址簿需要支持 `rendezvous-v1` 的网关和用户自己的
+  Cloudflare 账号，恢复通常要一到三分钟，`workers.dev` 在部分网络可能受 DNS 污染影响。
+- 协议和界面仍在演进；alpha 暂未附截图/GIF。
 
-### 4. Use it
+## 文档地图
 
-- **Focus** shows what is running and what is waiting for you.
-- **All sessions** lists every session; tap one to open the conversation.
-- **Schedules** and **Plugins** expose the gateway's schedule and plugin management surfaces.
-- Tap the gateway name at the top to add, switch, or remove a gateway.
-- Approvals and questions appear in the conversation and in the Focus tab; answer them there.
-- The composer supports text, images, files, queued messages, “steer”, and stop.
-- When the connection drops, the app keeps cached sessions and drafts and retries in the background. Messages
-  written while offline are queued in the outbox; file uploads require an online connection.
+| 文档 | 内容 |
+| --- | --- |
+| [使用说明（中文）](docs/USER-GUIDE.zh-CN.md) / [User guide](docs/USER-GUIDE.md) | 配对、日常使用、审批、附件、语音、离线与故障排查 |
+| [Agent 安装手册](docs/AGENT-SETUP.md) | 给 AI agent 的交接契约、安全/危险步骤、人工确认点 |
+| [`compatibility.json`](compatibility.json) / [版本兼容](docs/COMPATIBILITY.md) | 固定版本、已验证组合、运行时协议检查 |
+| [发布手册](docs/RELEASING.md) | APK 构建、签名、下载校验与失败处理 |
+| [宣传站方案](docs/WEBSITE-PLAN.md) | fatwhale.app 的页面提纲、Cloudflare 部署与更新计划（尚未上线） |
+| [地址簿设计](docs/rendezvous-design.md) | `rendezvous-v1` 的加密与恢复机制 |
+| [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | 贡献、漏洞报告、变更记录与仓库约定 |
 
-See the [User guide](docs/USER-GUIDE.md) for the full journey and troubleshooting.
+## 参与开发
 
-## Address book (optional)
-
-The address book solves one specific problem: a gateway's Quick Tunnel URL (or LAN IP) changes, so a paired phone
-can no longer reach it. With `rendezvous-v1`:
-
-1. In the gateway panel, open **Address Book** and enable it.
-2. The plugin logs in to Cloudflare with `wrangler login --device`, deploys a Worker, and stores the write secret
-   locally. The user only authorizes Cloudflare; no manual Worker setup is required.
-3. Each paired phone gets a per-device 32-byte key over the authenticated connection. The gateway publishes the
-   current endpoint encrypted with AES-256-GCM; the Worker stores only ciphertext.
-4. If the app cannot connect, it fetches the latest encrypted record, decrypts it, and retries the new address.
-   Recovery is typically within one to three minutes, not instant.
-
-The Worker is user-owned. Cloudflare can see request metadata (path, IP, time, ciphertext length) but not the
-endpoint or the key. See [Rendezvous design](docs/rendezvous-design.md).
-
-One Worker belongs to one gateway. If you run DSH on several machines, pair each gateway separately; each can
-have its own address book. An address book recovers addresses for its own gateway; it does not combine several
-DSH hosts into one pairing.
-
-No address book is required for the core app; without it, a changed public URL still requires a new QR scan.
-
-## Build
-
-### GitHub Actions release builds
-
-Pushing a release tag runs the quality checks, builds with Expo prebuild and Gradle on a standard GitHub Ubuntu
-x64 runner, signs the APK, and publishes it with checksums through a draft release. This uses no EAS cloud
-builds or Expo token. Standard hosted runners are free for this public repository; paid larger runners are not
-used. See [the release runbook](docs/RELEASING.md) for signing secrets, version bumps and retry instructions.
-
-### Preview APK with EAS (optional)
+需要 Node.js 22.13+。提交改动前运行：
 
 ```bash
-git clone https://github.com/solla-h/dsh-mobile-app.git
-cd dsh-mobile-app
+npm ci
+npm test             # Jest：协议与传输层
+npm run test:node    # setup 脚本测试
+npm run typecheck
+npm run lint
+npx expo-doctor
+```
+
+协议逻辑保持在 `src/protocol/` 的纯函数里并补测试；不要手改生成的 `android/`、`ios/`。更多约定见
+[CONTRIBUTING.md](CONTRIBUTING.md)。
+
+<details>
+<summary>开发细节：EAS、本地构建与假网关</summary>
+
+**EAS preview（可选）**
+
+```bash
 npm install
 npx eas-cli login
 npx eas-cli init --account <your-expo-account>
 npx eas-cli build --platform android --profile preview
 ```
 
-- `preview` produces an installable APK with EAS-managed Android credentials.
-- `preview-local` uses `credentials.json` and a local keystore; it is intended for maintainers who do not want
-  EAS to hold signing material. `credentials.json` and `*.jks` are gitignored.
-- For iOS, use `--platform ios --profile preview`; an Apple developer account and provisioning are required.
+`preview` 生成可安装 APK；`preview-local` 使用本地 `credentials.json` 和 keystore（均被 gitignore）。
+fork 后先用 `npx eas-cli init --account <your-account> --force` 绑定自己的项目。
 
-The EAS project in `app.json` is linked to the maintainer's Expo account. If you fork the repository, run
-`npx eas-cli init --account <your-account> --force` to link your own project before building.
-
-### Local native build
-
-`android/` and `ios/` are generated by Expo Continuous Native Generation and are not committed.
+**本地原生构建**
 
 ```bash
 npm install
-npx expo run:android   # requires JDK 17+ and Android SDK; builds a debug app
+npx expo run:android   # 需要 JDK 17+ 和 Android SDK
 ```
 
-The official release path uses Gradle on GitHub Actions; EAS remains an optional personal preview path.
-Generated native directories are never committed or edited by the release workflow.
+`android/`、`ios/` 由 Expo Continuous Native Generation 生成，不提交、不手改。Expo Go 适合调 UI，
+相机、安全存储、音频、后台重连等原生行为应在开发构建或 preview 构建里验证。
 
-### Development
-
-```bash
-npm install
-npx expo start        # Expo Go / development build
-npm test              # Jest, protocol and transport logic
-npm run typecheck     # tsc --noEmit
-npm run lint          # expo lint
-npx expo-doctor       # dependency and config checks
-```
-
-Expo Go is useful for UI work, but native behavior (camera, secure storage, audio, background reconnect) should
-be verified in a development or preview build. The package is marked `private` because this is an app, not an
-npm library; it is not published to the npm registry.
-
-### Local demo without a DSH host
-
-`docs/tools/fake-gateway.mjs` is a deterministic WebSocket fake for pairing, the session list, message
-receipts, and failure modes:
+**没有 DSH 宿主时的假网关**
 
 ```bash
 node docs/tools/fake-gateway.mjs
-# USB: adb reverse tcp:3999 tcp:3999, then open http://127.0.0.1:3999/pair?host=usb
-# LAN: LAN_HOST=<your-lan-ip> node docs/tools/fake-gateway.mjs
-#      then open http://<your-lan-ip>:3999/pair?host=lan
+# USB：adb reverse tcp:3999 tcp:3999，打开 http://127.0.0.1:3999/pair?host=usb
+# 局域网：LAN_HOST=<你的局域网 IP> node docs/tools/fake-gateway.mjs
+#       打开 http://<你的局域网 IP>:3999/pair?host=lan
 ```
 
-Scan the page's QR with the app, or paste the payload. The fake serves one session and supports
-`normal`, `no-ack`, `reject`, `no-hello`, `half-open`, `no-history`, and `no-create` modes; see the file header.
+假网关支持 `normal`、`no-ack`、`reject`、`no-hello`、`half-open`、`no-history`、`no-create`，完整说明见
+文件头。App 刻意不使用 Expo Router，屏幕由 `App.tsx` 的状态机渲染；仓库结构见 [AGENTS.md](AGENTS.md)。
 
-## Project layout
+</details>
 
-| Path | Responsibility |
-| --- | --- |
-| `App.tsx` | Top-level state machine: pairing → gateway list → session; global pending/offline state |
-| `src/protocol/` | Pure parsing and mapping of `dsh-mobile-v1` frames; no `react-native` imports |
-| `src/transport/` | WebSocket client, connection policy, history cache, outbox, file transfer, rendezvous refresher |
-| `src/storage/` | SecureStore (gateway tokens/device identity) and file-backed caches |
-| `src/ui/` | Screens and components; no Expo Router — navigation is state-driven |
-| `docs/` | User guide, rendezvous design, and internal working notes |
+## 隐私与安全
 
-The app deliberately has **no Expo Router**. Routes would add a second navigation state next to the gateway and
-session state machine; screens are rendered from `App.tsx` instead. Keep non-route code out of `App.tsx` and
-protocol logic in `src/protocol/`.
+- 配对 token 和设备身份存放在 `expo-secure-store`，不写明文文件。
+- 公网入口必须使用 `wss://`；明文 `ws://` 只接受私有/局域网地址。
+- 会话历史、草稿和附件元数据缓存在本机；在网关面板撤销设备后 token 失效，App 会停止重连并要求重新配对。
+- App 代码没有接入第三方分析 SDK；网关和 Expo 运行时仍可能产生各自日志。
+- 地址簿内容在网关与每台手机之间端到端加密，Worker 只保存密文和请求元数据。
+- 不要在公开 issue 里贴配对二维码、网关写密钥或设备 token；截图前遮掉主机名和账号 ID。
 
-## Security and privacy
+## 许可证
 
-- Pairing tokens and device identity are stored with `expo-secure-store`, not in plain files.
-- Public endpoints must use `wss://`; plain `ws://` is accepted only for private/LAN addresses.
-- Session history, drafts, and attachment metadata are cached locally so the app remains useful offline.
-  Revoke a device in the gateway panel to invalidate its token; the app then stops reconnecting and asks for a
-  new pairing.
-- The app code contains no third-party analytics SDK. The gateway and Expo runtime may still produce their own
-  logs; review those projects separately.
-- Address book content is end-to-end encrypted between the gateway and each phone. The Worker holds ciphertext
-  and metadata only.
-
-Do not post a pairing QR, a gateway write secret, or a device token in public issues. Redact hostnames and
-account IDs from screenshots.
-
-## Known limitations
-
-- No app-store release; the current flow requires a sideloaded APK or a development build.
-- The protocol is still evolving. Match the app and gateway versions; older gateways may not expose newer
-  capabilities.
-- The address book needs Cloudflare and a gateway build with `rendezvous-v1`; recovery takes one to three minutes
-  and depends on the Worker being reachable. In mainland China, `workers.dev` may be affected by DNS pollution;
-  use a custom domain or a VPN/DoH path.
-- Quick Tunnel is best-effort and has no uptime guarantee.
-- iOS builds require an Apple developer account; Windows cannot build iOS locally.
-
-## Contributing
-
-Issues and pull requests are welcome. Before opening a PR:
-
-1. Keep protocol changes in `src/protocol/` as pure functions with tests.
-2. Run `npm test`, `npm run typecheck`, `npm run lint`, and `npx expo-doctor`.
-3. Do not edit generated `android/` or `ios/` directories; configure native behavior in `app.json` or config
-   plugins.
-4. If you change pairing, reconnect, or address-book behavior, update the user guide and the rendezvous design
-   note.
-
-## License
-
-The source code is MIT; see [LICENSE](LICENSE). The Expo template notice and the non-commercial pet assets are
-in [NOTICE](NOTICE). The animated assets in `assets/pet/` are CC BY-NC-SA 4.0 and may not be used for commercial
-purposes.
+源代码使用 MIT，见 [LICENSE](LICENSE)。Expo 模板声明与宠物素材的非商业许可写在 [NOTICE](NOTICE)；
+`assets/pet/` 下的动画素材为 CC BY-NC-SA 4.0，不得用于商业用途。
