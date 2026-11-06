@@ -1,8 +1,8 @@
 /**
  * 漫反射电纸书色板：日间暖石纸色 (paper) / 夜间暖炭电纸灰 (eink_slate)。
  *
- * 规范见 docs/dsh_mobile_app_product_ui_spec.md §4：
- * 不用纯黑纯白（OLED 上 21:1 的反差会晕光），对比度压在 6.5:1 ~ 8.2:1。
+ * 设计原则见 docs/DESIGN.md。正文对比度由 __tests__/contrast.test.ts 校验，
+ * 在克制的纸张色调中保持文字可读。
  */
 
 export type Palette = {
@@ -46,7 +46,9 @@ export const PAPER: Palette = {
     dockGlass: 'rgba(230, 227, 220, 0.95)',
   },
   border: { default: '#D8D5CC', subtle: '#DFDCD3', activeOrigin: '#5C5A52' },
-  text: { primary: '#1C1C1A', secondary: '#5C5B57', muted: '#8C8A84' },
+  // muted 必须对每种纸面都 ≥ 4.5:1（原来 #8C8A84 在 surface 上只有 2.8:1）；
+  // 仍比 secondary 浅一档，保留「次要 > 弱化」的层级。回归测试见 theme/__tests__。
+  text: { primary: '#1C1C1A', secondary: '#5C5B57', muted: '#66645E' },
   role: { user: '#2A5480', assistant: '#5E4478', tool: '#7A4A14', context: '#28563D' },
   action: {
     primaryBg: '#2B2B28',
@@ -77,7 +79,9 @@ export const EINK_SLATE: Palette = {
     dockGlass: 'rgba(44, 44, 40, 0.95)',
   },
   border: { default: '#3E3E39', subtle: '#363632', activeOrigin: '#8C887D' },
-  text: { primary: '#CECBC2', secondary: '#9A978E', muted: '#75736B' },
+  // 深色纸面同样要求 ≥ 4.5:1：原来的 secondary #9A978E 在 elevatedAnswer 上
+  // 只有 4.48:1，muted #75736B 在 surface 上只有 2.87:1。
+  text: { primary: '#CECBC2', secondary: '#ADA9A0', muted: '#9C9991' },
   role: { user: '#86ACD4', assistant: '#B49CCB', tool: '#C79E5F', context: '#82B492' },
   action: {
     primaryBg: '#C4C1B6',
@@ -97,6 +101,13 @@ export const EINK_SLATE: Palette = {
     dangerText: '#C08A8C',
   },
 };
+
+/**
+ * 扫码页叠在实时相机画面上，底色不可知、也不能跟主题走。
+ * 固定前景 + 固定深色遮罩，保证对纯白/纯黑画面都保持可读对比度。
+ */
+export const LIVE_CAMERA_FG = '#F7F5EF';
+export const LIVE_CAMERA_SCRIM = 'rgba(12, 12, 10, 0.72)';
 
 /** 等宽字体：代码、推理、遥测统一用它，数字开 tabular-nums 防跳动。 */
 export const MONO_FONT = {

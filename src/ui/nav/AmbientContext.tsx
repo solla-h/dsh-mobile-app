@@ -35,10 +35,10 @@ export function StatusPill({ text, tone = 'idle', onPress }: PillProps) {
   return (
     <Pressable
       onPress={onPress}
-      disabled={!onPress}
       hitSlop={8}
       style={[styles.pill, { backgroundColor: t.bg.subtle, borderColor: t.border.subtle }]}
-      accessibilityRole="button"
+      // 没有 onPress 时它只是状态显示，不能报成「已禁用的按钮」。
+      accessibilityRole={onPress ? 'button' : 'text'}
       accessibilityLabel={text}
     >
       <View style={[styles.pillDot, { backgroundColor: dot }]} />

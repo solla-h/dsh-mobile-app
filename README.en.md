@@ -100,7 +100,9 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 | [Agent setup guide](docs/AGENT-SETUP.md) | Handoff contract for AI agents, safe/unsafe steps, human approval points |
 | [`compatibility.json`](compatibility.json) / [Compatibility](docs/COMPATIBILITY.md) | Pinned versions, verified combination, runtime protocol checks |
 | [Release runbook](docs/RELEASING.md) | APK build, signing, download verification, failure handling |
-| [Website plan (Chinese)](docs/WEBSITE-PLAN.md) | Page outline, Cloudflare deployment and update plan for fatwhale.app (not live yet) |
+| [Development and validation](docs/DEVELOPMENT.md) / [Design principles (Chinese)](docs/DESIGN.md) | Code responsibilities, test journeys, accessibility and interaction conventions |
+| [Release validation status (Chinese)](docs/OPEN-SOURCE-READINESS.md) | Automated and device evidence, known limits and deferred scope |
+| [Website repository](https://github.com/solla-h/dsh-mobile-site) | Independent development and deployment for fatwhale.app (production site not live yet) |
 | [Rendezvous design](docs/rendezvous-design.md) | Encryption and recovery for `rendezvous-v1` |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | Contributions, vulnerability reports, change log, repository conventions |
 
@@ -110,7 +112,7 @@ Node.js 22.13+ is required. Before submitting a change, run:
 
 ```bash
 npm ci
-npm test             # Jest: protocol and transport
+npm test             # Jest: protocol, transport and app journeys
 npm run test:node    # setup-script tests
 npm run typecheck
 npm run lint

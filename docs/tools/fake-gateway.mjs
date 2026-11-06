@@ -4,8 +4,11 @@
 //   reject=回 error 帧（测「失败」）。
 // REQ-1 用：session-create 会回 session-created（带 requestId 回显）；
 //   no-history=吞掉 history 请求、no-create=吞掉 session-create（测首屏/建会话的 15s 超时）。
+// normal 模式下 message 还会回一条 assistant/message，供 CI 旅程断言「发送 → 收到回复」；
+//   normal 之外的回执模式（no-ack/reject）行为不变。
 // 用法: node docs/tools/fake-gateway.mjs
-// 页面: /pair?host=usb|lan  /mode?value=normal|no-hello|half-open|no-ack|reject|no-history|no-create  /log
+// 页面: /pair?host=usb|lan  /pair.json?host=usb|lan（CI 用，不开浏览器/不写文件）
+//       /mode?value=normal|no-hello|half-open|no-ack|reject|no-history|no-create  /log
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -58,6 +61,20 @@ function record(event, extra = {}) {
   console.log(JSON.stringify(events[events.length - 1]));
 }
 
+/** /pair 和 /pair.json 共用同一份载荷，避免两个入口的地址/配对码漂移。 */
+function pairingPayload(host) {
+  const publicUrl = 'ws://' + host + ':' + PORT + '/ws/mobile';
+  return {
+    version: 2,
+    publicUrl,
+    pairingCode: 'fake-pair',
+    expiresAt: Date.now() + 300000,
+    gatewayId: 'fake-gateway',
+    gatewayName: 'fake-gateway',
+    endpoints: [publicUrl, 'ws://' + (host === '127.0.0.1' ? LAN_HOST : '127.0.0.1') + ':' + PORT + '/ws/mobile'],
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://localhost');
   if (url.pathname === '/mode') {
@@ -72,18 +89,25 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ mode, events }, null, 2));
     return;
   }
+  if (url.pathname === '/pair.json') {
+    // CI 用：只交 JSON 配对串，不开浏览器、不写文件（.scratch 可能不存在）。
+    const host = url.searchParams.get('host') === 'lan' ? LAN_HOST : '127.0.0.1';
+    const payload = pairingPayload(host);
+    const pairingString = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({
+      format: 'base64url',
+      pairingString,
+      publicUrl: payload.publicUrl,
+      gatewayId: payload.gatewayId,
+      expiresAt: payload.expiresAt,
+    }));
+    return;
+  }
   if (url.pathname === '/pair') {
     const host = url.searchParams.get('host') === 'lan' ? LAN_HOST : '127.0.0.1';
-    const publicUrl = 'ws://' + host + ':' + PORT + '/ws/mobile';
-    const payload = {
-      version: 2,
-      publicUrl,
-      pairingCode: 'fake-pair',
-      expiresAt: Date.now() + 300000,
-      gatewayId: 'fake-gateway',
-      gatewayName: 'fake-gateway',
-      endpoints: [publicUrl, 'ws://' + (host === '127.0.0.1' ? LAN_HOST : '127.0.0.1') + ':' + PORT + '/ws/mobile'],
-    };
+    const payload = pairingPayload(host);
+    const publicUrl = payload.publicUrl;
     const qrPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
     if (!QRCode) {
       res.setHeader('content-type', 'text/plain');
@@ -118,10 +142,13 @@ wss.on('connection', (ws, req) => {
     if (msg.type === 'ping') record('ping', { id, channel });
     if (mode === 'half-open') return;
     if (msg.type === 'ping') ws.send(JSON.stringify({ kind: 'pong' }));
-    if (msg.type === 'sessions') ws.send(JSON.stringify({ kind: 'sessions', items: [{
-      sessionId: FAKE_SESSION_ID, updatedAt: 1730000000000, running: false, blank: false,
-      cwd: 'C:/fake', projections: { asOfSeq: 2, values: { title: '假网关会话' } },
-    }, ...createdSessions] }));
+    if (msg.type === 'sessions') {
+      record('sessions', { id, channel, mode });
+      ws.send(JSON.stringify({ kind: 'sessions', items: [{
+        sessionId: FAKE_SESSION_ID, updatedAt: 1730000000000, running: false, blank: false,
+        cwd: 'C:/fake', projections: { asOfSeq: 2, values: { title: '假网关会话' } },
+      }, ...createdSessions] }));
+    }
     if (msg.type === 'history') {
       record('history', { id, channel, mode, sessionId: msg.sessionId, beforeSeq: msg.beforeSeq, requestId: msg.requestId });
       if (mode === 'no-history') return; // 吞掉不回：测 REQ-1 的首屏 15s 超时
@@ -161,6 +188,10 @@ wss.on('connection', (ws, req) => {
       // 回显实时 user/message，让 App 的本地回显被服务端版本替换（和真网关行为一致）。
       echoSeq += 1;
       ws.send(JSON.stringify({ kind: 'event', sessionId: msg.sessionId, seq: echoSeq, time: 1730000000000 + echoSeq, event: { type: 'user/message', source: 'user', text: String(msg.text ?? '') } }));
+      // 再回一条助手消息：CI 旅程靠它断言「发送 → 收到回复」的接收链路。
+      // 只断言用户文本不够——本地乐观回显会立刻上屏，无法证明服务端真的回包。
+      echoSeq += 1;
+      ws.send(JSON.stringify({ kind: 'event', sessionId: msg.sessionId, seq: echoSeq, time: 1730000000000 + echoSeq, event: { type: 'assistant/message', text: 'fake-gateway reply: ' + String(msg.text ?? '') } }));
     }
     if (msg.type === 'rendezvous-config') {
       record('rendezvous-config', { id, channel, requestId: msg.requestId });

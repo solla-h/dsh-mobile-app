@@ -127,8 +127,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  journey:
     needs: [prepare, build]
+    uses: ./.github/workflows/android-journey.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.sha }}
+      artifact_name: android-${{ needs.prepare.outputs.tag }}
+
+  publish:
+    needs: [prepare, build, journey]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -172,7 +179,7 @@ jobs:
 
           Verify the download with SHA256SUMS. build-info.json records the source commit, Android version code and signing certificate fingerprint.
 
-          Built from $RELEASE_SHA by GitHub Actions. APK signature and package metadata verified; this build still needs real-device installation and user-journey verification. iOS is not included.
+          Built from $RELEASE_SHA by GitHub Actions. APK signature and package metadata verified. An Android emulator passed pairing, send/receive, return and relaunch against a synthetic local gateway. Physical-device installation/upgrade, voice, camera and screen-reader journeys still need verification. iOS is not included.
 
           Use the exact gateway/DSH combination in compatibility.json. Source code is MIT; bundled pet animations are CC BY-NC-SA 4.0 (non-commercial).
           EOF

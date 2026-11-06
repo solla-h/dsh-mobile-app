@@ -31,12 +31,12 @@ export function ActionSheet({ visible, title, subtitle, actions, onPick, onClose
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose} accessible={false}>
         {/* 阻止点击穿透到遮罩 */}
-        <Pressable style={styles.sheet} onPress={() => undefined}>
+        <Pressable style={styles.sheet} onPress={() => undefined} accessibilityViewIsModal>
           {title ? (
             <View style={styles.header}>
-              <Text style={styles.title} numberOfLines={2}>
+              <Text style={styles.title} numberOfLines={2} accessibilityRole="header">
                 {title}
               </Text>
               {subtitle ? (
@@ -56,6 +56,7 @@ export function ActionSheet({ visible, title, subtitle, actions, onPick, onClose
                   key={action.id}
                   style={({ pressed }) => [styles.sectionRow, pressed ? styles.rowPressed : null]}
                   onPress={() => onPick(action.id)}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.section}>{action.label}</Text>
                 </Pressable>
@@ -69,6 +70,8 @@ export function ActionSheet({ visible, title, subtitle, actions, onPick, onClose
                   ]}
                   disabled={action.disabled}
                   onPress={() => onPick(action.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: action.disabled }}
                 >
                   <View style={styles.rowText}>
                     <Text style={[styles.label, action.destructive ? styles.destructive : null]}>
@@ -80,7 +83,12 @@ export function ActionSheet({ visible, title, subtitle, actions, onPick, onClose
               ),
             )}
           </ScrollView>
-          <Pressable style={[styles.row, styles.cancel]} onPress={onClose}>
+          <Pressable
+            style={[styles.row, styles.cancel]}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="取消"
+          >
             <Text style={styles.cancelText}>取消</Text>
           </Pressable>
         </Pressable>

@@ -1,0 +1,77 @@
+name: Android journey check
+
+on:
+  pull_request:
+    paths:
+      - 'App.tsx'
+      - 'index.ts'
+      - 'app.json'
+      - 'package*.json'
+      - 'src/**'
+      - 'plugins/**'
+      - '.maestro/**'
+      - 'scripts/ci/**'
+      - 'docs/tools/fake-gateway.mjs'
+      - '.github/workflows/android-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: '1'
+  EXPO_NO_TELEMETRY: '1'
+
+jobs:
+  build:
+    name: Build test APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: source
+        name: Record tested commit
+        run: printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build self-contained test APK
+        working-directory: android
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: >-
+          ./gradlew app:assembleRelease --no-daemon --max-workers=2
+          -PreactNativeArchitectures=x86_64
+          -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
+      # Test only: build the emulator ABI. Official release builds still include every ABI.
+      # Generated development signing only. Official release credentials are never used in PR jobs.
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: android-check-${{ github.run_id }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  journey:
+    needs: build
+    uses: ./.github/workflows/android-journey.yml
+    with:
+      source_ref: ${{ needs.build.outputs.source_sha }}
+      artifact_name: android-check-${{ github.run_id }}

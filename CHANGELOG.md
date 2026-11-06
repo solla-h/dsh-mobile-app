@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Real-App integration journeys for pairing, send/receive/return, cached offline launch and draft retention.
+- Android emulator/Maestro journey checks for pull requests and signed release APKs before publication.
+- Contrast regression checks and accessible names, states and actions across the primary navigation flow.
+
+### Fixed
+
+- Enable Android release-build networking for private LAN/Tailscale/USB `ws://` gateways. Public cleartext pairing URLs remain rejected by the client.
+- Keep dial preview and gesture focus synchronized after accessibility adjustments, including a cancelled preview followed by an adjustment at the list edge.
+
+### Changed
+
+- Extract pairing, session-list and rename views from the main app coordinator while preserving state ownership.
+- Improve muted-text and live-camera overlay contrast; expose session menus and dial navigation to accessibility actions.
+- Make the project homepage Chinese-first with an English link, and keep current contributor/design/validation documentation.
+- Remove obsolete discussion records, prompts and UI prototypes from the current documentation tree.
+- Move website development to the independent `solla-h/dsh-mobile-site` repository.
+- Increase Android version code to 4 for the next APK. Physical-device upgrade, voice, TalkBack and large-text checks remain pending.
+
 ## [0.1.0-alpha.3] - 2026-11-06
 
 ### Fixed

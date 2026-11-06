@@ -6,7 +6,8 @@ connects to a DSH host through the `dsh-plugin-mobile-gateway` plugin, so the ho
 This guide walks through the full user journey: pairing, daily use, approvals, attachments, voice, multiple
 gateways, the optional address book, offline behavior, and troubleshooting.
 
-> The app is experimental and not affiliated with DeepSeek or Expo. Pair it with a compatible gateway version.
+> This is a public Android alpha, not affiliated with DeepSeek or Expo. Use the pinned gateway combination;
+> iOS is deferred and unverified.
 
 ## 1. Before you start
 
@@ -19,6 +20,12 @@ You need:
   - a Cloudflare Quick Tunnel / named Tunnel, or
   - another reachable endpoint (for example Tailscale).
 - The DSH Mobile app installed on the phone.
+
+Download the APK from [GitHub Releases](https://github.com/solla-h/dsh-mobile-app/releases), allow
+installation for your browser or file manager, and open it. No Expo account or development server is
+needed. For updates, install over the existing app to preserve pairings and drafts; do not uninstall
+first. See [RELEASING.md](RELEASING.md#download-install-and-verify) for checksum/signature checks and
+[validation status](OPEN-SOURCE-READINESS.md) for the limits of current evidence.
 
 The gateway panel is the source of truth for connection status, paired devices, and the optional address book.
 
@@ -78,7 +85,7 @@ Pairing payloads contain a one-time device token. Do not screenshot or share a l
 4. Point the camera at the QR code.
 
 If the camera is unavailable or permission was denied, tap **Paste pairing payload manually** (手动粘贴配对串),
-paste the text, and tap **Pair and connect** (配对并连接).
+paste the text, and tap **Pair and connect** (配对并连接). Dismiss the keyboard first if it covers the button.
 
 A pairing code can only be used once and expires after about five minutes. If it expires, generate a new one on
 the host. Pairing succeeds only after the app receives a long-lived device token; the token is stored in the

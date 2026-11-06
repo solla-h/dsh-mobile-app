@@ -232,6 +232,27 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
 
   const previewItem = list[index] ?? list[0];
   const previewBlocked = previewItem && blockedIds.includes(previewItem.sessionId);
+  /** 读屏用户不拖手势：把可调值映射到「当前会话」，用上/下调一档切换。 */
+  const selectedIndex = currentIndex >= 0 ? currentIndex : Math.min(index, list.length - 1);
+  const accessibilityItem = list[selectedIndex] ?? previewItem;
+  const accessibilityBlocked = Boolean(
+    accessibilityItem && blockedIds.includes(accessibilityItem.sessionId),
+  );
+  const moveBy = (delta: number) => {
+    const target = clamp(selectedIndex + delta, 0, list.length - 1);
+    const picked = list[target];
+    setOpen(false);
+    setIndex(target);
+    focus.setValue(target);
+    focusIndexRef.current = target;
+    lastTickIndexRef.current = target;
+    if (picked && picked.sessionId !== activeId) {
+      tickFeedback();
+      onSelect(picked.sessionId);
+    } else {
+      tapFeedback();
+    }
+  };
 
   return (
     <>
@@ -253,8 +274,25 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
           // 再外扩 56 就又盖回发送按钮了。
           hitSlop={{ left: 32, right: 8, top: keyboardOpen ? 24 : 56, bottom: keyboardOpen ? 4 : 56 }}
           {...responder.panHandlers}
+          accessible
           accessibilityRole="adjustable"
-          accessibilityLabel="按住或轻点呼出拇指弧形会话转盘"
+          accessibilityLabel="会话转盘"
+          accessibilityHint="上滑或下滑切换会话；读屏用户可上/下调一档"
+          accessibilityValue={{
+            min: 1,
+            max: list.length,
+            now: selectedIndex + 1,
+            text: `${titleOf(accessibilityItem)}${accessibilityBlocked ? '，等待审批' : ''}，第 ${selectedIndex + 1} 个，共 ${list.length} 个`,
+          }}
+          accessibilityActions={[
+            { name: 'increment', label: '下一个会话' },
+            { name: 'decrement', label: '上一个会话' },
+          ]}
+          onAccessibilityAction={(event) => {
+            const { actionName } = event.nativeEvent;
+            if (actionName === 'increment') moveBy(1);
+            else if (actionName === 'decrement') moveBy(-1);
+          }}
         >
           <View style={[styles.tickTiny, { backgroundColor: t.text.muted }]} />
           <View
@@ -272,7 +310,12 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
       {open ? (
         <View style={styles.overlay} pointerEvents="box-none">
           {/* 点击背景遮罩收起转盘 */}
-          <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
+          <Pressable
+            style={styles.backdrop}
+            onPress={() => setOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel="收起会话转盘"
+          />
 
           {/* 展开状态下的拖拽层：手指上下滑即可切会话 */}
           <View style={styles.dragLayer} {...dragResponder.panHandlers} />
@@ -280,6 +323,9 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
           {/* 左上角焦段取景框 (Focal Preview HUD) */}
           <View
             pointerEvents="none"
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
             style={[
               styles.preview,
               { backgroundColor: t.bg.elevatedAnswer, borderColor: t.border.default },
@@ -404,6 +450,10 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                     }
                   }}
                   style={styles.nodeRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${titleOf(item)}，${repoOf(item)}${isCurrent ? '，当前会话' : ''}${isBlocked ? '，等待审批' : ''}${item.running ? '，运行中' : ''}`}
+                  accessibilityHint="切换到这个会话"
+                  accessibilityState={{ selected: isCurrent }}
                 >
                   <View
                     style={[
@@ -457,6 +507,9 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                             { color: selected ? t.action.primaryText : t.text.primary },
                           ]}
                           numberOfLines={1}
+                          // 卡片高度是转盘几何的一部分，放大会和相邻卡片叠在一起；
+                          // 会话标题的完整语义由外层可调节控件与卡片按钮提供。
+                          maxFontSizeMultiplier={1.3}
                         >
                           {titleOf(item)}
                         </Text>
@@ -467,6 +520,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                           { color: selected ? t.action.primaryText : t.text.muted },
                         ]}
                         numberOfLines={1}
+                        maxFontSizeMultiplier={1.3}
                       >
                         {repoOf(item)}
                         {isCurrent ? ' · 当前' : ''}
@@ -480,6 +534,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                       styles.cardIndex,
                       { color: selected ? t.text.primary : t.text.muted },
                     ]}
+                    maxFontSizeMultiplier={1.3}
                   >
                     {codeOf(i)}
                   </Text>
@@ -518,8 +573,15 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                 borderColor: t.border.default,
               },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="收起会话转盘"
           >
-            <Text style={[styles.closeHandleText, { color: t.text.secondary }]}>收起</Text>
+            <Text
+              style={[styles.closeHandleText, { color: t.text.secondary }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              收起
+            </Text>
           </Pressable>
         </View>
       ) : null}

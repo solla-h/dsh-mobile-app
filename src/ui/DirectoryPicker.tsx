@@ -34,14 +34,21 @@ export function DirectoryPicker({
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => undefined}>
+      <Pressable style={styles.backdrop} onPress={onClose} accessible={false}>
+        <Pressable style={styles.sheet} onPress={() => undefined} accessibilityViewIsModal>
           <View style={styles.header}>
             <View style={styles.headerText}>
-              <Text style={styles.title}>选择目录</Text>
+              <Text style={styles.title} accessibilityRole="header">
+                选择目录
+              </Text>
               <Text style={styles.subtitle}>新会话会在选中的目录里启动</Text>
             </View>
-            <Pressable hitSlop={10} onPress={onClose}>
+            <Pressable
+              hitSlop={10}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="取消选择目录"
+            >
               <Text style={styles.close}>取消</Text>
             </Pressable>
           </View>
@@ -57,9 +64,24 @@ export function DirectoryPicker({
                 const current = index === listing.crumbs.length - 1;
                 return (
                   <View key={crumb.path} style={styles.crumbWrap}>
-                    {index > 0 ? <Text style={styles.crumbSep}>›</Text> : null}
-                    <Pressable hitSlop={6} onPress={() => onOpen(crumb.path)} disabled={current}>
-                      <Text style={[styles.crumb, current && styles.crumbCurrent]} numberOfLines={1}>
+                    {index > 0 ? (
+                      <Text style={styles.crumbSep} allowFontScaling={false}>
+                        ›
+                      </Text>
+                    ) : null}
+                    <Pressable
+                      hitSlop={6}
+                      onPress={() => onOpen(crumb.path)}
+                      disabled={current}
+                      accessibilityRole="button"
+                      accessibilityLabel={`进入 ${crumb.name}`}
+                      accessibilityState={{ selected: current, disabled: current }}
+                    >
+                      <Text
+                        style={[styles.crumb, current && styles.crumbCurrent]}
+                        numberOfLines={1}
+                        maxFontSizeMultiplier={1.3}
+                      >
                         {crumb.name}
                       </Text>
                     </Pressable>
@@ -78,7 +100,13 @@ export function DirectoryPicker({
               <Text style={styles.error} numberOfLines={3}>
                 {error}
               </Text>
-              <Pressable style={styles.retry} onPress={onRetry} hitSlop={8}>
+              <Pressable
+                style={styles.retry}
+                onPress={onRetry}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="重试读取目录"
+              >
                 <Text style={styles.retryText}>重试</Text>
               </Pressable>
             </View>
@@ -90,7 +118,12 @@ export function DirectoryPicker({
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={<Text style={styles.empty}>这个目录里没有子文件夹</Text>}
               renderItem={({ item }) => (
-                <Pressable style={styles.row} onPress={() => onOpen(item.path)}>
+                <Pressable
+                  style={styles.row}
+                  onPress={() => onOpen(item.path)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`进入目录 ${item.name}`}
+                >
                   <Text style={[styles.rowName, item.hidden && styles.rowHidden]} numberOfLines={1}>
                     {item.name}
                   </Text>
@@ -108,6 +141,9 @@ export function DirectoryPicker({
               style={[styles.confirm, (!listing || loading || Boolean(error)) && styles.confirmOff]}
               disabled={!listing || loading || Boolean(error)}
               onPress={onConfirm}
+              accessibilityRole="button"
+              accessibilityLabel="在这里新建会话"
+              accessibilityState={{ disabled: !listing || loading || Boolean(error) }}
             >
               {loading && listing ? (
                 <ActivityIndicator size="small" color={t.bg.canvas} />
@@ -143,7 +179,8 @@ const makeStyles = (t: Palette) =>
   title: { color: t.text.primary, fontSize: 16, fontWeight: '700' },
   subtitle: { color: t.text.muted, fontSize: 12, marginTop: 3 },
   close: { color: t.text.muted, fontSize: 14, fontWeight: '600', paddingLeft: 12, paddingTop: 2 },
-  crumbs: { flexGrow: 0, maxHeight: 34, paddingHorizontal: 14 },
+  // 面包屑只有一行，但字号放大后 34pt 会切掉上下沿；留到 40pt 仍不占正文空间。
+  crumbs: { flexGrow: 0, maxHeight: 40, paddingHorizontal: 14 },
   crumbsContent: { alignItems: 'center', paddingVertical: 6 },
   crumbWrap: { flexDirection: 'row', alignItems: 'center' },
   crumb: { color: t.text.muted, fontSize: 12, maxWidth: 160 },

@@ -27,8 +27,14 @@ with an existing tag. The tag must resolve to a commit already merged into `mast
 3. Build on Ubuntu x64 with Node 24 and JDK 17. Expo generates `android/`; Gradle builds the release APK.
 4. Inject signing secrets only into the signing step. Align and sign the APK, verify its certificate,
    package ID, version name/code, non-debuggable manifest, and bundled JavaScript.
-5. Transfer only the APK, `SHA256SUMS` and `build-info.json` to the publish job. Recheck hashes and tag SHA,
+5. Install that signed APK in an Android emulator and run the local-fixture Maestro journey:
+   pairing → list → session → send/receive → return → relaunch with pairing retained. Verify fixture
+   protocol traffic and keep synthetic screenshots and failure diagnostics.
+6. Transfer only the APK, `SHA256SUMS` and `build-info.json` to the publish job. Recheck hashes and tag SHA,
    upload to a draft Release, download the uploaded APK and verify it again, then publish.
+
+Relevant pull requests run `android-check.yml` first, building a temporary development-signed APK
+without release credentials and invoking the same journey. See [DEVELOPMENT.md](DEVELOPMENT.md).
 
 Only the publish job has `contents: write`. Pull-request CI has no release secrets or environment access.
 Published assets are never overwritten. Pre-release tags produce GitHub prereleases; the workflow does
@@ -148,8 +154,9 @@ The hash checks download integrity. To check signer identity with Android build-
 ## Evidence and failure handling
 
 **Build verified** means CI compiled and signed the exact tag and checked the artifact and uploaded bytes.
-It does not prove runtime behaviour. **Real-device tested** requires installation and the full journey above,
-including failure/cancel/reconnect paths when those features change.
+**Emulator journey passed** means the compiled APK completed the scripted local-fixture path; it does not
+cover production connectivity, camera, microphone or physical gestures. **Real-device tested** requires
+installation and the full journey above, including failure/cancel/reconnect paths when those features change.
 
 Keep `compatibility.json`'s `verified[]` and `app.build` as records of actual device testing. The first CI APK
 inherits the earlier version combination but still needs its own device test. `build-info.json` records the

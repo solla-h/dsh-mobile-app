@@ -31,6 +31,7 @@ export function BottomTabBar({ tabs, active, onChange }: Props) {
             style={styles.cell}
             onPress={() => onChange(tab.key)}
             accessibilityRole="tab"
+            accessibilityLabel={tab.badge ? `${tab.label}，${tab.badge} 个待办` : tab.label}
             accessibilityState={{ selected }}
           >
             <View style={styles.labelRow}>
