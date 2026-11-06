@@ -8,6 +8,19 @@ read-only `check` and `handoff` steps plus the safe `enable`/`pair` steps; the u
 normal shell. This split is intentional: installing a bundle into a running Web process hot-reloads the plugin
 tree and can leave `sessionController` unavailable until the OS process is restarted.
 
+## Gateway source and maintenance
+
+Install the **DSH Mobile maintained fork** from
+[`solla-h/dsh-plugin-mobile-gateway`](https://github.com/solla-h/dsh-plugin-mobile-gateway), using the exact
+GitHub tag in `compatibility.json`. The upstream `Clarklevis1995/dsh-plugin-mobile-gateway` and same-named
+npm package are a separate release line. Do not substitute a source because its version string matches,
+clone the gateway for an installation, or install upstream and fork together.
+
+For a new host without DSH, follow the [first-time host setup](USER-GUIDE.md#1-before-you-start) before this
+handoff. Confirm one working DSH Web conversation before configuring the phone. This setup guide does not
+authorize upgrading an existing host. Gateway developers use [maintenance guidance](GATEWAY-MAINTENANCE.md)
+and the gateway repository's own `AGENTS.md`; host setup must not turn into source development.
+
 ## Handoff first — make the remaining steps survive the stop
 
 **Do not give the user a bare “stop DSH Web” command as the first step.** The DSH Web session is where the agent
@@ -52,9 +65,17 @@ Use only the `recommended` versions. Do not use `@latest`, a local git checkout,
 profile backup — even if one exists on the host. If the host's DSH or plugin version differs, stop and ask;
 do not auto-upgrade either side.
 
+Host tools must include Node.js 22.13+, npm, Git and `pnpm` on PATH; the documented setup pins pnpm to
+`11.9.0`. Run `pnpm --version` as a read-only prerequisite check. If it is missing, have the user run
+`npm install --global pnpm@11.9.0` in a normal terminal; do not reinstall or upgrade DSH to resolve this.
+
 The gateway's `hello` advertises the protocol number and a build-time DSH version, but not the plugin version;
-the app only enforces the protocol. The checker below verifies the profile spec, the **installed package**
-version under `node_modules`, and the actual DSH (`dsh --version`).
+the app warns on an unverified protocol. The checker below requires the profile dependency to identify the
+pinned GitHub owner, repository and tag, checks the **installed package** version under `node_modules`, and
+reads the actual DSH (`dsh --version`). A manual `--plugin` override cannot replace the profile evidence.
+Source/version inspection does not verify
+artifact integrity, the running process's loaded code, or live protocol behavior. A full restart and the
+actual phone connection are still required.
 
 ## Use the setup script
 
@@ -162,12 +183,16 @@ with `EPERM` on `package.json.lock`. That is a permission failure, not “plugin
 
 ### Preferred: one command, then scan
 
-From the repository clone, in a normal terminal (not the DSH Web chat):
+In a normal terminal (not the DSH Web chat), use the setup script from this repository:
 
 ```bash
-node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
-  --tunnel quick --pair --open
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web --tunnel quick --pair --open
 ```
+
+On Windows, run from the directory where DSH Web was originally started and replace the relative script
+path with its quoted absolute path. The script cannot recover that process's working directory on Windows.
+The handoff command above already uses an absolute script path; keep its working-directory instruction
+with it. If the directory is unknown, use the manual fallback and restart Web with the user's normal command.
 
 Add `--voice` to install the matching voice bundle and download the model without a prompt, or `--no-voice`
 to skip. If neither is given and stdin is a terminal, the script asks the usual
@@ -186,6 +211,12 @@ The one-command path:
 8. opens a Quick Tunnel, waits for the public URL, and re-checks DNS/TLS/WebSocket until ready (or prints a
    warning and continues);
 9. writes and opens the pairing QR page.
+
+Before stopping Web for an installation, the script checks that pnpm is available. If gateway installation
+or the post-install source/version check fails, `--restart-web` attempts to restore the captured Web process.
+The command still fails and reports that the profile may be partially changed; restarting is not a rollback
+or proof that the plugin works. If automatic recovery is unavailable or fails, use the normal DSH Web start
+command and resolve the installation error before pairing.
 
 Use `--dry-run` to see the plan (including the captured DSH Web command) without stopping or installing anything.
 

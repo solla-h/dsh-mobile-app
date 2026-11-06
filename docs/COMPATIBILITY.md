@@ -6,12 +6,25 @@ source of truth for the combination we actually tested.
 
 The machine-readable copy is [`compatibility.json`](../compatibility.json). Update both together.
 
-[`v0.1.0-alpha.3`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.3) provides a GitHub Actions APK
-with Android version code 3 and the same app/protocol version. Its downloaded checksums and APK signature were
-independently verified on 2026-11-06. The alpha.2 build was blocked before publication; it has no released APK.
-The alpha.3 source commit and signing certificate are recorded in its `build-info.json`. The real-device
-entry below describes the earlier EAS preview; it is not a claim that the new CI-produced APK has been tested
-on a phone. The new build needs the installation → pairing → conversation → voice → return-home journey.
+[`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4) provides a GitHub Actions APK
+with Android version code 4 and the same app/protocol version. Its signed APK passed the complete local-fixture
+Android emulator journey; independently downloaded checksums, cryptographic signature, package identity and
+private-network Manifest policy were verified on 2026-11-07. Its source commit and signing certificate are in
+`build-info.json`. See [release validation status](OPEN-SOURCE-READINESS.md) for the run and limits.
+The real-device entry below describes the earlier EAS preview; it does not claim that this APK has been tested
+on a phone. Physical installation/upgrade, voice, camera, accessibility and real-network journeys remain pending.
+
+## Maintained gateway source
+
+Our maintained fork is [solla-h/dsh-plugin-mobile-gateway](https://github.com/solla-h/dsh-plugin-mobile-gateway),
+based on [Clarklevis1995/dsh-plugin-mobile-gateway](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway).
+The supported source is `github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3`. This is a GitHub-tagged
+fork release, not an npm release with that version. The package name stays `dsh-plugin-mobile-gateway`;
+the setup script chooses the pinned source. Do not install upstream and fork together.
+
+Upstream updates are integrated through reviewed compatibility work. A shared protocol number does not
+make a new DSH, Node or plugin release supported. See [gateway maintenance](GATEWAY-MAINTENANCE.md) for
+synchronization, verification and release rules.
 
 ## Verified combination
 
@@ -98,20 +111,31 @@ curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/master/scrip
 node "$tmp/check-compat.mjs" --manifest "$tmp/compatibility.json" --profile web --json
 ```
 
-The checker reads the plugin spec from `~/.dsh/profiles/<profile>/package.json`, verifies the **installed**
-package version under `node_modules`, runs `dsh --version`, and fails on a local path, an unverified plugin, an
-unverified DSH version, or a protocol mismatch. It never prints pairing tokens or secrets.
+The checker requires the profile dependency to name the pinned GitHub owner, repository and release tag.
+Equivalent GitHub URL spellings of that one source are accepted in the installed profile; `compatibility.json`
+itself retains the canonical `github:solla-h/dsh-plugin-mobile-gateway#v<version>` form required by the installer.
+Another repository, a mutable ref, npm version/range/alias or local path fails even if the installed version matches.
+A manual `--plugin` override still requires the actual profile dependency and installed package.
+
+It verifies the installed package version under `node_modules` and runs `dsh --version`. A protocol value is
+checked only when supplied with `--protocol`; the checker does not query a live handshake. It never prints
+pairing tokens or secrets. This is a declared-source/version check, not artifact or resolved-commit verification.
 
 ## Release rule
 
-Every app release must update `compatibility.json` and this table:
+When changing the recommended combination, update `compatibility.json` and this guide together:
 
-1. record the app version and build;
-2. record the exact gateway plugin version and install source;
-3. record the exact DSH version used for the real-device regression;
-4. record the protocol number and platform;
-5. run `node scripts/setup-gateway.mjs check` (or `check-compat.mjs --profile web`) with the release versions;
-6. if voice is part of the release, record the voice bundle version and verify it on a stopped DSH Web;
-7. update the README's requirements section.
+1. identify the app version and candidate APK source/build;
+2. record the exact gateway plugin version and immutable install source;
+3. record the target DSH, protocol, platform and optional voice bundle;
+4. run `node scripts/setup-gateway.mjs check` on the installed candidate, fully restart DSH Web, and run
+   the actual app/host journey; test voice when it is part of the supported combination;
+5. update `verified[]` and the real-device table only with actual device evidence for the tested build;
+6. update Chinese/English README requirements and user guides together.
+
+An APK rebuild does not transfer old device evidence to a new build. Record its automated build, signature
+and emulator results in [release validation status](OPEN-SOURCE-READINESS.md), leaving earlier preview
+records intact until new device testing exists. The checker validates declared source/version and installed
+package version; it is not a cryptographic source check or proof of the running host's loaded code.
 
 Do not ship a release whose docs say “install the latest gateway”. “Latest” is not a version.

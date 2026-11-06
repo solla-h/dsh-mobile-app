@@ -73,6 +73,14 @@ Screenshots, test reports and diagnostics use synthetic fixture data. Check the 
 adding a workflow is not evidence that it has passed. The workflow does not need production tokens,
 Cloudflare access, an Expo token or a physical phone.
 
+The [gateway installation check](../.github/workflows/gateway-install.yml) installs the manifest-pinned
+DSH CLI and pnpm `11.9.0` on clean Linux and Windows runners, runs the actual `setup-gateway.mjs install --yes --no-voice` command,
+checks the declared source and installed versions, and repeats installation to exercise the already-installed
+path. It needs no app dependencies or production credentials. Check its Actions result before claiming a
+fresh install passed. This check does not start DSH Web, configure a model, open a tunnel, approve package
+builds or verify a phone conversation; those remain separate host/app journey evidence.
+For backend source changes and promotion rules, see [gateway maintenance](GATEWAY-MAINTENANCE.md).
+
 ## Fake gateway
 
 ```bash

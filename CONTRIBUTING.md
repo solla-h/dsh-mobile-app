@@ -9,6 +9,9 @@ with a reproducible user journey, protocol fixes with tests, and documentation c
   **not** using Expo Router; it is a state machine in `App.tsx`.
 - Read [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) and [`compatibility.json`](compatibility.json) before
   changing protocol or gateway assumptions. Use the pinned versions; do not default to `@latest`.
+- Read [`docs/GATEWAY-MAINTENANCE.md`](docs/GATEWAY-MAINTENANCE.md) before changing backend recommendations
+  or shared protocol behavior. The app uses our maintained gateway fork's exact GitHub tag, not the upstream
+  npm release. Gateway code and upstream synchronization belong in that repository.
 - Read [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for local checks and reproducible test journeys,
   and [`docs/DESIGN.md`](docs/DESIGN.md) for interaction principles.
 - For a security issue, follow [`SECURITY.md`](SECURITY.md) instead of opening a public issue.

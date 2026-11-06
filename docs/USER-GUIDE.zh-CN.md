@@ -11,8 +11,9 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 
 你需要：
 
-- 一台运行 DSH Web 的机器。
-- 在运行 Web 的 DSH profile 里安装 `dsh-plugin-mobile-gateway`。
+- Node.js 22.13+、npm、pnpm 和 Git（在宿主上运行安装工具；手机不需要）。下面的步骤固定使用 pnpm `11.9.0`。
+- 一台运行 DSH Web `0.2.1-rc.5` 的机器，已配置模型并能完成一次文字对话。
+- 在运行 Web 的 DSH profile 里安装 [DSH Mobile 配套维护版网关](https://github.com/solla-h/dsh-plugin-mobile-gateway)。
 - 手机到网关的网络路径：
   - 同一 Wi-Fi（局域网直连），或
   - Cloudflare Quick Tunnel / 命名 Tunnel，或
@@ -24,6 +25,36 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 下载与签名校验见[发布手册](RELEASING.md#download-install-and-verify)，当前证据边界见
 [发布验证状态](OPEN-SOURCE-READINESS.md)。
 
+**首次准备 DSH 宿主：** 仅在尚未安装 DSH 的机器上运行下面的固定版本命令；已有安装先执行后面的 `check`，
+不要直接覆盖或升级。选择一个作为 DSH 工作区的目录，在该目录启动 Web：
+
+```bash
+npm install --global pnpm@11.9.0
+npm install --global @deepseek-ai/dsh@0.2.1-rc.5
+pnpm --version
+dsh --version
+dsh web
+```
+
+按终端给出的本地地址打开 Web，完成模型配置并发送一条文字消息，确认宿主能正常回复。模型密钥只填在宿主配置中，
+不要贴到 issue 或聊天记录。宿主使用方式见 [DSH 官方文档](https://github.com/deepseek-ai/deepseek-harness)。
+保留 Web 运行，在另一个普通终端获取安装工具：
+
+```bash
+git clone https://github.com/solla-h/dsh-mobile-app.git
+cd dsh-mobile-app
+node scripts/setup-gateway.mjs check
+```
+
+安装工具不需要 `npm ci` 或编译 App，但 DSH 安装插件需要 PATH 中可用的 `pnpm`。
+已有 DSH 的宿主也先运行 `pnpm --version`；若提示找不到命令，在普通终端运行上面的 pnpm 安装命令即可，
+不要因此重装或升级 DSH。首次检查提示网关未安装是预期结果，继续第 2.1 节；
+若 DSH 版本不匹配，先确认宿主版本，安装工具不会替你升级 DSH。
+
+网关使用 `compatibility.json` 指定的 `github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3`。
+同名 npm 包属于上游发行线；不要安装 `@latest`，也不要同时安装两份网关。
+[维护与兼容规则](GATEWAY-MAINTENANCE.md)说明我们如何跟进上游并验证推荐组合。
+
 网关面板是连接状态、已配对设备和可选地址簿的唯一事实来源。
 
 ## 2. 配对
@@ -33,9 +64,13 @@ DSH Mobile 是 DeepSeek Harness（DSH）的手机客户端。它不在手机上�
 最简单的方式是在 DSH 宿主上、从本仓库打开一个普通终端（不是 DSH Web 的聊天），运行：
 
 ```bash
-node scripts/setup-gateway.mjs install --yes --stop-web --restart-web \
-  --tunnel quick --pair --open
+node scripts/setup-gateway.mjs install --yes --stop-web --restart-web --tunnel quick --pair --open
 ```
+
+Windows 上请在原来启动 `dsh web` 的工作目录执行安装，把 `scripts/setup-gateway.mjs` 换成本仓库中该文件的
+绝对路径并加引号；这样重启不会改变工作目录。路径不确定或不希望自动停启时，使用下方手动方式。
+在 DSH Web 内委托 Agent 安装时，先按 [Agent 手册](AGENT-SETUP.md)生成完整交接文件，再在普通终端运行，
+避免 Web 停止后丢失后续操作指引。
 
 它会停掉 DSH Web、安装固定 release、可选安装语音、在后台重启 DSH Web、启用网关、开 Quick Tunnel，
 并打开配对二维码页。DSH Web 重启期间聊天界面会消失；重启后原会话仍在列表里，重新打开即可。
