@@ -6,6 +6,11 @@ source of truth for the combination we actually tested.
 
 The machine-readable copy is [`compatibility.json`](../compatibility.json). Update both together.
 
+`v0.1.0-alpha.2` distributes a GitHub Actions APK with Android version code 2 and the same app/protocol version.
+Its exact source commit and signing certificate are recorded in the release's `build-info.json`. The real-device
+entry below describes the earlier EAS preview; it is not a claim that the new CI-produced APK has been tested
+on a phone. The new build needs the installation → pairing → conversation → voice → return-home journey.
+
 ## Verified combination
 
 | App | Build | Protocol | Gateway plugin | DSH | Platform | Verified |
