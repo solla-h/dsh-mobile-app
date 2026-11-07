@@ -86,6 +86,11 @@ export class GatewayClient {
     return this.lastState;
   }
 
+  /** 能否写入当前连接；暂时的 error 提示不一定代表连接已经关闭。 */
+  get canSend(): boolean {
+    return this.socket?.readyState === 1;
+  }
+
   onFrame(listener: FrameListener): () => void {
     this.frameListeners.add(listener);
     return () => this.frameListeners.delete(listener);
@@ -119,7 +124,7 @@ export class GatewayClient {
 
   send(frame: ClientFrame): boolean {
     const socket = this.socket;
-    if (!socket || socket.readyState !== 1) return false;
+    if (!socket || !this.canSend) return false;
     try {
       socket.send(JSON.stringify(frame));
       return true;

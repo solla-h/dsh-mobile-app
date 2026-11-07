@@ -1156,8 +1156,13 @@ export function SessionScreen({
           current.map((item) => (item.id === localId ? { ...item, state } : item)),
         );
       },
+      client.state === 'ready' || (client.state === 'error' && client.canSend),
     );
     uploaderRef.current = uploader;
+    const offUploadState = client.onState((state) => {
+      if (state === 'ready') uploader.setConnected(true);
+      else if (!client.canSend) uploader.setConnected(false);
+    });
     requestFirstScreen();
     if (canPickPresetRef.current) {
       // 预设目录全局一份，会话级状态每次进来都要重查（推送没有回放）。
@@ -1168,6 +1173,7 @@ export function SessionScreen({
       off();
       downloader.dispose();
       if (downloaderRef.current === downloader) downloaderRef.current = null;
+      offUploadState();
       uploader.dispose();
       if (uploaderRef.current === uploader) uploaderRef.current = null;
       client.send({ type: 'unsubscribe' });
@@ -1530,12 +1536,14 @@ export function SessionScreen({
     [addPicked],
   );
 
-  /** 选一个普通文件，选中就开始传；传完才允许发送。 */
+  /** 选中文件后保留在当前会话，连接就绪时上传；传完才允许发送。 */
   const pickFiles = useCallback(() => {
+    const uploader = uploaderRef.current;
+    if (!uploader) return;
     void (async () => {
       try {
         const result = await File.pickFileAsync();
-        if (result.canceled || !result.result) return;
+        if (result.canceled || !result.result || uploaderRef.current !== uploader) return;
         const file = result.result;
         const id = randomUUID();
         setPickedFiles((current) => [
@@ -1545,15 +1553,20 @@ export function SessionScreen({
             name: file.name || '文件',
             size: typeof file.size === 'number' ? file.size : 0,
             file,
-            state: { status: 'hashing', progress: 0 },
+            state: { status: 'waiting' },
           },
         ]);
-        void uploaderRef.current?.upload(id, file);
+        void uploader.upload(id, file);
       } catch (error) {
         setError(error instanceof Error ? error.message : '选择文件失败');
       }
     })();
   }, []);
+
+  const retryPickedFile = useCallback((id: string) => {
+    const item = pickedFiles.find((entry) => entry.id === id);
+    if (item) void uploaderRef.current?.upload(id, item.file);
+  }, [pickedFiles]);
 
   const removePickedFile = useCallback((id: string) => {
     uploaderRef.current?.cancel(id);
@@ -1749,9 +1762,7 @@ export function SessionScreen({
   const readyFiles = pickedFiles.filter(
     (item) => item.state.status === 'done' && item.state.receiptId,
   );
-  const uploadingFiles = pickedFiles.some(
-    (item) => item.state.status === 'hashing' || item.state.status === 'uploading',
-  );
+  const hasUnreadyFiles = readyFiles.length !== pickedFiles.length;
   // 淡绿光晕缓慢呼吸（Native 驱动，轻而不闪）
   useEffect(() => {
     if (!recording) {
@@ -1823,7 +1834,7 @@ export function SessionScreen({
     }),
   );
 
-  const canSend = !uploadingFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
+  const canSend = !hasUnreadyFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
 
   /**
    * APPROVAL-2 停止键合一：运行中且输入框全空（无文字/图片/待发文件，也不在
@@ -1854,6 +1865,11 @@ export function SessionScreen({
       setDraft('');
       return;
     }
+    // 语音转写也会调用这里，不能只靠按钮禁用来防止失败附件被清空。
+    if (hasUnreadyFiles) {
+      setError('附件尚未上传完成，请等待连接恢复，或重试、移除失败附件');
+      return;
+    }
     const text = [quote ? formatQuote(quote) : '', raw.trim()].filter(Boolean).join('\n\n');
     const images = picked;
     const files = readyFiles;
@@ -1876,8 +1892,10 @@ export function SessionScreen({
     });
     if (sent) {
       tapFeedback();
+      setError(null);
       setDraft('');
       setPicked([]);
+      for (const item of files) uploaderRef.current?.cancel(item.id);
       setPickedFiles([]);
       setQuote(null);
       // 帧已经写进 socket，但「写进去」不等于「收到了」：进发件箱等 `sent` 回执，
@@ -1931,7 +1949,7 @@ export function SessionScreen({
       setQuote(null);
       setError(null);
     }
-  }, [client, editingQueue, gatewayId, picked, quote, readyFiles, running, sendMode, session.sessionId]);
+  }, [client, editingQueue, gatewayId, hasUnreadyFiles, picked, quote, readyFiles, running, sendMode, session.sessionId]);
 
   /** 输入框那条路径：发草稿。语音那条走 sendMessage 直接发转写结果。 */
   const send = useCallback(() => sendMessage(draft), [draft, sendMessage]);
@@ -2797,13 +2815,15 @@ export function SessionScreen({
               {pickedFiles.map((item) => {
                 const state = item.state;
                 const label =
-                  state.status === 'hashing'
-                    ? '校验中'
-                    : state.status === 'uploading'
-                      ? `${Math.round((state.progress ?? 0) * 100)}%`
-                      : state.status === 'done'
-                        ? formatBytes(item.size)
-                        : state.message ?? '上传失败';
+                  state.status === 'waiting'
+                    ? '等待连接后上传'
+                    : state.status === 'hashing'
+                      ? '校验中'
+                      : state.status === 'uploading'
+                        ? `${Math.round((state.progress ?? 0) * 100)}%`
+                        : state.status === 'done'
+                          ? formatBytes(item.size)
+                          : state.message ?? '上传失败';
                 return (
                   <View
                     key={item.id}
@@ -2820,6 +2840,16 @@ export function SessionScreen({
                     >
                       {label}
                     </Text>
+                    {state.status === 'error' ? (
+                      <Pressable
+                        hitSlop={8}
+                        onPress={() => retryPickedFile(item.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`重试上传 ${item.name}`}
+                      >
+                        <Text style={styles.fileChipState}>重试</Text>
+                      </Pressable>
+                    ) : null}
                     <Pressable
                       hitSlop={8}
                       onPress={() => removePickedFile(item.id)}
@@ -3538,6 +3568,7 @@ function makeStyles(t: Palette) {
   },
   fileChip: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
     maxWidth: '100%',

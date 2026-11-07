@@ -55,6 +55,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 7,
@@ -62,12 +64,14 @@ const styles = StyleSheet.create({
   },
   kicker: {
     ...TYPE.mono,
+    flexShrink: 1,
     fontFamily: MONO,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   badge: {
+    maxWidth: '100%',
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 5,
