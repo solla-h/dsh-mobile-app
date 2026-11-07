@@ -17,7 +17,7 @@ import type { ClientFrame } from '../protocol/types';
  */
 
 export interface UploadState {
-  status: 'hashing' | 'uploading' | 'done' | 'error';
+  status: 'waiting' | 'hashing' | 'uploading' | 'done' | 'error';
   /** 0..1 */
   progress?: number;
   message?: string;
@@ -66,16 +66,53 @@ export function decodedBytesOf(slice: string): number {
   return base64DecodedBytes(slice);
 }
 
+interface Upload {
+  file: File;
+  state: UploadState;
+  uploadId?: string;
+}
+
 export class FileUploader {
   private waiters = new Map<string, Waiter>();
-  private cancelled = new Set<string>();
+  private uploads = new Map<string, Upload>();
+  private connectionVersion = 0;
   private disposed = false;
 
   constructor(
     private readonly sessionId: string,
     private readonly send: (frame: ClientFrame) => boolean,
     private readonly onState: (localId: string, state: UploadState) => void,
+    private connected = true,
   ) {}
+
+  /** 连接上的上传/收据不能跨重连复用；保留本地 File，ready 后从 open 重新上传。 */
+  setConnected(connected: boolean): void {
+    if (this.disposed || connected === this.connected) return;
+    this.connected = connected;
+    if (connected) {
+      for (const [id, upload] of this.uploads) {
+        if (upload.state.status === 'waiting') void this.upload(id, upload.file);
+      }
+      return;
+    }
+    this.connectionVersion += 1;
+    for (const [id, upload] of this.uploads) {
+      if (upload.state.status === 'error') continue;
+      const state: UploadState = { status: 'waiting' };
+      // 换掉对象身份，让旧连接的 digest/base64/回包完成后不能覆盖新状态。
+      this.uploads.set(id, { file: upload.file, state });
+      this.onState(id, state);
+    }
+    this.rejectWaiters('连接已断开');
+  }
+
+  private rejectWaiters(message: string): void {
+    for (const waiter of this.waiters.values()) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error(message));
+    }
+    this.waiters.clear();
+  }
 
   /** 返回 true 表示这帧是上传相关的，别再往下传。 */
   handleFrame(frame: { kind?: string; [key: string]: unknown }): boolean {
@@ -113,6 +150,8 @@ export class FileUploader {
       waiter.reject(error);
       return;
     }
+    // 带 id 的迟到错误属于旧请求，不能误伤另一份正在上传的文件。
+    if (key) return;
     // 错误帧常常只带 requestType、不带 id：这时按「最早的那个在途请求」认领，
     // 别把其他文件的上传也一起打断。
     const first = this.waiters.entries().next();
@@ -147,26 +186,33 @@ export class FileUploader {
   }
 
   async upload(localId: string, file: File): Promise<void> {
-    const name = file.name || 'file';
-    const size = typeof file.size === 'number' ? file.size : null;
-    if (size === null || size <= 0) {
-      this.onState(localId, { status: 'error', message: '读不到文件大小' });
-      return;
-    }
-    if (size > LOCAL_MAX_BYTES) {
-      this.onState(localId, {
-        status: 'error',
-        message: `超过 ${Math.floor(LOCAL_MAX_BYTES / 1024 / 1024)} MB，手机上先压缩或拆分`,
-      });
+    if (this.disposed) return;
+    const previous = this.uploads.get(localId);
+    if (previous && !['waiting', 'error'].includes(previous.state.status)) return;
+    const upload: Upload = { file, state: { status: 'waiting' } };
+    const connectionVersion = this.connectionVersion;
+    this.uploads.set(localId, upload);
+    const active = () => !this.disposed && this.connected && this.uploads.get(localId) === upload;
+    const update = (state: UploadState) => {
+      upload.state = state;
+      this.onState(localId, state);
+    };
+    if (!this.connected) {
+      update({ status: 'waiting' });
       return;
     }
 
     let uploadId = '';
-    let sha256 = '';
     try {
-      this.onState(localId, { status: 'hashing', progress: 0 });
-      sha256 = await file.digest('SHA-256');
-      if (this.disposed || this.cancelled.has(localId)) return;
+      const name = file.name || 'file';
+      const size = typeof file.size === 'number' ? file.size : null;
+      if (size === null || size <= 0) throw new Error('读不到文件大小');
+      if (size > LOCAL_MAX_BYTES) {
+        throw new Error(`超过 ${Math.floor(LOCAL_MAX_BYTES / 1024 / 1024)} MB，手机上先压缩或拆分`);
+      }
+      update({ status: 'hashing', progress: 0 });
+      const sha256 = await file.digest('SHA-256');
+      if (!active()) return;
 
       const requestId = randomUUID();
       const opened = await this.request(
@@ -175,26 +221,28 @@ export class FileUploader {
         30_000,
       );
       uploadId = typeof opened.uploadId === 'string' ? opened.uploadId : '';
+      if (!active()) {
+        // open 回包之前文件已移除：只清理原连接，不能把旧 uploadId 发到新连接。
+        if (uploadId && this.connected && connectionVersion === this.connectionVersion) {
+          this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
+        }
+        return;
+      }
       if (!uploadId) throw new Error('网关没有返回 uploadId');
+      upload.uploadId = uploadId;
       const chunkBytes =
         typeof opened.chunkBytes === 'number' && opened.chunkBytes > 0 ? opened.chunkBytes : 256 * 1024;
 
       // 整份读成 base64：移动端附件通常只有几 MB，比在 JS 里逐块编码简单可靠。
       const base64 = await file.base64();
-      if (this.disposed || this.cancelled.has(localId)) {
-        this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
-        return;
-      }
+      if (!active()) return;
 
       // chunkBytes 不一定是 3 的倍数，按 4 字符对齐取整，保证每块都是规范 base64。
       const charsPerChunk = chunkChars(chunkBytes);
       let chars = 0;
       let sentBytes = 0;
       while (chars < base64.length) {
-        if (this.disposed || this.cancelled.has(localId)) {
-          this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
-          return;
-        }
+        if (!active()) return;
         const slice = base64.slice(chars, chars + charsPerChunk);
         // 网关按 requestId 回帧（错误帧也带它），所以 waiter 必须用 requestId 做键；
         // uploadId 只在帧里带上，别拿它当键，否则每片都要等满超时。
@@ -204,13 +252,14 @@ export class FileUploader {
           { type: 'file-upload-chunk', requestId: chunkRequestId, uploadId, offset: sentBytes, data: slice },
           30_000,
         );
+        if (!active()) return;
         const nextOffset = accepted.nextOffset;
         if (typeof nextOffset !== 'number') throw new Error('网关没有返回 nextOffset');
         chars += slice.length;
         // 末片带 '=' 填充，解码字节数比 chars/4*3 少 1~2，必须按真实字节累加。
         sentBytes += base64DecodedBytes(slice);
         if (nextOffset !== sentBytes) throw new Error('分片偏移对不上，已中断');
-        this.onState(localId, {
+        update({
           status: 'uploading',
           progress: Math.min(1, sentBytes / size),
         });
@@ -222,29 +271,30 @@ export class FileUploader {
         { type: 'file-upload-finish', requestId: finishRequestId, uploadId },
         120_000,
       );
+      if (!active()) return;
       const receiptId = typeof finished.receiptId === 'string' ? finished.receiptId : '';
       if (!receiptId) throw new Error('网关没有返回 receiptId');
-      this.onState(localId, { status: 'done', progress: 1, receiptId });
+      update({ status: 'done', progress: 1, receiptId });
     } catch (error) {
+      if (!active()) return;
       if (uploadId) this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
-      if (this.disposed) return;
-      this.onState(localId, {
-        status: 'error',
-        message: error instanceof Error ? error.message : '上传失败',
-      });
+      const message = error instanceof Error ? error.message : '上传失败';
+      update(message === '连接已断开' ? { status: 'waiting' } : { status: 'error', message });
     }
   }
 
   cancel(localId: string): void {
-    this.cancelled.add(localId);
+    const upload = this.uploads.get(localId);
+    this.uploads.delete(localId);
+    if (this.connected && upload?.uploadId &&
+        (upload.state.status === 'hashing' || upload.state.status === 'uploading')) {
+      this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId: upload.uploadId });
+    }
   }
 
   dispose(): void {
     this.disposed = true;
-    for (const [key, waiter] of this.waiters) {
-      this.waiters.delete(key);
-      clearTimeout(waiter.timer);
-      waiter.reject(new Error('已离开会话'));
-    }
+    for (const id of this.uploads.keys()) this.cancel(id);
+    this.rejectWaiters('已离开会话');
   }
 }

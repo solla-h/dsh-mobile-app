@@ -110,6 +110,10 @@ export class FakeGatewayClient {
     return this.currentState;
   }
 
+  get canSend(): boolean {
+    return this.accepting;
+  }
+
   onFrame(listener: FrameListener): () => void {
     this.frameListeners.add(listener);
     return () => {

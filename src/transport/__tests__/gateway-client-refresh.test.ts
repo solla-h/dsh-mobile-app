@@ -58,6 +58,25 @@ afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
 });
 
+it('可写连接的临时 error 与真正断线可区分', async () => {
+  const client = new GatewayClient();
+  try {
+    client.connect(options());
+    const socket = FakeSocket.instances[0];
+    socket.readyState = 1;
+    socket.onopen?.();
+    socket.onmessage?.({ data: JSON.stringify({ kind: 'hello', authenticated: true }) });
+    socket.onerror?.();
+    expect(client.state).toBe('error');
+    expect(client.canSend).toBe(true);
+    expect(client.send({ type: 'ping' })).toBe(true);
+    await fail(socket);
+    expect(client.state).toBe('error');
+    expect(client.canSend).toBe(false);
+    expect(client.send({ type: 'ping' })).toBe(false);
+  } finally { client.disconnect(); }
+});
+
 describe('GatewayClient 地址簿刷新', () => {
   it('第 2 次连续失败才触发；拿到新 URL 立刻重连并清零退避', async () => {
     const refreshUrl = jest.fn().mockResolvedValue('wss://new.example.com/ws/mobile');

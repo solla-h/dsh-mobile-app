@@ -11,8 +11,13 @@ with Android version code 4 and the same app/protocol version. Its signed APK pa
 Android emulator journey; independently downloaded checksums, cryptographic signature, package identity and
 private-network Manifest policy were verified on 2026-11-07. Its source commit and signing certificate are in
 `build-info.json`. See [release validation status](OPEN-SOURCE-READINESS.md) for the run and limits.
-The real-device entry below describes the earlier EAS preview; it does not claim that this APK has been tested
-on a phone. Physical installation/upgrade, voice, camera, accessibility and real-network journeys remain pending.
+A physical Android 16 follow-up on 2026-11-07 verified this APK's in-place upgrade, retained pairing/history/draft,
+real text replies, background recovery, network switching, persisted offline sends and cached offline startup.
+The [validation record](OPEN-SOURCE-READINESS.md#alpha4-实体设备复测2026-11-07) also records failed file sending,
+an unresolved send-button touch issue, partial large-text/TalkBack checks, and the remaining voice/photo limits.
+The verified-combination table below retains the earlier EAS preview record; its successful voice test does not
+transfer to this APK. The follow-up did not redeploy or upgrade the host, change the recommended versions, or
+establish an independent audit of the running host process.
 
 ## Maintained gateway source
 
