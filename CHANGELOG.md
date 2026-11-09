@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-11-09
+
 ### Added
 
 - Maintained gateway fork policy and Agent entry points, with exact GitHub-tag installation and upstream synchronization rules.
@@ -23,6 +25,7 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 - Complete the first-time host setup guides with pinned tool prerequisites, Windows working-directory guidance and explicit verification limits.
+- Increase Android version code to 5 for the `v0.1.0-alpha.5` APK. Physical-device re-verification of this build is pending; earlier device evidence stays attached to its original build.
 
 ## [0.1.0-alpha.4] - 2026-11-07
 

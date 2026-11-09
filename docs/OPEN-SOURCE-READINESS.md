@@ -7,13 +7,13 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 
 ## 已发布版本
 
-[`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4)
-提供签名 APK、`SHA256SUMS` 和 `build-info.json`。
-[发布运行](https://github.com/solla-h/dsh-mobile-app/actions/runs/42261625299)
-完成原生构建、签名、签名产物的完整模拟器旅程和附件上传。发布后独立下载的文件哈希、APK 密码学签名、
-包名与版本校验通过，Android versionCode 为 4，包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
+[`v0.1.0-alpha.5`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.5)
+是当前版本，提供签名 APK、`SHA256SUMS` 和 `build-info.json`。它由[发布流水线](https://github.com/solla-h/dsh-mobile-app/actions/workflows/android-release.yml)
+构建：原生构建、签名、签名产物的完整模拟器旅程、附件上传，随后对发布产物独立下载校验文件哈希、APK 密码学签名、
+包名与版本；任一环节失败都不会发布。Android versionCode 为 5，包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
+本版本尚未做实体设备复验，其真机结论待补；下方 `alpha.4` 的真机记录属于更早构建。
 
-`alpha.4` 修复了 `alpha.3` 阻止私有网络 `ws://` 连接的 Android 配置。已检查下载 APK 的 Manifest，
+`alpha.4` 曾在 `alpha.3` 之后修复阻止私有网络 `ws://` 连接的 Android 配置。已检查下载 APK 的 Manifest，
 并由 Android 模拟器通过实际原生 WebSocket 完成旅程；客户端仍拒绝公网明文网关地址。
 上述私有网络 `ws://` 策略结论属于源码/产物/模拟器确认；下文的真机旅程使用既有配对，
 不据此声称所有网关地址类型都已在实体设备上验证。
@@ -31,8 +31,8 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 | 代码组织 | 配对、列表、重命名和样式已从 `App.tsx` 提取；连接、导航和全局状态继续集中协调 |
 | UI 集成测试 | 真实 App 的配对→列表→会话→收发→返回，以及离线冷启动/草稿保留旅程 |
 | 无障碍基础 | 主要操作名称/角色/状态、会话自定义操作、转盘调整动作；文字和相机覆盖层对比度回归检查 |
-| 原生 Android 旅程 | [PR 测试 APK](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)与[正式签名 APK](https://github.com/solla-h/dsh-mobile-app/actions/runs/42261625299)均已通过：配对、列表/历史、收发、返回、重启后保留配对 |
-| 固定版本安装 | [Linux / Windows 安装 CI](https://github.com/solla-h/dsh-mobile-app/actions/runs/42273169756)通过：实际安装固定 DSH、网关，校验来源与版本，再次执行安装；不覆盖 Web 模型配置、隧道、语音或手机连接 |
+| 原生 Android 旅程 | [Android 旅程工作流](https://github.com/solla-h/dsh-mobile-app/actions/workflows/android-journey.yml)同时对 PR 测试 APK 与正式签名 APK 运行并已通过：配对、列表/历史、收发、返回、重启后保留配对 |
+| 固定版本安装 | [Linux / Windows 安装 CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/gateway-install.yml)通过：实际安装固定 DSH、网关，校验来源与版本，再次执行安装；不覆盖 Web 模型配置、隧道、语音或手机连接 |
 | 网关维护 | [维护规范](GATEWAY-MAINTENANCE.md)、双仓库 Agent 入口和网关主分支保护已落实；[网关源码与打包安装 CI](https://github.com/solla-h/dsh-plugin-mobile-gateway/actions/runs/42273457988)通过（可选 libdatachannel 互操作检查跳过） |
 | 官网 | [fatwhale.app](https://fatwhale.app) 的中英文页面可访问，下载与安装文档入口已核对；由[独立仓库](https://github.com/solla-h/dsh-mobile-site)维护，APK 发布不依赖网站部署 |
 | 文档 | 当前使用、安装、兼容、开发、设计与发布说明；原始讨论、状态日记和过期设计草稿不作为当前文档保留 |

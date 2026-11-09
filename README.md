@@ -11,8 +11,9 @@
 DSH Mobile 是第三方、开源的 **DeepSeek Harness（DSH）** Android 客户端，连接你自己运行的 DSH 宿主。
 Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在等我、我接下来要说什么」。
 
-> **Android 公开 alpha。** [`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4)
-> 已发布，构建、签名、本地合成网关的完整模拟器旅程和实际下载校验通过；2026-11-07 已在实体 Android 16 上完成真机旅程（含已记录的失败项），详见下方验证表。
+> **Android 公开 alpha。** [`v0.1.0-alpha.5`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.5)
+> 由发布流水线构建并签名；签名 APK 通过本地合成网关的完整模拟器旅程与独立下载/签名校验，任一步失败都不会发布。
+> 本版本真机复验待完成：2026-11-07 的实体 Android 16 旅程来自更早的构建（含已记录的失败项），结论不自动转移到 alpha.5，详见下方验证表。
 > iOS 暂缓且未验证，没有应用商店版本。本项目与 DeepSeek、Expo 官方无关。
 
 > [!IMPORTANT]
@@ -37,7 +38,7 @@ Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在�
 | --- | --- |
 | <img src="docs/images/session-list.png" width="280" alt="按工作区分组的会话列表，使用合成演示数据"> | <img src="docs/images/session-reply.png" width="280" alt="会话中发送消息并收到假网关回复，键盘保持打开"> |
 
-截图来自[已通过的 Android 模拟器旅程](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)，
+截图来自[已通过的 Android 模拟器旅程](https://github.com/solla-h/dsh-mobile-app/actions/workflows/android-journey.yml)，
 使用本地假网关与合成会话数据，不包含真实账号或配对凭据。App 界面目前以中文为主。
 
 ## 快速开始
@@ -85,8 +86,8 @@ node scripts/setup-gateway.mjs check
 
 ### 2. 下载并安装 APK
 
-打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，从 `v0.1.0-alpha.4` 的 **Assets**
-下载 [`dsh-mobile-v0.1.0-alpha.4.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.4/dsh-mobile-v0.1.0-alpha.4.apk)。
+打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，从 `v0.1.0-alpha.5` 的 **Assets**
+下载 [`dsh-mobile-v0.1.0-alpha.5.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.5/dsh-mobile-v0.1.0-alpha.5.apk)。
 允许浏览器或文件管理器安装；不需要 Expo 账号或开发服务器。同页的 `SHA256SUMS` 与 `build-info.json`
 用于校验下载和签名，步骤见[发布手册](docs/RELEASING.md)。升级时覆盖安装，保留配对记录和草稿，
 不要先卸载。
@@ -111,7 +112,7 @@ node scripts/setup-gateway.mjs pair --open
 | --- | --- |
 | APK 声明的安装下限 | Android 7.0 / API 24；不代表所有版本和设备均已实测 |
 | Android 16 真机，较早的 preview 构建 | 已验证：配对、会话列表、文字回复、按住说话 |
-| `v0.1.0-alpha.4` APK | CI、签名 APK 的模拟器旅程及独立下载/签名校验通过；2026-11-07 完成实体 Android 16 真机旅程，通过项与失败项见[验证状态](docs/OPEN-SOURCE-READINESS.md) |
+| `v0.1.0-alpha.5` APK | 经发布流水线（CI、签名 APK 的模拟器旅程、独立下载/签名校验）通过后发布；alpha.5 真机复验待完成，2026-11-07 的实体 Android 16 旅程属于更早构建，通过项与失败项见[验证状态](docs/OPEN-SOURCE-READINESS.md) |
 | iOS | 暂缓，尚未验证 |
 | 应用商店 | 无；当前需要侧载 APK 或开发构建 |
 

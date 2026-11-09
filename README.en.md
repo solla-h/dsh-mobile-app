@@ -12,9 +12,11 @@ DSH Mobile is a third-party, open-source Android client for **DeepSeek Harness (
 DSH host. The agent runs on the host; the phone keeps three things at hand: what is running, what is waiting
 for me, and what I want to say next.
 
-> **Public Android alpha.** [`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4)
-> is published. Build, signature, the complete local-fixture emulator journey and independent downloaded-file checks passed;
-> a physical Android 16 journey was completed on 2026-11-07, including the failures recorded there. See the verification table below.
+> **Public Android alpha.** [`v0.1.0-alpha.5`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.5)
+> is published. It is built and signed by the release pipeline; the signed APK passes the complete local-fixture emulator
+> journey plus independent download/signature checks, and nothing is published if any stage fails.
+> Physical-device re-verification is pending: the 2026-11-07 Android 16 journey was on an earlier build (including the
+> failures recorded there) and does not transfer to alpha.5. See the verification table below.
 > iOS is deferred and unverified; there is no app-store release. This project is not affiliated with DeepSeek or Expo.
 
 > [!IMPORTANT]
@@ -42,7 +44,7 @@ A phone does not need a shrunken desktop page. It needs three actions:
 | --- | --- |
 | <img src="docs/images/session-list.png" width="280" alt="Sessions grouped by workspace, using synthetic fixture data"> | <img src="docs/images/session-reply.png" width="280" alt="A sent message and the fixture gateway's reply, with the keyboard open"> |
 
-Captured during the [passing Android emulator journey](https://github.com/solla-h/dsh-mobile-app/actions/runs/42258377358)
+Captured during the [passing Android emulator journey](https://github.com/solla-h/dsh-mobile-app/actions/workflows/android-journey.yml)
 using a local fake gateway and synthetic conversations. No real account or pairing credentials are shown.
 The app interface is currently primarily Chinese.
 
@@ -95,8 +97,8 @@ the guide. Voice is optional: the host needs the matching voice plugin and a pre
 ### 2. Download and install the APK
 
 Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases) and download
-[`dsh-mobile-v0.1.0-alpha.4.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.4/dsh-mobile-v0.1.0-alpha.4.apk)
-from the **Assets** of `v0.1.0-alpha.4`. Allow your browser or file manager to install it; no Expo account or
+[`dsh-mobile-v0.1.0-alpha.5.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.5/dsh-mobile-v0.1.0-alpha.5.apk)
+from the **Assets** of `v0.1.0-alpha.5`. Allow your browser or file manager to install it; no Expo account or
 development server is needed. The same release provides `SHA256SUMS` and `build-info.json` for download and
 signature verification; see the [release runbook](docs/RELEASING.md). To update, install over the existing app
 to keep pairings and drafts; do not uninstall first.
@@ -123,7 +125,7 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 | --- | --- |
 | APK-declared installation minimum | Android 7.0 / API 24; this does not establish coverage of every OS version or device |
 | Android 16 device, earlier preview build | Verified: pairing, session list, text reply, hold-to-talk voice |
-| `v0.1.0-alpha.4` APK | CI, signed-APK emulator journey and independent download/signature checks passed; a physical Android 16 journey was completed on 2026-11-07 — see [validation status](docs/OPEN-SOURCE-READINESS.md) for what passed and what did not |
+| `v0.1.0-alpha.5` APK | Published only after the release pipeline (CI, signed-APK emulator journey, independent download/signature checks) passes. Physical-device re-verification of alpha.5 is pending; the 2026-11-07 Android 16 journey belongs to an earlier build — see [validation status](docs/OPEN-SOURCE-READINESS.md) for what passed and what did not |
 | iOS | Deferred; not verified |
 | App stores | None; sideload the APK or use a development build |
 

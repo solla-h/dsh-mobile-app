@@ -6,18 +6,22 @@ source of truth for the combination we actually tested.
 
 The machine-readable copy is [`compatibility.json`](../compatibility.json). Update both together.
 
-[`v0.1.0-alpha.4`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.4) provides a GitHub Actions APK
-with Android version code 4 and the same app/protocol version. Its signed APK passed the complete local-fixture
-Android emulator journey; independently downloaded checksums, cryptographic signature, package identity and
-private-network Manifest policy were verified on 2026-11-07. Its source commit and signing certificate are in
-`build-info.json`. See [release validation status](OPEN-SOURCE-READINESS.md) for the run and limits.
-A physical Android 16 follow-up on 2026-11-07 verified this APK's in-place upgrade, retained pairing/history/draft,
-real text replies, background recovery, network switching, persisted offline sends and cached offline startup.
-The [validation record](OPEN-SOURCE-READINESS.md#alpha4-实体设备复测2026-11-07) also records failed file sending,
-an unresolved send-button touch issue, partial large-text/TalkBack checks, and the remaining voice/photo limits.
-The verified-combination table below retains the earlier EAS preview record; its successful voice test does not
-transfer to this APK. The follow-up did not redeploy or upgrade the host, change the recommended versions, or
-establish an independent audit of the running host process.
+[`v0.1.0-alpha.5`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.5) is the current GitHub Actions APK,
+with Android version code 5 and the same app/protocol version. It is built and signed by the release pipeline: the signed
+APK passes the complete local-fixture Android emulator journey, and independent download checks of the checksum,
+cryptographic signature, package identity and private-network Manifest policy are part of the same pipeline; nothing is
+published if any stage fails. Its source commit and signing certificate are in `build-info.json`.
+See [release validation status](OPEN-SOURCE-READINESS.md) for the pipeline and limits. Physical-device re-verification of
+alpha.5 is pending.
+
+The earlier `v0.1.0-alpha.4` build passed the same automated pipeline, and a physical Android 16 follow-up on 2026-11-07
+verified that build's in-place upgrade, retained pairing/history/draft, real text replies, background recovery, network
+switching, persisted offline sends and cached offline startup. The
+[validation record](OPEN-SOURCE-READINESS.md#alpha4-实体设备复测2026-11-07) also records failed file sending, an unresolved
+send-button touch issue, partial large-text/TalkBack checks, and the remaining voice/photo limits — these belong to that
+build and do not transfer to alpha.5. The verified-combination table below retains the earlier EAS preview record; its
+successful voice test does not transfer to this APK. The follow-up did not redeploy or upgrade the host, change the
+recommended versions, or establish an independent audit of the running host process.
 
 ## Maintained gateway source
 
