@@ -227,3 +227,7 @@ See [AGENTS.md](AGENTS.md) for the repository layout.
 The source code is MIT; see [LICENSE](LICENSE). The Expo template notice and the non-commercial pet assets are
 in [NOTICE](NOTICE). The animated assets in `assets/pet/` are CC BY-NC-SA 4.0 and may not be used for
 commercial purposes.
+
+## Friends
+
+- [LINUX DO](https://linux.do/) — an open, friendly Chinese-speaking developer community.
