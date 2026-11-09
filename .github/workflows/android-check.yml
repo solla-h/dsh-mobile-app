@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
@@ -63,7 +63,7 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
       # Test only: build the emulator ABI. Official release builds still include every ABI.
       # Generated development signing only. Official release credentials are never used in PR jobs.
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-check-${{ github.run_id }}
           path: android/app/build/outputs/apk/release/app-release.apk
