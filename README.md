@@ -205,3 +205,7 @@ node docs/tools/fake-gateway.mjs
 
 源代码使用 MIT，见 [LICENSE](LICENSE)。Expo 模板声明与宠物素材的非商业许可写在 [NOTICE](NOTICE)；
 `assets/pet/` 下的动画素材为 CC BY-NC-SA 4.0，不得用于商业用途。
+
+## 友情链接
+
+- [LINUX DO](https://linux.do/) —— 开放、友善的中文技术社区。
