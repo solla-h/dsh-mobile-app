@@ -63,7 +63,7 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
       # Test only: build the emulator ABI. Official release builds still include every ABI.
       # Generated development signing only. Official release credentials are never used in PR jobs.
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-check-${{ github.run_id }}
           path: android/app/build/outputs/apk/release/app-release.apk
