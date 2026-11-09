@@ -1,0 +1,193 @@
+name: Android release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag on master (for example v0.1.0-alpha.3)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CI: '1'
+  EXPO_NO_TELEMETRY: '1'
+
+jobs:
+  prepare:
+    if: github.repository == 'solla-h/dsh-mobile-app' && (github.event_name == 'push' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+      version_code: ${{ steps.release.outputs.version_code }}
+      apk_name: ${{ steps.release.outputs.apk_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve and validate release source
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]] || { printf 'Invalid release tag\n' >&2; exit 1; }
+          commit=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$commit" origin/master
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --slurp)
+          existing=$(jq --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)][0] // null' <<< "$releases")
+          if [[ "$existing" != null ]]; then
+            [[ $(jq -r .draft <<< "$existing") == true && $(jq '.assets | length' <<< "$existing") == 0 ]] || { printf 'Release already published or contains assets; refusing rebuild\n' >&2; exit 1; }
+          fi
+          git checkout --detach "$commit"
+          node scripts/release-metadata.mjs "$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          next_code=$(jq -r .versionCode "$RUNNER_TEMP/release.json")
+          while IFS= read -r previous; do
+            [[ "$previous" == "$RELEASE_TAG" ]] && continue
+            previous_code=$(git show "$previous:app.json" | jq -r '.expo.android.versionCode // 1')
+            (( next_code > previous_code )) || { printf 'Increase android.versionCode beyond previous tags\n' >&2; exit 1; }
+          done < <(git tag --list 'v*')
+          printf 'tag=%s\nsha=%s\nversion=%s\nversion_code=%s\napk_name=%s\n' \
+            "$RELEASE_TAG" "$commit" \
+            "$(jq -r .version "$RUNNER_TEMP/release.json")" \
+            "$(jq -r .versionCode "$RUNNER_TEMP/release.json")" \
+            "$(jq -r .apkName "$RUNNER_TEMP/release.json")" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.sha }}
+
+  build:
+    needs: [prepare, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    environment: android-release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+      - name: Build release APK on the GitHub runner
+        working-directory: android
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: >-
+          ./gradlew app:assembleRelease --no-daemon --max-workers=2
+          -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
+      - name: Sign and verify APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+          APK_NAME: ${{ needs.prepare.outputs.apk_name }}
+        run: bash scripts/sign-android-release.sh
+      - name: Bundle license files with the release assets
+        run: cp LICENSE NOTICE dist/
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: android-${{ needs.prepare.outputs.tag }}
+          path: |
+            dist/*.apk
+            dist/SHA256SUMS
+            dist/build-info.json
+            dist/LICENSE
+            dist/NOTICE
+          if-no-files-found: error
+          retention-days: 7
+
+  journey:
+    needs: [prepare, build]
+    uses: ./.github/workflows/android-journey.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.sha }}
+      artifact_name: android-${{ needs.prepare.outputs.tag }}
+
+  publish:
+    needs: [prepare, build, journey]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: android-${{ needs.prepare.outputs.tag }}
+          path: dist
+      - name: Publish verified assets through a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          APK_NAME: ${{ needs.prepare.outputs.apk_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum --check SHA256SUMS
+          # A moved tag must never receive an APK built from its old target.
+          current=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+          [[ "$current" == "$RELEASE_SHA" ]] || { printf 'Release tag moved during build\n' >&2; exit 1; }
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --slurp)
+          existing=$(jq --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)][0] // null' <<< "$releases")
+          if [[ "$existing" != null ]]; then
+            [[ $(jq -r .draft <<< "$existing") == true ]] || { printf 'Refusing to replace a published release\n' >&2; exit 1; }
+            [[ $(jq '.assets | length' <<< "$existing") == 0 ]] || { printf 'Draft already has assets; inspect it before retrying\n' >&2; exit 1; }
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "DSH Mobile $RELEASE_TAG" --notes "Android APK build awaiting verification."
+          fi
+          gh release upload "$RELEASE_TAG" "$APK_NAME" SHA256SUMS build-info.json LICENSE NOTICE
+          gh release download "$RELEASE_TAG" --pattern "$APK_NAME" --dir "$RUNNER_TEMP/published"
+          expected=$(sha256sum "$APK_NAME" | cut -d ' ' -f 1)
+          actual=$(sha256sum "$RUNNER_TEMP/published/$APK_NAME" | cut -d ' ' -f 1)
+          [[ "$expected" == "$actual" ]] || { printf 'Uploaded APK checksum mismatch\n' >&2; exit 1; }
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Download **$APK_NAME** from Assets and install it on Android. No Expo account or development server is required.
+
+          Verify the download with SHA256SUMS. build-info.json records the source commit, Android version code and signing certificate fingerprint.
+
+          Built from $RELEASE_SHA by GitHub Actions. APK signature and package metadata verified. An Android emulator passed pairing, send/receive, return and relaunch against a synthetic local gateway. Physical-device installation/upgrade, voice, camera and screen-reader journeys still need verification. iOS is not included.
+
+          Use the exact gateway/DSH combination in compatibility.json. Source code is MIT; bundled pet animations are CC BY-NC-SA 4.0 (non-commercial). See LICENSE and NOTICE in the release assets for the license text and attribution.
+          EOF
+          prerelease=false
+          [[ "$RELEASE_TAG" == *-* ]] && prerelease=true
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease="$prerelease" \
+            --latest=false --notes-file "$RUNNER_TEMP/release-notes.md"

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "app": {
+    "version": "0.1.0",
+    "build": "224d30c6"
+  },
+  "protocol": {
+    "name": "dsh-mobile-v1",
+    "version": 3
+  },
+  "recommended": {
+    "gateway": {
+      "name": "dsh-plugin-mobile-gateway",
+      "version": "0.12.0-rdv.3",
+      "source": "github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3",
+      "install": "dsh plugin --profile web add github:solla-h/dsh-plugin-mobile-gateway#v0.12.0-rdv.3"
+    },
+    "dsh": {
+      "version": "0.2.1-rc.5"
+    },
+    "voice": {
+      "name": "@deepseek-ai/dsh-experimental-voice-input-bundle",
+      "version": "0.2.1-rc.5",
+      "source": "@deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.5",
+      "model": {
+        "origin": "https://hf-mirror.com",
+        "bytes": 241357257
+      }
+    }
+  },
+  "verified": [
+    {
+      "app": "0.1.0",
+      "appBuild": "224d30c6",
+      "gateway": "0.12.0-rdv.3",
+      "dsh": "0.2.1-rc.5",
+      "protocol": 3,
+      "platforms": ["android"],
+      "verifiedAt": "2026-11-05",
+      "notes": "Fork release with rendezvous-v1. Real-device Android regression: pairing, session list, text reply, hold-to-talk voice. iOS and other DSH/gateway versions are not covered by this entry."
+    }
+  ],
+  "policy": {
+    "requireExactMatch": true,
+    "allowLocalCheckout": false,
+    "onMismatch": "stop-and-ask"
+  }
+}

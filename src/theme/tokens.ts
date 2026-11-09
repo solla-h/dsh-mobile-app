@@ -1,0 +1,144 @@
+/**
+ * 漫反射电纸书色板：日间暖石纸色 (paper) / 夜间暖炭电纸灰 (eink_slate)。
+ *
+ * 设计原则见 docs/DESIGN.md。正文对比度由 __tests__/contrast.test.ts 校验，
+ * 在克制的纸张色调中保持文字可读。
+ */
+
+export type Palette = {
+  name: 'paper' | 'eink_slate';
+  bg: {
+    canvas: string;
+    surface: string;
+    subtle: string;
+    elevatedAnswer: string;
+    dockGlass: string;
+  };
+  border: { default: string; subtle: string; activeOrigin: string };
+  text: { primary: string; secondary: string; muted: string };
+  /**
+   * 轨迹页的角色色。对齐 DSH Web 的七类着色（用户蓝 / 助手紫 / 工具琥珀 / 上下文绿），
+   * 但全部压到本调色板的明度区间里（canvas 上 ≥6:1），不引入 Web 那组饱和色。
+   */
+  role: { user: string; assistant: string; tool: string; context: string };
+  action: { primaryBg: string; primaryText: string; secondaryBg: string; secondaryText: string };
+  semantic: {
+    diffAddBg: string;
+    diffAddText: string;
+    /** 在线/进行中的状态点：比 diffAddText 亮一档，6dp 的点也能看出是绿的 */
+    live: string;
+    diffDelBg: string;
+    diffDelText: string;
+    gateAmberBg: string;
+    gateAmberText: string;
+    dangerBg: string;
+    dangerText: string;
+  };
+};
+
+export const PAPER: Palette = {
+  name: 'paper',
+  bg: {
+    canvas: '#F4F2ED',
+    surface: '#EAE7E0',
+    subtle: '#EFECE6',
+    elevatedAnswer: '#FAF8F3',
+    dockGlass: 'rgba(230, 227, 220, 0.95)',
+  },
+  border: { default: '#D8D5CC', subtle: '#DFDCD3', activeOrigin: '#5C5A52' },
+  // muted 必须对每种纸面都 ≥ 4.5:1（原来 #8C8A84 在 surface 上只有 2.8:1）；
+  // 仍比 secondary 浅一档，保留「次要 > 弱化」的层级。回归测试见 theme/__tests__。
+  text: { primary: '#1C1C1A', secondary: '#5C5B57', muted: '#66645E' },
+  role: { user: '#2A5480', assistant: '#5E4478', tool: '#7A4A14', context: '#28563D' },
+  action: {
+    primaryBg: '#2B2B28',
+    primaryText: '#F4F2ED',
+    secondaryBg: '#EAE7E0',
+    secondaryText: '#5C5B57',
+  },
+  semantic: {
+    diffAddBg: '#E1EBE4',
+    diffAddText: '#284B34',
+    live: '#3F7A52',
+    diffDelBg: '#EFE2E2',
+    diffDelText: '#693034',
+    gateAmberBg: '#E6E0D0',
+    gateAmberText: '#5C4E2E',
+    dangerBg: '#EFE2E2',
+    dangerText: '#8A3B40',
+  },
+};
+
+export const EINK_SLATE: Palette = {
+  name: 'eink_slate',
+  bg: {
+    canvas: '#252522',
+    surface: '#2E2E2A',
+    subtle: '#292926',
+    elevatedAnswer: '#31312C',
+    dockGlass: 'rgba(44, 44, 40, 0.95)',
+  },
+  border: { default: '#3E3E39', subtle: '#363632', activeOrigin: '#8C887D' },
+  // 深色纸面同样要求 ≥ 4.5:1：原来的 secondary #9A978E 在 elevatedAnswer 上
+  // 只有 4.48:1，muted #75736B 在 surface 上只有 2.87:1。
+  text: { primary: '#CECBC2', secondary: '#ADA9A0', muted: '#9C9991' },
+  role: { user: '#86ACD4', assistant: '#B49CCB', tool: '#C79E5F', context: '#82B492' },
+  action: {
+    primaryBg: '#C4C1B6',
+    primaryText: '#222220',
+    secondaryBg: '#2E2E2A',
+    secondaryText: '#9A978E',
+  },
+  semantic: {
+    diffAddBg: '#28332B',
+    diffAddText: '#A3BDA9',
+    live: '#9CC4A7',
+    diffDelBg: '#36292A',
+    diffDelText: '#C29B9E',
+    gateAmberBg: '#363228',
+    gateAmberText: '#C8B68E',
+    dangerBg: '#3A2C2C',
+    dangerText: '#C08A8C',
+  },
+};
+
+/**
+ * 扫码页叠在实时相机画面上，底色不可知、也不能跟主题走。
+ * 固定前景 + 固定深色遮罩，保证对纯白/纯黑画面都保持可读对比度。
+ */
+export const LIVE_CAMERA_FG = '#F7F5EF';
+export const LIVE_CAMERA_SCRIM = 'rgba(12, 12, 10, 0.72)';
+
+/** 等宽字体：代码、推理、遥测统一用它，数字开 tabular-nums 防跳动。 */
+export const MONO_FONT = {
+  android: 'monospace',
+  ios: 'Menlo',
+} as const;
+
+/** 排版层级（§4.3）。 */
+export const TYPE = {
+  body: { fontSize: 14, lineHeight: 21.7 }, // 14 / 1.55
+  caption: { fontSize: 12, lineHeight: 17 },
+  mono: { fontSize: 11, lineHeight: 16 }, // 代码行 11 / 1.45
+  pill: { fontSize: 11, lineHeight: 16 },
+  title: { fontSize: 15, lineHeight: 21 },
+} as const;
+
+/** 动效曲线（§5）。RN 的 Animated 只认 tension/friction，这里给换算后的值。 */
+export const MOTION = {
+  /** 折叠：临界过阻尼，零回弹，约 220ms */
+  collapse: { tension: 120, friction: 26 },
+  /** 抽屉展开 */
+  sheet: { tension: 90, friction: 24 },
+  /** 长按充能时长 */
+  holdMs: 500,
+  /** 松手回退 */
+  holdReleaseMs: 120,
+  /** 悔棋窗 */
+  undoMs: 4500,
+  /** 自动跳栈延迟 */
+  autoHopMs: 360,
+} as const;
+
+/** 折叠胶囊固定高度（§2.1 的 34pt）。 */
+export const PILL_HEIGHT = 34;

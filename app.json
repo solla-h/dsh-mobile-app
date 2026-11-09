@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "DSH Mobile",
+    "slug": "dsh-mobile",
+    "version": "0.1.0",
+    "scheme": "dshmobile",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.dshmobile.client"
+    },
+    "android": {
+      "package": "app.dshmobile.client",
+      "versionCode": 4,
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0C0F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "./plugins/withPrivateNetworkTraffic",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "扫描服务器上 dsh-pair 打印的二维码，完成设备配对。",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "从相册选择图片，随消息一起发送给 agent。",
+          "cameraPermission": "拍摄照片，随消息一起发送给 agent。"
+        }
+      ],
+      "expo-sharing",
+      "expo-audio",
+      "expo-image",
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f6a8cddb-a57a-4a0c-9a6b-5a2cd03930b8"
+      }
+    },
+    "owner": "solla-h"
+  }
+}

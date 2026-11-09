@@ -1,0 +1,22 @@
+dsh-mobile-app
+Copyright (c) 2026 solla-h
+
+This project contains code derived from the Expo project template:
+Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+Licensed under the MIT License.
+
+Scaffolding code derived from the template does not extend to the image assets.
+The launcher icon, splash image and favicon under assets/ (icon.png,
+splash-icon.png, favicon.png and android-icon-*.png) are project artwork and are
+not part of the Expo project template or its brand.
+
+The animated pet assets in assets/pet/ are not covered by the MIT license.
+They come from dsh-pet (https://github.com/PC2005-cloud/dsh-pet) and are
+licensed under CC BY-NC-SA 4.0 (Attribution-NonCommercial-ShareAlike 4.0
+International). The license text is at
+https://creativecommons.org/licenses/by-nc-sa/4.0/. They may not be used for
+commercial purposes. See assets/pet/README.md for attribution and processing
+details.
+
+All other original source code in this repository is licensed under the MIT
+License; see LICENSE.

@@ -1,0 +1,3750 @@
+/* eslint-disable react-hooks/refs -- 麦克风的 PanResponder 只能创建一次
+   （依赖一变就重建会把进行中的手势丢掉），它的回调在触摸时才执行；回调里读写 ref 是这套写法的前提，
+   渲染期真正读到的只有不可变的 panHandlers。与 PetStage 同一套理由。 */
+import * as Clipboard from 'expo-clipboard';
+import { randomUUID } from 'expo-crypto';
+import { File } from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  AppState,
+  FlatList,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  PanResponder,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
+
+import {
+  applyRealtime,
+  mergeSnapshot,
+  seqOf,
+  splitThinkTags,
+  type ApprovalRecord,
+  type ChatMessage,
+  type QueuedMessage,
+} from '../protocol/chat';
+import { ApprovalDock } from './dock/ApprovalDock';
+import { ModelPermissionBar } from './session/ModelPermissionBar';
+import { TextSelectionSheet } from './TextSelectionSheet';
+import { useVoiceInput } from './voice/useVoiceInput';
+import { GraceUndo } from './dock/GraceUndo';
+import { TriageSheet } from './dock/TriageSheet';
+import { ContextHairline, StatusPill } from './nav/AmbientContext';
+import { ArcDial } from './nav/ArcDial';
+import { AnswerCard } from './stream/AnswerCard';
+import { groupMessages, type StreamRow } from './stream/group';
+import { ActivityGroup } from './stream/ActivityGroup';
+import { armCollapseAnimation } from './stream/collapse';
+import { ThinkPill } from './stream/ThinkPill';
+import { TrajectoryView } from './stream/TrajectoryView';
+import { ToolGroup } from './stream/ToolGroup';
+import { dirOf, extractToolDiff, isShellTool, parseArgs, toolCommand } from './tool-format';
+import {
+  filterCommands,
+  insertTextOf,
+  mapCommandGroups,
+  mapCommandOptions,
+  type CommandGroup,
+  type CommandItem,
+  type CommandOption,
+} from '../protocol/commands';
+import { imageMediaType } from '../protocol/image';
+import {
+  enqueueApproval,
+  pickDisplayReason,
+  removeApproval,
+} from '../protocol/interactions';
+import type {
+  PendingApproval,
+  PendingQuestion,
+  QuestionAnswer,
+} from '../protocol/interactions';
+import { approvalRisk } from '../protocol/risk';
+import {
+  HISTORY_FORMAT_VERSION,
+  type AttachmentFrame,
+  type CommandsFrame,
+  type CommandExecutedFrame,
+  type CommandOptionsFrame,
+  type CommandSelectedFrame,
+  type HistoryFrame,
+  type ImageLimits,
+  type ServerFrame,
+  type SessionItem,
+  type SessionSnapshotFrame,
+  type SelectAgentPresetFrame,
+  type SessionAgentPresetFrame,
+  type SessionAgentPresetUpdatedFrame,
+  type SessionStatsFrame,
+} from '../protocol/types';
+import {
+  mapImageLimits,
+  mapTurnOutline,
+  readProjectionValues,
+  type TurnOutlineItem,
+} from '../protocol/outline';
+import { mapPresetList, presetName, type PresetList } from '../protocol/presets';
+import { goalRef, mapGoal, mapTodos, type GoalInfo, type TodoItem } from '../protocol/tasks';
+import { FileDownloader } from '../transport/file-download';
+import { FileUploader, type UploadState } from '../transport/file-upload';
+import { loadDraft, saveDraft } from '../storage/drafts';
+import { outbox, type OutboxDisplayItem } from '../transport/outbox';
+import { cacheHistory, getCachedHistory } from '../transport/history-cache';
+import type { GatewayClient } from '../transport/gateway-client';
+import { ActionSheet, type SheetAction } from './ActionSheet';
+import { CommandOptionsSheet, CommandPalette } from './CommandPalette';
+import { FileCards, type FileUiState } from './FileCards';
+import { MOTION, type Palette } from '../theme/tokens';
+import { useTheme, useThemedStyles } from './theme';
+import { formatClock, type SpeechCatalog } from '../protocol/speech';
+import { tapFeedback } from './haptics';
+import { InteractionSheet } from './InteractionSheet';
+import { MarkdownView } from './Markdown';
+import { ImageViewer, MessageImages } from './MessageImages';
+import { OutlineSheet } from './OutlineSheet';
+import { TasksSheet } from './TasksSheet';
+
+type ApprovalOutcome = 'allowed-once' | 'rejected';
+
+interface Props {
+  client: GatewayClient;
+  session: SessionItem;
+  queued: QueuedMessage[];
+  /** hello.capabilities：老网关可能没开文件下载，别把卡片画成一个点了没反应的按钮 */
+  capabilities: string[];
+  onBack: () => void;
+  /** 会话是否在跑：由 App 持有，重连后能跟着会话列表一起刷新 */
+  running: boolean;
+  /** 会话列表，右侧弧形转盘用 */
+  sessions: SessionItem[];
+  /** 全局正在等待审批或回答的会话 ID 列表（用于自动跳栈 Auto-Hop 与弧形转盘状态灯） */
+  blockedSessionIds?: string[];
+  onRunningChange: (next: boolean) => void;
+  /** fork 出来的新会话，交给上层切过去 */
+  onForked: (sessionId: string) => void;
+  /** 跳到另一个会话（比如分叉的来源） */
+  onOpenSession: (sessionId: string) => void;
+  /** 首页语音说「同意」后只打开审批卡，不代替用户拍板 */
+  focusApprovalRpcId?: string | null;
+  onApprovalFocusHandled?: () => void;
+  /** 语音目录：语音的上限与就绪判断和首页共用同一份（App 那条连接上拉的） */
+  speechCatalog?: SpeechCatalog | null;
+  /** 首页语音到上限的文字：合并进输入框，不管页面是刚挂载还是已经开着 */
+  voiceDelivery?: { key: string; sessionId: string; text: string } | null;
+  /** 已合并进草稿；App 据此清掉这条投递（避免切走再回来重复合并） */
+  onVoiceDeliveryTaken?: (key: string) => void;
+  /** 当前活动网关：离线待发消息归属它，重试时也只发这个网关的 */
+  gatewayId?: string;
+}
+
+interface StreamingDraft {
+  attemptId: string;
+  text: string;
+  reasoning: string;
+  /** 这一轮流式输出的开始时间，渲染时不要用 Date.now()（纯函数要求） */
+  startedAt: number;
+}
+
+/** 选好待上传的普通文件。 */
+interface PickedFile {
+  id: string;
+  name: string;
+  size: number;
+  file: File;
+  state: UploadState;
+}
+
+/** 已经选好、还没发出去的图片。 */
+interface PickedImage {
+  id: string;
+  uri: string;
+  mediaType: string;
+  /** 标准 Base64，不含 data: 前缀 */
+  data: string;
+  name?: string;
+  bytes: number;
+}
+
+/** 纯图片消息在气泡里显示成这个，也当作本地回显的去重键。 */
+const IMAGE_ONLY_TEXT = '［图片］';
+
+const DEFAULT_IMAGE_LIMITS: ImageLimits = {
+  maxImageBytes: 20 * 1024 * 1024,
+  maxImagesPerMessage: 20,
+  maxMessageImageBytes: 200 * 1024 * 1024,
+};
+
+/** Base64 的实际字节数。 */
+function base64Bytes(data: string): number {
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  return Math.floor((data.length * 3) / 4) - padding;
+}
+
+function startOfDay(ms: number): number {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+/** 日期分隔条：只在跨天的地方显示，queued 消息 time=0 直接跳过。 */
+function dayLabel(ms: number): string | null {
+  if (!ms) return null;
+  const day = startOfDay(ms);
+  const diff = Math.round((startOfDay(Date.now()) - day) / 86400000);
+  if (diff === 0) return '今天';
+  if (diff === 1) return '昨天';
+  const date = new Date(ms);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? `${date.getMonth() + 1}月${date.getDate()}日`
+    : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+/** 引用代码块 / Diff 某一行时拼进消息里的文本；太长就截断，别把一整屏代码塞进去。 */
+function formatQuote(quote: { lang: string; code: string; label?: string }): string {
+  const lines = quote.code.split('\n');
+  const shown = lines.slice(0, 12);
+  const fence = '```' + (quote.lang || '');
+  const tail = lines.length > shown.length ? [`…（共 ${lines.length} 行）`] : [];
+  const what = quote.label ? ` ${quote.label}` : quote.lang ? `（${quote.lang}）` : '';
+  return [`> 引用${what}：`, fence, ...shown, ...tail, '```'].join('\n');
+}
+
+/** 长按菜单标题：只给一眼能认出是哪条消息的摘要。 */
+function previewOf(text: string): string | undefined {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (!flat) return undefined;
+  return flat.length > 60 ? flat.slice(0, 60) + '…' : flat;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
+  return bytes + ' B';
+}
+
+const TIME_ZONE = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
+  } catch {
+    return 'Asia/Shanghai';
+  }
+})();
+
+/** 按住多久才真正开麦：轻点不该误触发录音（和首页宠物同一个手感）。 */
+const VOICE_HOLD_MS = 200;
+/** 首屏历史兜底：15s 没回来就撤 spinner 给重试空态（12–30s 区间取中，私网公网不分档）。 */
+const FIRST_SCREEN_TIMEOUT_MS = 15000;
+/** 上滑多少 dp 算取消，同样对齐首页宠物。 */
+const VOICE_CANCEL_DY = -60;
+/** 收拢落地行淡入时长（Android 下替代 LayoutAnimation 的自行动画，见 RowFadeIn）。 */
+const FADE_IN_MS = 240;
+
+export function SessionScreen({
+  client,
+  session,
+  queued,
+  capabilities,
+  onBack,
+  running,
+  sessions,
+  blockedSessionIds = [],
+  onRunningChange,
+  onForked,
+  onOpenSession,
+  focusApprovalRpcId,
+  onApprovalFocusHandled,
+  speechCatalog = null,
+  voiceDelivery = null,
+  onVoiceDeliveryTaken,
+  gatewayId,
+}: Props) {
+  const t = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const canDownloadFiles = capabilities.includes('file-downloads');
+  const canPickPreset = capabilities.includes('session-agent-preset');
+  // 进会话先摆 L1 缓存（模块级，跨重挂载存活）：首帧就有内容、不进 spinner；
+  // 新鲜 history 随后回来，走 mergeSnapshot 对账，不整体替换。
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    () => getCachedHistory(gatewayId, session.sessionId) ?? [],
+  );
+  const [draft, setDraft] = useState('');
+  /** 转写回来要和「此刻」的草稿合并，而 handleFrame 不订阅 draft，只能走 ref。 */
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  /** 松手即发：send 声明在后面，handleFrame 通过 ref 取最新版本。 */
+  const sendRef = useRef<(text: string) => void>(() => undefined);
+  const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
+  /** 最近一次已提交的流式草稿：帧回调是长命闭包，拿不到最新的 streaming，上膛判定要读它。 */
+  const streamingRef = useRef<StreamingDraft | null>(null);
+  /**
+   * 草稿行的正文是否**画上过屏幕**（按提交后的渲染状态记账）。
+   * 不能用帧处理时的 live 状态判：正式消息和它前面的 text-delta 常在同一批到达，
+   * 批内 live.text 已经有字、但那次提交根本没画出来——按 live 判会把该淡入的换行漏掉。
+   */
+  const draftBodyPaintedRef = useRef(false);
+  /** 草稿行折叠淡入的起点（ms）：240ms 窗口内到来的换行要接着淡，不能瞬切。 */
+  const foldFadeAtRef = useRef(0);
+  useEffect(() => {
+    streamingRef.current = streaming;
+    if (streaming && splitThinkTags(streaming.text).text.trim()) draftBodyPaintedRef.current = true;
+  }, [streaming]);
+  /** 本次流式尝试是否已给收拢动画上过膛（`start` 时复位，一次折叠只上膛一次）。 */
+  const collapseArmedRef = useRef(false);
+  /**
+   * 正在「落地」的正式行 id：流式草稿行被它整行替换（或草稿行原地折叠）的那一次提交。
+   * Android Fabric 默认不开 LayoutAnimation（RN 0.88 enableLayoutAnimationsOnAndroid=false，
+   * configureNext 是静默 no-op），收拢的「出现侧」只能自己用 Animated 补 240ms 淡入；
+   * 销账由 consumeLanding 在淡入真正开始时完成（不能按提交次数清，见 consumeLanding）。
+   */
+  const landingRowIdRef = useRef<string | null>(null);
+  /**
+   * 淡入真正开始后销账（RowFadeIn 启动动画时回调）。
+   * 不能在 rows 变化的 effect 里清：虚拟化列表渲染新行会晚于这次提交（实测
+   * row-render 落后于 rows-effect 一拍），提前清掉 = 落地行永远是瞬切。
+   * 销账放在这里也保证后续的虚拟化重挂载/滚动回收不会重播淡入。
+   */
+  const consumeLanding = useCallback(() => {
+    landingRowIdRef.current = null;
+  }, []);
+  // 有缓存就不进 spinner：对账期间直接读缓存内容（缓存为空 = 没有可摆的，照旧转圈）
+  const [loading, setLoading] = useState(messages.length === 0);
+  /** 首屏历史没回来（超时/被拒/断线）：撤 spinner 后给「重试」空态，不能永远转圈。 */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /**
+   * 同会话可能同时挂多条审批。单值会让后到的把先到的覆盖掉，先到的就再也批不了；
+   * 这里用 FIFO，界面只展示队首，其余用「还有 N 条」提示。
+   */
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const approval = approvals[0] ?? null;
+  const [question, setQuestion] = useState<PendingQuestion | null>(null);
+  const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [sendMode, setSendMode] = useState<'queue' | 'steer'>('queue');
+  /** 审批抽屉：78% 高的三段式决策卡 */
+  const [triageOpen, setTriageOpen] = useState(false);
+  /** 已经信任的目录，同目录下的低风险补丁不再打扰 */
+  const [trustedDirs, setTrustedDirs] = useState<string[]>([]);
+  /** 已经拍板、等网关回执的那一条：按钮先禁用，回执来了 approval 一换自动复位 */
+  const [decidedId, setDecidedId] = useState<string | null>(null);
+  /** 本机已经拍过板的 rpcId；用来区分「自己批的 resolved」和「别的端处理的 resolved」 */
+  const decidedRpcRef = useRef<string | null>(null);
+  /** 悔棋窗提示文案；非空时审批坞让位给胶囊 */
+  const [graceLabel, setGraceLabel] = useState<string | null>(null);
+  /** 悔棋窗里压着还没发的决定 */
+  const graceRef = useRef<{ approval: PendingApproval; outcome: ApprovalOutcome } | null>(null);
+  const autoApprovedRef = useRef<Set<string>>(new Set());
+  /** 本机拍过的板，喂给轨迹页的审批记录行（网关不把它写进 history）。 */
+  const [approvalLog, setApprovalLog] = useState<ApprovalRecord[]>([]);
+  const loggedApprovalsRef = useRef<Set<string>>(new Set());
+  /** 待发送图片 */
+  const [picked, setPicked] = useState<PickedImage[]>([]);
+  /** 待发送文件（上传完成后才有 receiptId） */
+  const [pickedFiles, setPickedFiles] = useState<PickedFile[]>([]);
+  const [picking, setPicking] = useState(false);
+  /** attachmentId → Base64 字节，历史图片按需拉取后缓存在这里 */
+  const [attachmentCache, setAttachmentCache] = useState<Record<string, string>>({});
+  const attachmentAskedRef = useRef<Set<string>>(new Set());
+  const imageLimitsRef = useRef<ImageLimits>(DEFAULT_IMAGE_LIMITS);
+  const [outline, setOutline] = useState<TurnOutlineItem[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  /** / 菜单目录：首次输入 / 时拉一次，模式变化后失效。 */
+  const [commandGroups, setCommandGroups] = useState<CommandGroup[]>([]);
+  const commandRequestedRef = useRef(false);
+  /** select 类命令的二级菜单；loading 表示选项还没回来。 */
+  const [optionSheet, setOptionSheet] = useState<{
+    command: string;
+    options: CommandOption[];
+    loading: boolean;
+  } | null>(null);
+  /** 最近一次选择的结果（模型/权限）、录音提示等，显示在输入框上方。
+      是**短暂**提示：淡入 → 停留 → 淡出 → 卸载。以前只在切会话时清，
+      结果「已取消录音」这种一次性提示会一直挂在输入框上面。 */
+  const [statusLabel, setStatusLabelRaw] = useState<string | null>(null);
+  const [statusFade] = useState(() => new Animated.Value(0));
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setStatusLabel = useCallback(
+    (next: string | null, holdMs = 2800) => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+      setStatusLabelRaw(next);
+      if (!next) {
+        statusFade.setValue(0);
+        return;
+      }
+      statusFade.setValue(0);
+      Animated.timing(statusFade, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+      statusTimerRef.current = setTimeout(() => {
+        Animated.timing(statusFade, { toValue: 0, duration: 280, useNativeDriver: true }).start(
+          // 淡出跑完再卸载，否则直接从树上摘掉就看不到渐出了。
+          ({ finished }) => {
+            if (finished) setStatusLabelRaw(null);
+          },
+        );
+      }, holdMs);
+    },
+    [statusFade],
+  );
+  useEffect(
+    () => () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    },
+    [],
+  );
+  // ---- 语音输入：按住说话，转写结果回填输入框 ----
+  // 录音竞态、时长上限、失败复位都在 useVoiceInput 里（和首页语音球共用同一份）。
+  const voice = useVoiceInput({
+    client,
+    catalog: speechCatalog,
+    onNotice: (next) => setStatusLabel(next),
+    onTranscript: (text, reason) => {
+      const merged = draftRef.current.trim() ? draftRef.current + ' ' + text : text;
+      // 到上限自动停的那一段：文字放回输入框，改完再发，不代发半句话。
+      if (reason === 'cap') {
+        setDraft(merged);
+        setStatusLabel('到上限了，文字已放回输入框');
+        composerRef.current?.focus();
+        return;
+      }
+      // 松手就是一次发送：转写结果直接走发送，不再停在输入框等用户再点一下。
+      setDraft(merged);
+      sendRef.current(merged);
+    },
+  });
+  const {
+    recording,
+    transcribing,
+    // 帧处理器单独取出来：引用稳定，放进 handleFrame 的依赖不会让帧监听器反复重订阅。
+    handleTranscript: handleVoiceFrame,
+    handleTranscribeFailure: handleVoiceFailure,
+  } = voice;
+  const [voiceGlow] = useState(() => new Animated.Value(0));
+  /** 按住还没到开麦时间的定时器。 */
+  const voiceHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 本次按住是否已经滑过取消线。 */
+  const voiceCancelRef = useRef(false);
+  /** 滑过取消线了（用来把提示改成「松开取消」）。 */
+  const [voiceWillCancel, setVoiceWillCancel] = useState(false);
+  /** 对话流 / 轨迹视图切换 */
+  const [viewMode, setViewMode] = useState<'chat' | 'trajectory'>('chat');
+  const [stats, setStats] = useState<SessionStatsFrame | null>(null);
+  /** 交付文件的下载状态，键是卡片上的原始路径。 */
+  const [fileStates, setFileStates] = useState<Record<string, FileUiState>>({});
+  /** 离线发件箱里属于这个会话的消息。 */
+  const [offlineItems, setOfflineItems] = useState<OutboxDisplayItem[]>(() =>
+    outbox.listForDisplay(session.sessionId),
+  );
+  /** 草稿是否已经从磁盘读回来了，读完之前不许写盘。 */
+  const draftReadyRef = useRef(false);
+  /** 草稿还没读完就先到的外部语音投递，等 loadDraft 回来一起合并。 */
+  const pendingDeliveryRef = useRef<{ key: string; text: string } | null>(null);
+  /** 任务列表与当前目标；asOfSeq 只允许变大，避免旧推送覆盖新查询。 */
+  const [todos, setTodos] = useState<TodoItem[] | null>(null);
+  const [goal, setGoal] = useState<GoalInfo | null>(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  /** agent 预设（模式）：列表全局一份，会话级状态单独查。 */
+  const [presetList, setPresetList] = useState<PresetList>({ presets: [], modeSelectionEnabled: true });
+  const [presetId, setPresetId] = useState<string | null>(session.agentPreset ?? null);
+  /** 会话跑过任何一轮就锁死；服务端没回话之前先按 blank 猜。 */
+  const [presetLocked, setPresetLocked] = useState(!session.blank);
+  const [presetSheet, setPresetSheet] = useState(false);
+  /** 长按标题打开的会话信息菜单 */
+  const [infoSheet, setInfoSheet] = useState(false);
+  const todosSeqRef = useRef(-1);
+  const goalSeqRef = useRef(-1);
+  const downloaderRef = useRef<FileDownloader | null>(null);
+  const uploaderRef = useRef<FileUploader | null>(null);
+  /** 点了大纲里的某一轮：要先把历史翻到那个 seq，再滚过去。 */
+  const jumpTargetRef = useRef<number | null>(null);
+  const oldestSeqRef = useRef<number>(Number.POSITIVE_INFINITY);
+  const [jumpTick, setJumpTick] = useState(0);
+  /** 用户点了「稍后」：面板收起，但请求仍然挂在服务端，可以随时再打开。 */
+  const [sheetHidden, setSheetHidden] = useState(false);
+  /** 长按某条消息后弹出的操作表；null 表示没打开。 */
+  const [actionMessage, setActionMessage] = useState<ChatMessage | null>(null);
+  /** 专门的文本选择页（自由拖选复制片段） */
+  const [selectMessage, setSelectMessage] = useState<ChatMessage | null>(null);
+  /** 连接状态：断线时输入框上方给一条提示，别让用户对着空气发消息。 */
+  const [conn, setConn] = useState<string>('ready');
+  /** 从代码块引用过来的内容，发送时自动拼在正文前面。 */
+  const [quote, setQuote] = useState<{ lang: string; code: string; label?: string } | null>(null);
+  /** 正在编辑的排队消息 id；非 null 时「发送」变成「保存排队内容」。 */
+  const [editingQueue, setEditingQueue] = useState<string | null>(null);
+  /** 上下文占用百分比，0 表示还没拿到统计 */
+  const contextPct = useMemo(() => {
+    const pressure = stats?.contextPressure;
+    if (!pressure?.contextWindow || typeof pressure.pressureTokens !== 'number') return 0;
+    return Math.max(0, Math.min(100, Math.round((pressure.pressureTokens / pressure.contextWindow) * 100)));
+  }, [stats]);
+  /** 轻量提示（复制成功之类），2 秒后自己消失。 */
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const composerRef = useRef<ComponentRef<typeof TextInput>>(null);
+  /** 父组件每次渲染都会传一个新函数，用 ref 兜住，别让它把下面的会话 effect 带着重跑。 */
+  const onForkedRef = useRef(onForked);
+  /** 能力列表晚到会让 canPickPreset 翻转，同样不能让它触发重订阅（会清空待发附件）。 */
+  const canPickPresetRef = useRef(canPickPreset);
+  /** running 存在上层，帧回调里要通过 ref 改，免得它进依赖把订阅带着重跑。 */
+  const onRunningChangeRef = useRef(onRunningChange);
+  useEffect(() => {
+    onForkedRef.current = onForked;
+    canPickPresetRef.current = canPickPreset;
+    onRunningChangeRef.current = onRunningChange;
+  }, [onForked, canPickPreset, onRunningChange]);
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2000);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  const settledRef = useRef<Set<string>>(new Set());
+  const listRef = useRef<FlatList<StreamRow>>(null);
+  /** 用户往上翻看历史时不要再把他拽回底部。 */
+  const atBottomRef = useRef(true);
+  /**
+   * 是否继续贴着底部走。默认 true：进会话、收到新内容都自动到底；
+   * 只有用户真的用手拖列表（onScrollBeginDrag）才关掉，程序滚动不算。
+   */
+  const followRef = useRef(true);
+  /** 首屏历史只自动贴底一次，之后交给 followRef。 */
+  const pinnedOnceRef = useRef(false);
+  const [showJump, setShowJump] = useState(false);
+  /** 弧形转盘展开时，底下的消息列表必须停止滚动，否则滑的是轮次不是转盘。 */
+  const [dialOpen, setDialOpen] = useState(false);
+
+  /** 列表当前的内容高度/滚动位置，用来在往前插历史时手动补偿偏移。 */
+  const metricsRef = useRef({ height: 0, offset: 0 });
+  /**
+   * 贴底一枪：目标 = 最近一次量到的真实内容高度（超出会被原生钳到真底）。
+   * 普通函数而不是 useCallback：读 metricsRef 要避开编译器对「hook 参数里读的
+   * 可变值」的标记，否则所有 metricsRef 写入都会被 react-hooks/immutability 报错。
+   */
+  const pinToBottom = (animated: boolean) => {
+    listRef.current?.scrollToOffset({ offset: metricsRef.current.height, animated });
+  };
+
+  // 流式每来一段就补一次贴底：只靠 onContentSizeChange 时，
+  // 高度没变（同一行在长高）不会回调，回答就会被顶到屏幕外。
+  // 贴底用 pinToBottom（目标 = 最近量到的真实高度，超出会被原生钳到真底），
+  // 不用 scrollToEnd——它按 JS 侧滞后的高度算，会落短一截把 atBottom 判假。
+  useEffect(() => {
+    if (!followRef.current) return;
+    pinToBottom(false);
+  }, [streaming?.text.length, streaming?.reasoning?.length]);
+
+  // 首屏历史落地后连滚三枪：大代码块测量得晚，一枪常常滚不到位。
+  useEffect(() => {
+    if (pinnedOnceRef.current || messages.length === 0) return;
+    pinnedOnceRef.current = true;
+    [80, 260, 700].forEach((ms) => {
+      setTimeout(() => pinToBottom(false), ms);
+    });
+  }, [messages.length]);
+  /** 历史分页：hasOlder 表示服务端还有更早的事件，nextBeforeRef 是往回翻的游标。 */
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const nextBeforeRef = useRef<number | undefined>(undefined);
+  /** 已经翻到会话最早一条，重连后不要又显示「加载更早」。 */
+  const reachedStartRef = useRef(false);
+  /** 非 null 表示「这一帧内容是往前插的」，布局完成后要把视口挪回原处。 */
+  const prependAnchorRef = useRef<{ height: number; offset: number } | null>(null);
+  /** 非 null 表示「这次 history 请求是翻页」，回来的那一帧要并到前面而不是整体替换。 */
+  const olderRequestRef = useRef<number | null>(null);
+  /** 在途的首屏历史请求（带 requestId，npm 网关会回显）；非 null = 单飞守卫占用中。 */
+  const firstScreenRequestRef = useRef<string | null>(null);
+  /** 最近一次渲染的流式行：回合结束要按「最后一条用户消息」的索引回滚，索引只能从渲染产物拿。 */
+  const rowsRef = useRef<StreamRow[]>([]);
+
+  /**
+   * 首屏一把梭：subscribe + history（带 requestId 便于归位）+ 轻量查询。
+   * 单飞：在途未落地时再点重试直接忽略，避免重试堆叠。
+   */
+  const requestFirstScreen = useCallback(() => {
+    if (firstScreenRequestRef.current !== null) return;
+    const requestId = randomUUID();
+    firstScreenRequestRef.current = requestId;
+    const sent =
+      client.send({ type: 'subscribe', sessionId: session.sessionId, assistantStream: true }) &&
+      client.send({
+        type: 'history',
+        requestId,
+        sessionId: session.sessionId,
+        view: 'conversation',
+        historyFormatVersion: HISTORY_FORMAT_VERSION,
+      });
+    client.send({ type: 'session-stats', sessionId: session.sessionId });
+    client.send({ type: 'tasks', sessionId: session.sessionId });
+    client.send({ type: 'goal', sessionId: session.sessionId });
+    if (!sent) {
+      // socket 都没写进去（断线）：别等 15s，直接落地给重试空态。
+      firstScreenRequestRef.current = null;
+      setLoading(false);
+      setLoadFailed(true);
+      setError('连接已断开，重连后会自动加载历史');
+    }
+  }, [client, session.sessionId]);
+
+  const retryFirstScreen = useCallback(() => {
+    setError(null);
+    setLoadFailed(false);
+    setLoading(true);
+    requestFirstScreen();
+  }, [requestFirstScreen]);
+
+  /**
+   * 回合结束的锚定落位：把「最后一条用户消息」滚到视口第一行，
+   * 接着依次是折叠的活动胶囊和本回合正文——收官位置一眼就能从头读。
+   * 只在人还贴着底部（跟随状态）时调用；正在翻历史的人不许动。
+   */
+  const anchorTurn = useCallback(() => {
+    const list = rowsRef.current;
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const row = list[index];
+      if (row.kind === 'message' && row.message.kind === 'user') {
+        listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: false });
+        return;
+      }
+    }
+  }, []);
+
+  const handleFrame = useCallback(
+    (frame: ServerFrame) => {
+      // 文件传输的帧先交给下载器，它按 requestId / transferId 自己认领。
+      if (downloaderRef.current?.handleFrame(frame)) return;
+      // 上传的帧按 requestId/uploadId 认领，认领了就别再进业务分支。
+      if (uploaderRef.current?.handleFrame(frame as unknown as Record<string, unknown>)) return;
+      const kind = frame.kind;
+      if (kind === 'history') {
+        const history = frame as unknown as HistoryFrame;
+        if (history.sessionId && history.sessionId !== session.sessionId) return;
+        const events = history.events ?? [];
+        // 服务端不回显 beforeSeq，只能靠本地记「这次请求是不是翻页」。
+        const paging = olderRequestRef.current !== null;
+        olderRequestRef.current = null;
+        const next = typeof history.nextBeforeSeq === 'number' ? history.nextBeforeSeq : undefined;
+        if (history.hasMore === false) reachedStartRef.current = true;
+        const values = readProjectionValues(frame);
+        if (values) {
+          const nextOutline = mapTurnOutline(values.turnOutline);
+          if (nextOutline) setOutline(nextOutline);
+          const limits = mapImageLimits(values.imageLimits);
+          if (limits) imageLimitsRef.current = { ...DEFAULT_IMAGE_LIMITS, ...limits };
+        }
+        const oldestBefore = oldestSeqRef.current;
+        if (events.length) {
+          const pageMin = Math.min(...events.map((event) => event.seq));
+          if (pageMin < oldestSeqRef.current) oldestSeqRef.current = pageMin;
+        }
+        if (paging) {
+          // 补洞页别并到最前：缓存块和新鲜窗口之间有洞时，这一页的 seq 可能比缓存新，
+          // mergeSnapshot 会按 seq 把它插回正确位置。只有整页都比已加载的最早还早，
+          // 插入才真的发生在列表头顶——这时记下插入前的视口，等布局完再补回来
+          // （RN 的 maintainVisibleContentPosition 在 Android 上会把位置钉死，导致列表根本划不动）；
+          // 插回中间的页落在视口下方，补偿反而会把正在阅读的用户往下推。
+          const pageMax = events.length ? Math.max(...events.map((event) => event.seq)) : undefined;
+          if (pageMax !== undefined && pageMax < oldestBefore) {
+            const anchor = { ...metricsRef.current };
+            prependAnchorRef.current = anchor;
+            // 万一这一页全是重复内容（没引起内容高度变化），别让锚点留到下一帧去误补偿。
+            setTimeout(() => {
+              if (prependAnchorRef.current === anchor) prependAnchorRef.current = null;
+            }, 800);
+          }
+          setMessages((current) => mergeSnapshot(current, events));
+          nextBeforeRef.current = next;
+        } else {
+          // 重连补的是「最新一页」，已经翻出来的更早历史要留着，不能整体替换。
+          setMessages((current) => mergeSnapshot(current, events));
+          const prev = nextBeforeRef.current;
+          nextBeforeRef.current = typeof prev === 'number' && typeof next === 'number' ? Math.min(prev, next) : (next ?? prev);
+        }
+        setHasOlder(!reachedStartRef.current && typeof nextBeforeRef.current === 'number');
+        setLoadingOlder(false);
+        setLoading(false);
+        // 首屏在途标记落地：不回显 requestId 的老网关下，任何 history 帧都算回包。
+        firstScreenRequestRef.current = null;
+        setLoadFailed(false);
+        // 历史能正常拉回来，说明之前的报错（比如格式版本不对）已经不影响这次请求了。
+        setError(null);
+        return;
+      }
+      if (kind === 'session-snapshot') {
+        const snapshot = frame as unknown as SessionSnapshotFrame;
+        // 订阅快照不带 sessionId，只属于当前订阅。
+        if (snapshot.sessionId && snapshot.sessionId !== session.sessionId) return;
+        // 快照只是最新一段（replace 语义只覆盖它自己的区间），不能整体替换掉已翻出来的历史。
+        setMessages((current) => mergeSnapshot(current, snapshot.events ?? []));
+        const values = readProjectionValues(frame);
+        if (values) {
+          const nextOutline = mapTurnOutline(values.turnOutline);
+          if (nextOutline) setOutline(nextOutline);
+          const limits = mapImageLimits(values.imageLimits);
+          if (limits) imageLimitsRef.current = { ...DEFAULT_IMAGE_LIMITS, ...limits };
+        }
+        const snapshotEvents = snapshot.events ?? [];
+        if (snapshotEvents.length) {
+          const pageMin = Math.min(...snapshotEvents.map((event) => event.seq));
+          if (pageMin < oldestSeqRef.current) oldestSeqRef.current = pageMin;
+        }
+        setLoading(false);
+        // 快照能到说明链路是活的：首屏若有重试空态，撤掉（内容已可见，缺的页码可手动翻）。
+        setLoadFailed(false);
+        return;
+      }
+      if (kind === 'speech-transcript') {
+        // requestId 匹配、复位、提示都在 useVoiceInput 里，这里只把帧递进去。
+        handleVoiceFrame(frame);
+        return;
+      }
+      if (kind === 'attachment') {
+        const attachment = frame as unknown as AttachmentFrame;
+        if (attachment.sessionId && attachment.sessionId !== session.sessionId) return;
+        if (!attachment.attachment?.attachmentId || typeof attachment.data !== 'string') return;
+        setAttachmentCache((current) => ({ ...current, [attachment.attachment.attachmentId]: attachment.data }));
+        return;
+      }
+      if (kind === 'event') {
+        const eventFrame = frame as unknown as {
+          sessionId?: string;
+          seq: number;
+          time: number;
+          event?: Record<string, any>;
+        };
+        if (eventFrame.sessionId !== session.sessionId || !eventFrame.event) return;
+        const type = eventFrame.event.type;
+        if (type === 'turn/start') {
+          onRunningChangeRef.current(true);
+          setCancelling(false);
+        }
+        // 正式消息已落地，撤掉流式草稿，避免同一段文字出现两份。
+        if (type === 'assistant/message') {
+          // 这条正式消息会整行换掉流式草稿（展开的思考行 → 34pt 胶囊），换行是
+          // 一次提交里的「删旧行 + 建新行」：动画必须在这次提交**之前**上膛，
+          // 挂载后（换行出来的新组件）再 configure 已永远太晚。
+          const live = streamingRef.current;
+          if (live) {
+            const event = eventFrame.event as Record<string, any>;
+            const finishKind = (event.finish as { kind?: string } | undefined)?.kind;
+            const failed =
+              finishKind === 'error' || finishKind === 'aborted' || event.interrupted === true;
+            const body =
+              typeof event.text === 'string' && splitThinkTags(event.text).text.trim().length > 0;
+            // 有一行「思考」要收 + 新消息有正文（没有正文就不换行，不该上膛）。
+            if (
+              !collapseArmedRef.current &&
+              (live.reasoning !== '' || splitThinkTags(live.text).reasoning) &&
+              (body || failed)
+            ) {
+              collapseArmedRef.current = true;
+              armCollapseAnimation();
+            }
+            // 落地行淡入（Android 下 LayoutAnimation 无效的替代）：草稿行被
+            // r{seq} 整行换掉时补「出现侧」。两种触发：正文从未画上屏幕（同批
+            // 到达，见 draftBodyPaintedRef），或草稿行刚为折叠起的淡入还没走完
+            // 就被换行（本机分提交时序）——后者用 foldFadeAtRef 的窗口判定。
+            if (
+              !draftBodyPaintedRef.current ||
+              Date.now() - foldFadeAtRef.current < FADE_IN_MS + 160
+            ) {
+              landingRowIdRef.current = `r${eventFrame.seq}`;
+            }
+          }
+          setStreaming(null);
+        }
+        if (type === 'turn/end') {
+          onRunningChangeRef.current(false);
+          setCancelling(false);
+          setStreaming(null);
+          // 中断/出错的提示统一由 applyRealtime 生成的 outcome 行承担
+          // （见 protocol/chat.ts outcomeOf），这里再补一条就是同一件事写两遍。
+          if (atBottomRef.current) {
+            // 一直跟着看完的这一轮：结束时把最后一条用户消息锚到视口第一行，
+            // 否则终答正文会被折线切在屏幕外（停在距底约 1/3 屏的位置）。
+            // 两枪：大代码块测量晚，300ms 再锚一次收掉漂移。
+            [80, 300].forEach((ms) => {
+              setTimeout(() => anchorTurn(), ms);
+            });
+          }
+        }
+        setMessages((current) => applyRealtime(current, eventFrame.event as Record<string, any>, eventFrame.seq, eventFrame.time));
+        return;
+      }
+      if (kind === 'assistant-stream') {
+        const streamFrame = frame as unknown as {
+          sessionId?: string;
+          frame?: Record<string, any>;
+        };
+        if (streamFrame.sessionId !== session.sessionId || !streamFrame.frame) return;
+        const inner = streamFrame.frame;
+        if (inner.type === 'start') {
+          onRunningChangeRef.current(true);
+          // 每步都会发一次 start：只有人还贴着底部时才续跟随。停在历史中间的
+          // 读者是在主动寻找定位，别把他拽回底部（拖动留下的 follow=false 要保住）。
+          if (atBottomRef.current) followRef.current = true;
+          collapseArmedRef.current = false;
+          draftBodyPaintedRef.current = false;
+          setStreaming({
+            attemptId: String(inner.attemptId ?? ''),
+            text: '',
+            reasoning: '',
+            startedAt: Date.now(),
+          });
+          return;
+        }
+        if (inner.type === 'chunk') {
+          const chunk = (inner.chunk ?? {}) as Record<string, any>;
+          // 正文首字到达的那次提交里，「展开的思考」立刻收成 34pt 胶囊
+          //（或折出活动胶囊）——上膛必须在 setState 之前，
+          // 这正是「挂载后再 configureNext」永远错过的那次布局。
+          const live = streamingRef.current;
+          if (
+            chunk.type === 'text-delta' &&
+            typeof chunk.text === 'string' &&
+            live &&
+            live.text === '' &&
+            live.reasoning !== '' &&
+            !collapseArmedRef.current
+          ) {
+            collapseArmedRef.current = true;
+            armCollapseAnimation();
+          }
+          // 同一折叠的 Android 替代（草稿行原地收拢）：这次提交把草稿行内容整块
+          // 换掉（展开思考 → 34pt 胶囊 + 正文卡片），但没有换行事件，给草稿行记
+          // 一次淡入并留下时间戳——若紧接着（240ms 内）正式行才换行，换行侧接着
+          // 淡（见 assistant/message 分支）。判定对齐 answerStarted：首个 delta
+          // 只有空白不算（那次不折叠），所以用 trim 判「首个可见正文」。
+          if (
+            chunk.type === 'text-delta' &&
+            typeof chunk.text === 'string' &&
+            live &&
+            !live.text.trim() &&
+            live.reasoning !== '' &&
+            chunk.text.trim()
+          ) {
+            landingRowIdRef.current = `stream-${live.attemptId}`;
+            foldFadeAtRef.current = Date.now();
+          }
+          setStreaming((current) => {
+            if (!current) return current;
+            if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+              return { ...current, text: current.text + chunk.text };
+            }
+            if ((chunk.type === 'thinking-delta' || chunk.type === 'reasoning-delta') && typeof chunk.text === 'string') {
+              return { ...current, reasoning: current.reasoning + chunk.text };
+            }
+            return current;
+          });
+          return;
+        }
+        if (inner.type === 'end') {
+          followRef.current = false;
+          setStreaming(null);
+          if (inner.outcome?.kind !== 'committed') onRunningChangeRef.current(false);
+          return;
+        }
+        return;
+      }
+      if (kind === 'approval-requested') {
+        const request = frame as unknown as PendingApproval;
+        if (request.sessionId !== session.sessionId) return;
+        if (settledRef.current.has(request.rpcId)) return;
+        setInteractionError(null);
+        setApprovals((current) => enqueueApproval(current, request));
+        return;
+      }
+      if (kind === 'approval-resolved') {
+        const resolved = frame as unknown as { rpcId: string; outcome?: string };
+        settledRef.current.add(resolved.rpcId);
+        setApprovals((current) => removeApproval(current, resolved.rpcId));
+        if (decidedRpcRef.current === resolved.rpcId) {
+          decidedRpcRef.current = null;
+        } else if (resolved.outcome === 'cancelled' || resolved.outcome === 'unavailable') {
+          showToast('这条审批已撤回或无人应答');
+        } else {
+          showToast('这条审批已在其他端处理');
+        }
+        return;
+      }
+      if (kind === 'approval-response') {
+        const receipt = frame as unknown as { rpcId: string; accepted?: boolean; reason?: string };
+        if (receipt.accepted === false) {
+          // 没被接受（多半别的端已经先答了）：刚写下的那行回显是错的，撤掉。
+          // 真实的结论等重拉历史时由审计记录给出，别在轨迹里留一条反向的假记录。
+          loggedApprovalsRef.current.delete(receipt.rpcId);
+          setApprovalLog((current) => current.filter((item) => item.id !== `approval-${receipt.rpcId}`));
+          setDecidedId(null);
+          if (receipt.reason === 'not-pending') {
+            setApprovals((current) => removeApproval(current, receipt.rpcId));
+            setInteractionError(null);
+            showToast('这次审批已经失效（可能已在别的端处理）');
+          } else {
+            setInteractionError('审批提交被拒绝，请重试');
+          }
+        }
+        return;
+      }
+      if (kind === 'question-requested') {
+        const request = frame as unknown as PendingQuestion;
+        if (request.sessionId !== session.sessionId) return;
+        if (settledRef.current.has(request.rpcId)) return;
+        setInteractionError(null);
+        setQuestion(request);
+        return;
+      }
+      if (kind === 'question-resolved') {
+        const resolved = frame as unknown as { rpcId: string; outcome?: string };
+        settledRef.current.add(resolved.rpcId);
+        setQuestion((current) => (current && current.rpcId === resolved.rpcId ? null : current));
+        return;
+      }
+      if (kind === 'question-response') {
+        const receipt = frame as unknown as { accepted?: boolean; reason?: string };
+        if (receipt.accepted === false) {
+          setInteractionError(
+            receipt.reason === 'not-pending' ? '这个问题已经失效（可能已在别的端回答）' : '答案被拒绝，请检查后再提交',
+          );
+        }
+        return;
+      }
+      if (kind === 'commands') {
+        const catalog = frame as unknown as CommandsFrame;
+        if (catalog.sessionId && catalog.sessionId !== session.sessionId) return;
+        commandRequestedRef.current = true;
+        setCommandGroups(mapCommandGroups(catalog.groups));
+        return;
+      }
+      if (kind === 'command-executed') {
+        const done = frame as unknown as CommandExecutedFrame;
+        if (done.sessionId && done.sessionId !== session.sessionId) return;
+        const result = done.result?.text;
+        setMessages((current) => [
+          ...current,
+          {
+            id: 'cmd-' + Date.now(),
+            kind: 'notice',
+            text: result ? done.line + ' · ' + result : done.line + ' 已执行',
+            time: Date.now(),
+          },
+        ]);
+        setDraft('');
+        setPicked([]);
+        return;
+      }
+      if (kind === 'command-options') {
+        const options = frame as unknown as CommandOptionsFrame;
+        if (options.sessionId && options.sessionId !== session.sessionId) return;
+        setOptionSheet({
+          command: options.command,
+          options: mapCommandOptions(options.options),
+          loading: false,
+        });
+        return;
+      }
+      if (kind === 'command-selected') {
+        const selected = frame as unknown as CommandSelectedFrame;
+        if (selected.sessionId && selected.sessionId !== session.sessionId) return;
+        if (selected.selected?.label) setStatusLabel(selected.selected.label);
+        setOptionSheet(null);
+        setDraft('');
+        return;
+      }
+      if (kind === 'tasks' || kind === 'tasks-updated') {
+        const tasksFrame = frame as unknown as { sessionId?: string; asOfSeq?: number; todos?: unknown };
+        if (tasksFrame.sessionId && tasksFrame.sessionId !== session.sessionId) return;
+        const asOf = typeof tasksFrame.asOfSeq === 'number' ? tasksFrame.asOfSeq : 0;
+        if (asOf < todosSeqRef.current) return;
+        todosSeqRef.current = asOf;
+        setTodos(mapTodos(tasksFrame.todos));
+        return;
+      }
+      if (kind === 'goal' || kind === 'goal-updated') {
+        const goalFrame = frame as unknown as { sessionId?: string; asOfSeq?: number; goal?: unknown };
+        if (goalFrame.sessionId && goalFrame.sessionId !== session.sessionId) return;
+        const asOf = typeof goalFrame.asOfSeq === 'number' ? goalFrame.asOfSeq : 0;
+        if (asOf < goalSeqRef.current) return;
+        goalSeqRef.current = asOf;
+        setGoal(mapGoal(goalFrame.goal));
+        return;
+      }
+      if (kind === 'agent-presets') {
+        setPresetList(mapPresetList(frame));
+        return;
+      }
+      if (kind === 'session-agent-preset') {
+        const preset = frame as unknown as SessionAgentPresetFrame;
+        if (preset.sessionId && preset.sessionId !== session.sessionId) return;
+        if (typeof preset.agentPreset === 'string') setPresetId(preset.agentPreset);
+        if (typeof preset.locked === 'boolean') setPresetLocked(preset.locked);
+        return;
+      }
+      if (kind === 'select-agent-preset') {
+        const selected = frame as unknown as SelectAgentPresetFrame;
+        if (selected.sessionId && selected.sessionId !== session.sessionId) return;
+        if (selected.agentPreset) setPresetId(selected.agentPreset);
+        setPresetSheet(false);
+        // 响应里没有 locked，切完再查一次才知道这个会话还能不能继续改。
+        client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+        return;
+      }
+      if (kind === 'session-agent-preset-updated') {
+        const updated = frame as unknown as SessionAgentPresetUpdatedFrame;
+        if (updated.sessionId && updated.sessionId !== session.sessionId) return;
+        // 只带变化的那一个字段，按字段合并。
+        if (typeof updated.agentPreset === 'string') setPresetId(updated.agentPreset);
+        if (typeof updated.locked === 'boolean') setPresetLocked(updated.locked);
+        return;
+      }
+      if (kind === 'fork') {
+        const forked = frame as unknown as { sessionId?: string };
+        if (forked.sessionId) onForkedRef.current(forked.sessionId);
+        return;
+      }
+      if (kind === 'session-stats') {
+        const statsFrame = frame as unknown as SessionStatsFrame;
+        if (statsFrame.sessionId && statsFrame.sessionId !== session.sessionId) return;
+        setStats(statsFrame);
+        return;
+      }
+      if (kind === 'session-cancelled') {
+        const result = frame as unknown as { sessionId?: string; accepted?: boolean };
+        if (result.sessionId && result.sessionId !== session.sessionId) return;
+        if (result.accepted === false) {
+          setCancelling(false);
+          setError('这一轮已经结束了，没有可停止的任务');
+        }
+        return;
+      }
+      if (kind === 'goal-edit' || kind === 'goal-pause' || kind === 'goal-resume' || kind === 'goal-clear') {
+        // 这几个响应故意不带 sessionId/requestId，只回新的 ref。
+        // 想继续操作必须拿到最新 revision，所以统一重查一次。
+        client.send({ type: 'goal', sessionId: session.sessionId });
+        return;
+      }
+      if (kind === 'queue-item-updated') {
+        const result = frame as unknown as { accepted?: boolean; action?: string };
+        if (result.accepted === false) setError('排队消息没有改成，可能已经开始执行了');
+        return;
+      }
+      if (kind === 'session-stream-reset') {
+        setStreaming(null);
+        return;
+      }
+      if (kind === 'error') {
+        const failure = frame as unknown as {
+          code?: string;
+          message?: string;
+          requestType?: string;
+          requestId?: string;
+        };
+        // 目录没拉到就允许下次再试，别让一次失败把 / 菜单永久关掉。
+        if (failure.requestType === 'commands') commandRequestedRef.current = false;
+        handleVoiceFailure(failure);
+        if (failure.requestType === 'select-agent-preset') {
+          // 乐观改过的本地状态要退回去：以服务端为准重查一次。
+          client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+          setError(
+            failure.code === 'agent-preset/locked'
+              ? '这个会话已经开始过了，模式不能再改'
+              : `${failure.code ?? 'error'}：${failure.message ?? ''}`,
+          );
+          return;
+        }
+        // 服务端拒收消息的失败标记统一由 App.tsx 的 error 分支落进发件箱
+        //（outbox.fail(requestId, 原因)），会话页的行会按 failed 展示重试/移除。
+        if (
+          failure.requestType === 'history' &&
+          firstScreenRequestRef.current !== null &&
+          (failure.requestId === undefined || failure.requestId === firstScreenRequestRef.current)
+        ) {
+          // 首屏历史被拒（如 history-format-mismatch）：撤 spinner 给重试空态，不能永远转圈。
+          firstScreenRequestRef.current = null;
+          setLoading(false);
+          setLoadFailed(true);
+        }
+        setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
+      }
+    },
+    [anchorTurn, client, handleVoiceFailure, handleVoiceFrame, session.sessionId, setStatusLabel, showToast],
+  );
+
+  useEffect(() => {
+    const off = client.onFrame(handleFrame);
+    // 缓存感知的重置：命中 L1 就摆缓存（不转圈），否则照旧 spinner 等网络；对账统一交给 mergeSnapshot。
+    const cached = getCachedHistory(gatewayId, session.sessionId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 会话 key 变化时同步清空本地状态，历史/订阅随后补回
+    setLoading(cached === undefined);
+    setLoadFailed(false);
+    setMessages(cached ?? []);
+    setStreaming(null);
+    setError(null);
+    setApprovals([]);
+    setQuestion(null);
+    setInteractionError(null);
+    setGraceLabel(null);
+    setDecidedId(null);
+    decidedRpcRef.current = null;
+    setQuote(null);
+    setTrustedDirs([]);
+    setApprovalLog([]);
+    // pinnedOnceRef 不在挂载 effect 里重置：闸门挂在组件实例上，切会话重挂载天然是新 ref；
+    // 而缓存命中时首帧就非空，pin effect（声明在前）已经在挂载前段消耗掉闸门。
+    // 在这里重置等于重新上膛——之后第一次翻页/补消息触发的三连 scrollToEnd
+    // 会无视 followRef，把正在翻旧消息的用户拽回底部。
+    followRef.current = true;
+    atBottomRef.current = true;
+    setShowJump(false);
+    settledRef.current.clear();
+    olderRequestRef.current = null;
+    nextBeforeRef.current = undefined;
+    reachedStartRef.current = false;
+    // 「已加载最早 seq」要把缓存摆出的内容算进去：翻页时靠它判断补洞页是插头顶还是插中间。
+    oldestSeqRef.current = Number.POSITIVE_INFINITY;
+    for (const message of cached ?? []) {
+      const seq = seqOf(message);
+      if (seq !== undefined && seq < oldestSeqRef.current) oldestSeqRef.current = seq;
+    }
+    jumpTargetRef.current = null;
+    attachmentAskedRef.current.clear();
+    setHasOlder(false);
+    setLoadingOlder(false);
+    setOutline([]);
+    setAttachmentCache({});
+    setPicked([]);
+    setCommandGroups([]);
+    commandRequestedRef.current = false;
+    setOptionSheet(null);
+    setStatusLabel(null);
+    setStats(null);
+    setTodos(null);
+    setGoal(null);
+    todosSeqRef.current = -1;
+    goalSeqRef.current = -1;
+    setFileStates({});
+    setEditingQueue(null);
+    setPickedFiles([]);
+    const downloader = new FileDownloader(
+      session.sessionId,
+      (frame) => client.send(frame),
+      (path, state) => setFileStates((current) => ({ ...current, [path]: state })),
+    );
+    downloaderRef.current = downloader;
+    const uploader = new FileUploader(
+      session.sessionId,
+      (frame) => client.send(frame),
+      (localId, state) => {
+        setPickedFiles((current) =>
+          current.map((item) => (item.id === localId ? { ...item, state } : item)),
+        );
+      },
+      client.state === 'ready' || (client.state === 'error' && client.canSend),
+    );
+    uploaderRef.current = uploader;
+    const offUploadState = client.onState((state) => {
+      if (state === 'ready') uploader.setConnected(true);
+      else if (!client.canSend) uploader.setConnected(false);
+    });
+    requestFirstScreen();
+    if (canPickPresetRef.current) {
+      // 预设目录全局一份，会话级状态每次进来都要重查（推送没有回放）。
+      client.send({ type: 'agent-presets' });
+      client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+    }
+    return () => {
+      off();
+      downloader.dispose();
+      if (downloaderRef.current === downloader) downloaderRef.current = null;
+      offUploadState();
+      uploader.dispose();
+      if (uploaderRef.current === uploader) uploaderRef.current = null;
+      client.send({ type: 'unsubscribe' });
+    };
+  }, [client, gatewayId, handleFrame, requestFirstScreen, session.sessionId, setStatusLabel]);
+
+  // 首屏历史兜底：loading 期间没有回包就 15s 后落地（回包/快照把 loading 翻掉时定时器自动撤销）。
+  useEffect(() => {
+    if (!loading) return;
+    const requestId = firstScreenRequestRef.current;
+    if (requestId === null) return;
+    const timer = setTimeout(() => {
+      if (firstScreenRequestRef.current !== requestId) return;
+      firstScreenRequestRef.current = null;
+      setLoading(false);
+      setLoadFailed(true);
+      setError('历史加载超时，点「重试」重新加载');
+    }, FIRST_SCREEN_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  // 历史一变就写回 L1：切走再回来直接摆缓存。存的是不可变替换后的数组引用，零拷贝。
+  useEffect(() => {
+    cacheHistory(gatewayId, session.sessionId, messages);
+  }, [gatewayId, messages, session.sessionId]);
+
+  // 断线重连后服务端不再记得我们的订阅，必须重新订阅并补一次历史，
+  // 否则回到前台会一直看着断线前的旧内容。
+  useEffect(() => client.onState((state) => setConn(state)), [client]);
+
+  useEffect(() => {
+    const off = client.onState((state) => {
+      if (state !== 'ready') return;
+      // 重连补的是「最新一页」，不能和还挂着的翻页请求混在一起。
+      olderRequestRef.current = null;
+      setLoadingOlder(false);
+      client.send({ type: 'subscribe', sessionId: session.sessionId, assistantStream: true });
+      client.send({
+        type: 'history',
+        sessionId: session.sessionId,
+        view: 'conversation',
+        historyFormatVersion: HISTORY_FORMAT_VERSION,
+      });
+      client.send({ type: 'session-stats', sessionId: session.sessionId });
+      client.send({ type: 'tasks', sessionId: session.sessionId });
+      client.send({ type: 'goal', sessionId: session.sessionId });
+      if (canPickPreset) client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
+    });
+    return off;
+  }, [canPickPreset, client, session.sessionId]);
+
+  /** 往回翻一页。服务端用排他游标，拿到 nextBeforeSeq 就再要 seq < nextBeforeSeq 的那一段。 */
+  const loadOlder = useCallback(() => {
+    // 用 ref 而不是 state 做在途判断：连续两帧的 onScroll 都会在 setState 生效前进来，
+    // 发两次同样的请求会让第二帧被当成「整体替换」，历史直接被冲掉。
+    if (olderRequestRef.current !== null) return;
+    const before = nextBeforeRef.current;
+    if (typeof before !== 'number') return;
+    olderRequestRef.current = before;
+    setLoadingOlder(true);
+    const sent = client.send({
+      type: 'history',
+      sessionId: session.sessionId,
+      view: 'conversation',
+      beforeSeq: before,
+      // 带游标的请求必须声明格式版本，否则服务端回 history-format-mismatch。
+      historyFormatVersion: HISTORY_FORMAT_VERSION,
+    });
+    if (!sent) {
+      olderRequestRef.current = null;
+      setLoadingOlder(false);
+      return;
+    }
+    // 万一这一帧丢了，别让顶部一直转圈。
+    setTimeout(() => {
+      if (olderRequestRef.current === before) {
+        olderRequestRef.current = null;
+        setLoadingOlder(false);
+      }
+    }, 12000);
+  }, [client, session.sessionId]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      metricsRef.current = { height: contentSize.height, offset: contentOffset.y };
+      const distance = contentSize.height - contentOffset.y - layoutMeasurement.height;
+      const near = distance < 80;
+      atBottomRef.current = near;
+      setShowJump(!near);
+      // 快滑到顶就自动补一页，不用用户去点；内容比一屏还短时不自动翻，避免连锁拉全量。
+      if (contentOffset.y < 120 && hasOlder && contentSize.height > layoutMeasurement.height + 200) {
+        loadOlder();
+      }
+    },
+    [hasOlder, loadOlder],
+  );
+
+  const jumpToBottom = useCallback(() => {
+    atBottomRef.current = true;
+    followRef.current = true;
+    setShowJump(false);
+    // 不用动画：长会话里动画要滚很久，中途还会触发一堆 onScroll 把翻页逻辑带起来。
+    pinToBottom(false);
+  }, []);
+
+  // 键盘弹出会把列表可视区压小，滚到最底才能看见自己刚打的字。
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      // MIUI 的输入法动画拖到 ~300ms，60ms 时量到的还是旧视口，补一枪。
+      setTimeout(() => pinToBottom(true), 60);
+      setTimeout(() => pinToBottom(false), 280);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // 新请求进来就重新展开面板；同一个请求被收起后不会再自动弹。
+  const requestKey = approval?.rpcId ?? question?.rpcId ?? '';
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 新交互到达时重新展开面板，属于对外部帧的同步
+    if (requestKey) setSheetHidden(false);
+  }, [requestKey]);
+
+  /** 首页语音说「同意」后只把审批卡打开，不替用户拍板。 */
+  useEffect(() => {
+    if (!focusApprovalRpcId || !approval || approval.rpcId !== focusApprovalRpcId) return;
+    // 等本轮渲染落定再开卡，避免在 effect 里同步 setState 触发级联渲染。
+    const timer = setTimeout(() => {
+      setTriageOpen(true);
+      setSheetHidden(false);
+      onApprovalFocusHandled?.();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [approval, focusApprovalRpcId, onApprovalFocusHandled]);
+
+  /** 把某一条审批的决定真正发给网关。 */
+  const sendApproval = useCallback(
+    (target: PendingApproval, outcome: ApprovalOutcome, via?: string) => {
+      const sent = client.send({
+        type: 'approval-response',
+        rpcId: target.rpcId,
+        sessionId: target.sessionId,
+        approvalId: target.approvalId,
+        outcome,
+      });
+      if (!sent) {
+        // 审批没有离线队列（收据绑在连接上），这一票压根没出去：面板恢复成可点的，
+        // 更不能在轨迹里留一条网关从没收到过的结论。
+        setGraceLabel(null);
+        setDecidedId(null);
+        decidedRpcRef.current = null;
+        setInteractionError('离线：这次审批没发出去，重连后请重新拍板');
+        return;
+      }
+      decidedRpcRef.current = target.rpcId;
+      // 轨迹页那行审批的即时回显：宿主会把审批写成审计事件对，但那要等下一次重拉历史
+      // 才回得来，刚拍完板这一段本来就该看得见。callId 是给去重用的——历史记录一到，
+      // 同一 callId 的回显就让位（见下面的 trajectoryApprovals）。
+      // 记在这里而不是 decideApproval：悔棋窗撤回过、或者压根没发出去的决定不该留痕。
+      if (!loggedApprovalsRef.current.has(target.rpcId)) {
+        loggedApprovalsRef.current.add(target.rpcId);
+        const reason = pickDisplayReason(target.displayReason, target.reason);
+        setApprovalLog((current) => [
+          ...current,
+          {
+            id: `approval-${target.rpcId}`,
+            kind: 'approval',
+            decision: outcome === 'allowed-once' ? 'approved' : 'denied',
+            target: [target.toolName, reason].filter(Boolean).join(' · ') || '工具调用',
+            callId: target.callId,
+            via,
+            sessionId: target.sessionId,
+            time: Date.now(),
+          },
+        ]);
+      }
+      setInteractionError(null);
+    },
+    [client],
+  );
+
+  const respondApproval = useCallback(
+    (outcome: ApprovalOutcome, via?: string) => {
+      if (!approval) return;
+      sendApproval(approval, outcome, via);
+    },
+    [approval, sendApproval],
+  );
+
+  /**
+   * 拍板：界面立刻推进，真正的 approval-response 压到悔棋窗结束再发。
+   * 网关的审批是一次性的（重复提交只回 accepted:false），所以撤回只能在发送前拦下来。
+   */
+  const decideApproval = useCallback(
+    (outcome: ApprovalOutcome) => {
+      if (!approval) return;
+      graceRef.current = { approval, outcome };
+      setDecidedId(approval.approvalId);
+      setGraceLabel(outcome === 'allowed-once' ? '已批准' : '已拦截');
+      setTriageOpen(false);
+    },
+    [approval],
+  );
+
+  const undoDecision = useCallback(() => {
+    graceRef.current = null;
+    setGraceLabel(null);
+    setDecidedId(null);
+    showToast('已撤回拍板');
+  }, [showToast]);
+
+  const expireGrace = useCallback(() => {
+    const pending = graceRef.current;
+    graceRef.current = null;
+    setGraceLabel(null);
+    if (pending) {
+      sendApproval(pending.approval, pending.outcome);
+      const nextBlocked = blockedSessionIds.find((id) => id !== session.sessionId);
+      if (nextBlocked) {
+        setTimeout(() => {
+          showToast('已自动跳至下一个待审批会话');
+          onOpenSession(nextBlocked);
+        }, MOTION.autoHopMs);
+      }
+    }
+  }, [blockedSessionIds, onOpenSession, sendApproval, session.sessionId, showToast]);
+
+  /**
+   * 把悔棋窗里已经做出的决定立刻发出去。
+   * 切会话、进后台、锁屏之后用户已经看不到倒计时，也不该再等 JS 定时器；
+   * 提交比丢失好，撤回仍然只在用户还看着屏幕时有效。
+   */
+  const flushGrace = useCallback(() => {
+    const pending = graceRef.current;
+    if (!pending) return;
+    graceRef.current = null;
+    setGraceLabel(null);
+    sendApproval(pending.approval, pending.outcome);
+  }, [sendApproval]);
+
+  /** 会话页被卸载（切会话/切网关/返回）时别再等倒计时。 */
+  useEffect(() => () => flushGrace(), [flushGrace]);
+
+  /** 进后台/锁屏时定时器可能被系统挂起，先把决定送出去。 */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') flushGrace();
+    });
+    return () => sub.remove();
+  }, [flushGrace]);
+
+  const toggleTrustedDir = useCallback((dir: string | undefined) => {
+    if (!dir) return;
+    setTrustedDirs((current) =>
+      current.includes(dir) ? current.filter((item) => item !== dir) : [...current, dir],
+    );
+  }, []);
+
+  const answerQuestion = useCallback(
+    (answers: QuestionAnswer[]) => {
+      if (!question) return;
+      client.send({
+        type: 'question-answer',
+        rpcId: question.rpcId,
+        sessionId: question.sessionId,
+        answers,
+      });
+      setInteractionError(null);
+    },
+    [client, question],
+  );
+
+  const cancelQuestion = useCallback(() => {
+    if (!question) return;
+    client.send({ type: 'question-cancel', rpcId: question.rpcId, sessionId: question.sessionId });
+    setInteractionError(null);
+  }, [client, question]);
+
+  const requestAttachment = useCallback(
+    (attachmentId: string) => {
+      if (attachmentAskedRef.current.has(attachmentId)) return;
+      attachmentAskedRef.current.add(attachmentId);
+      client.send({ type: 'attachment', sessionId: session.sessionId, attachmentId });
+    },
+    [client, session.sessionId],
+  );
+
+  const addPicked = useCallback((items: PickedImage[]) => {
+    const limits = imageLimitsRef.current;
+    const maxBytes = limits.maxImageBytes ?? DEFAULT_IMAGE_LIMITS.maxImageBytes ?? 0;
+    const maxCount = limits.maxImagesPerMessage ?? DEFAULT_IMAGE_LIMITS.maxImagesPerMessage ?? 0;
+    const maxTotal = limits.maxMessageImageBytes ?? DEFAULT_IMAGE_LIMITS.maxMessageImageBytes ?? 0;
+    setPicked((current) => {
+      const next = [...current];
+      for (const item of items) {
+        if (item.bytes > maxBytes) {
+          Alert.alert('图片太大', `${item.name ?? '这张图'} 有 ${formatBytes(item.bytes)}，单张上限是 ${formatBytes(maxBytes)}。`);
+          continue;
+        }
+        if (next.length >= maxCount) {
+          Alert.alert('图片太多', `一条消息最多 ${maxCount} 张。`);
+          break;
+        }
+        const total = next.reduce((sum, entry) => sum + entry.bytes, 0);
+        if (total + item.bytes > maxTotal) {
+          Alert.alert('总大小超限', `一条消息的图片总计不能超过 ${formatBytes(maxTotal)}。`);
+          break;
+        }
+        next.push(item);
+      }
+      return next;
+    });
+  }, []);
+
+  const pickImage = useCallback(
+    (source: 'library' | 'camera') => {
+      void (async () => {
+        try {
+          setPicking(true);
+          if (source === 'camera') {
+            const permission = await ImagePicker.requestCameraPermissionsAsync();
+            if (!permission.granted) {
+              Alert.alert('没有相机权限', '请在系统设置里允许 DSH 使用相机。');
+              return;
+            }
+          }
+          const options: ImagePicker.ImagePickerOptions = {
+            mediaTypes: ['images'],
+            base64: true,
+            quality: 0.8,
+            allowsMultipleSelection: source === 'library',
+            selectionLimit: 9,
+          };
+          const result =
+            source === 'camera'
+              ? await ImagePicker.launchCameraAsync(options)
+              : await ImagePicker.launchImageLibraryAsync(options);
+          if (result.canceled) return;
+          const items: PickedImage[] = [];
+          for (const asset of result.assets) {
+            if (!asset.base64) continue;
+            items.push({
+              id: asset.assetId ?? asset.uri + ':' + Date.now() + ':' + items.length,
+              uri: asset.uri,
+              // 选择器给的类型是原文件的，quality 压缩后字节可能已经是 jpeg，按字节重新判。
+              mediaType: imageMediaType(asset.base64, asset.mimeType ?? undefined),
+              data: asset.base64,
+              name: asset.fileName ?? undefined,
+              bytes: base64Bytes(asset.base64),
+            });
+          }
+          addPicked(items);
+        } catch (failure) {
+          Alert.alert('选择图片失败', failure instanceof Error ? failure.message : String(failure));
+        } finally {
+          setPicking(false);
+        }
+      })();
+    },
+    [addPicked],
+  );
+
+  /** 选中文件后保留在当前会话，连接就绪时上传；传完才允许发送。 */
+  const pickFiles = useCallback(() => {
+    const uploader = uploaderRef.current;
+    if (!uploader) return;
+    void (async () => {
+      try {
+        const result = await File.pickFileAsync();
+        if (result.canceled || !result.result || uploaderRef.current !== uploader) return;
+        const file = result.result;
+        const id = randomUUID();
+        setPickedFiles((current) => [
+          ...current,
+          {
+            id,
+            name: file.name || '文件',
+            size: typeof file.size === 'number' ? file.size : 0,
+            file,
+            state: { status: 'waiting' },
+          },
+        ]);
+        void uploader.upload(id, file);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : '选择文件失败');
+      }
+    })();
+  }, []);
+
+  const retryPickedFile = useCallback((id: string) => {
+    const item = pickedFiles.find((entry) => entry.id === id);
+    if (item) void uploaderRef.current?.upload(id, item.file);
+  }, [pickedFiles]);
+
+  const removePickedFile = useCallback((id: string) => {
+    uploaderRef.current?.cancel(id);
+    setPickedFiles((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  const askImageSource = useCallback(() => {
+    // Android 的 AlertDialog 最多三个按钮，第四个「取消」会被丢掉；
+    // 这里显式允许点外部/返回键关闭，别让用户被弹窗困住。
+    Alert.alert(
+      '添加附件',
+      undefined,
+      [
+        { text: '拍照', onPress: () => pickImage('camera') },
+        { text: '从相册选择', onPress: () => pickImage('library') },
+        { text: '文件', onPress: pickFiles },
+      ],
+      { cancelable: true },
+    );
+  }, [pickFiles, pickImage]);
+
+  /** 点文件卡片：没下过就下，下过就直接打开。 */
+  const openFile = useCallback((path: string) => {
+    downloaderRef.current?.open(path);
+  }, []);
+
+  /** 目标写操作必须带上刚读到的 {id, revision}，否则会被 CAS 拒绝。 */
+  const goalAction = useCallback(
+    (action: 'goal-pause' | 'goal-resume' | 'goal-clear') => {
+      const current = goal;
+      if (!current) return;
+      client.send({ type: action, sessionId: session.sessionId, ref: goalRef(current) });
+    },
+    [client, goal, session.sessionId],
+  );
+
+  /** 切换模式：先乐观改本地，服务端拒绝时由 error 分支退回。 */
+  const pickPreset = useCallback(
+    (id: string) => {
+      setPresetSheet(false);
+      if (id === presetId) return;
+      setPresetId(id);
+      setPresetLocked(true);
+      client.send({ type: 'select-agent-preset', sessionId: session.sessionId, agentPreset: id });
+    },
+    [client, presetId, session.sessionId],
+  );
+
+  const presetActions = useMemo<SheetAction[]>(
+    () =>
+      presetList.presets.map((preset) => ({
+        id: preset.id,
+        label: (preset.id === presetId ? '✓ ' : '') + (preset.name || preset.id),
+        hint: [preset.description, preset.broken ? '当前不可用' : null].filter(Boolean).join(' · ') || undefined,
+        disabled: preset.broken || presetLocked || !presetList.modeSelectionEnabled,
+      })),
+    [presetId, presetList, presetLocked],
+  );
+
+  const infoActions = useMemo<SheetAction[]>(() => {
+    const list: SheetAction[] = [{ id: 'copy-id', label: '复制会话 ID', hint: session.sessionId }];
+    if (session.cwd) list.push({ id: 'copy-cwd', label: '复制工作目录', hint: session.cwd });
+    if (session.parentSessionId) {
+      list.push({ id: 'parent', label: '打开来源会话', hint: session.parentSessionId });
+    }
+    list.push({ id: 'archive', label: '归档这个会话', destructive: true });
+    return list;
+  }, [session]);
+
+  const runInfoAction = useCallback(
+    (id: string) => {
+      setInfoSheet(false);
+      if (id === 'copy-id') {
+        void Clipboard.setStringAsync(session.sessionId).then(() => showToast('已复制会话 ID'));
+        return;
+      }
+      if (id === 'copy-cwd' && session.cwd) {
+        void Clipboard.setStringAsync(session.cwd).then(() => showToast('已复制目录'));
+        return;
+      }
+      if (id === 'parent' && session.parentSessionId) {
+        onOpenSession(session.parentSessionId);
+        return;
+      }
+      if (id === 'archive') {
+        client.send({ type: 'session-archive', sessionId: session.sessionId, archived: true });
+        onBack();
+      }
+    },
+    [client, onBack, onOpenSession, session.cwd, session.parentSessionId, session.sessionId, showToast],
+  );
+
+  const removePicked = useCallback((id: string) => {
+    setPicked((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  // 一轮跑完 token/上下文都会变，重新拉一次统计条；挂载时也顺便做一次基线。
+  useEffect(() => {
+    if (running) return;
+    client.send({ type: 'session-stats', sessionId: session.sessionId });
+  }, [client, running, session.sessionId]);
+
+  // 输入 / 之后才拉目录：服务端按会话的 agent preset 和工作目录裁剪，缓存不能跨会话复用。
+  useEffect(() => {
+    if (!draft.startsWith('/')) return;
+    if (commandRequestedRef.current) return;
+    commandRequestedRef.current = true;
+    client.send({ type: 'commands', sessionId: session.sessionId, locale: 'zh-CN' });
+  }, [client, draft, session.sessionId]);
+
+  const pickCommand = useCallback(
+    (item: CommandItem) => {
+      const ui = item.ui;
+      if (!ui) {
+        setDraft(insertTextOf(item));
+        return;
+      }
+      if (ui.kind === 'immediate') {
+        const line = ui.submitText ?? '/' + item.name;
+        const images =
+          ui.images && picked.length
+            ? picked.map((image) => ({
+                mediaType: image.mediaType,
+                data: image.data,
+                name: image.name,
+              }))
+            : undefined;
+        const sent = client.send({
+          type: 'command-execute',
+          sessionId: session.sessionId,
+          line,
+          images,
+        });
+        if (!sent) {
+          setError('连接已断开，命令未发送');
+          return;
+        }
+        setDraft('');
+        setPicked([]);
+        Keyboard.dismiss();
+        return;
+      }
+      if (ui.kind === 'select') {
+        setDraft(insertTextOf(item));
+        setOptionSheet({ command: item.name, options: [], loading: true });
+        const sent = client.send({
+          type: (ui.optionsRequest ?? 'command-options') as 'command-options',
+          sessionId: session.sessionId,
+          command: item.name,
+        });
+        if (!sent) {
+          setOptionSheet(null);
+          setError('连接已断开，无法加载选项');
+        }
+        return;
+      }
+      // input：只把 insertText 写进草稿，发送时仍然走 message。
+      setDraft(insertTextOf(item));
+    },
+    [client, picked, session.sessionId],
+  );
+
+  const chooseOption = useCallback(
+    (option: CommandOption) => {
+      const sheet = optionSheet;
+      if (!sheet) return;
+      client.send({
+        type: 'command-select',
+        sessionId: session.sessionId,
+        command: sheet.command,
+        optionId: option.id,
+      });
+      setOptionSheet(null);
+    },
+    [client, optionSheet, session.sessionId],
+  );
+
+  const cancelTurn = useCallback(() => {
+    if (!running || cancelling) return;
+    setCancelling(true);
+    setError(null);
+    const sent = client.send({ type: 'session-cancel', sessionId: session.sessionId });
+    if (!sent) {
+      setCancelling(false);
+      setError('连接已断开，无法停止');
+      return;
+    }
+    // 万一 turn/end 没回来（比如这一轮刚好自己结束了），别让按钮一直卡在「停止中」。
+    setTimeout(() => setCancelling(false), 10000);
+  }, [cancelling, client, running, session.sessionId]);
+
+  /** 只有传完拿到 receiptId 的文件才能挂到消息上 */
+  const readyFiles = pickedFiles.filter(
+    (item) => item.state.status === 'done' && item.state.receiptId,
+  );
+  const hasUnreadyFiles = readyFiles.length !== pickedFiles.length;
+  // 淡绿光晕缓慢呼吸（Native 驱动，轻而不闪）
+  useEffect(() => {
+    if (!recording) {
+      voiceGlow.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(voiceGlow, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.timing(voiceGlow, { toValue: 0, duration: 1400, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [recording, voiceGlow]);
+
+  // 离开页面时清掉还没到点的开麦定时器；进行中的录音由 useVoiceInput 自己收尾。
+  useEffect(
+    () => () => {
+      if (voiceHoldRef.current) clearTimeout(voiceHoldRef.current);
+    },
+    [],
+  );
+
+  // 和首页 PetStage 同一个形状：手势只建一次。
+  // useRef 而不是 useMemo：依赖一变就重建 responders 会把进行中的手势丢掉；
+  // useVoiceInput 的方法都是稳定引用，闭包捕获第一份也不会过期。
+  const voicePanRef = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      // 手指一动别被外面的滚动/键盘收走。
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        voiceCancelRef.current = false;
+        setVoiceWillCancel(false);
+        if (voiceHoldRef.current) clearTimeout(voiceHoldRef.current);
+        voiceHoldRef.current = setTimeout(() => {
+          voiceHoldRef.current = null;
+          voice.begin();
+        }, VOICE_HOLD_MS);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const willCancel = gesture.dy < VOICE_CANCEL_DY;
+        if (willCancel === voiceCancelRef.current) return;
+        voiceCancelRef.current = willCancel;
+        setVoiceWillCancel(willCancel);
+      },
+      onPanResponderRelease: () => {
+        if (voiceHoldRef.current) {
+          // 没到开麦时间就松手了：当一次轻点，提示一下手势。
+          clearTimeout(voiceHoldRef.current);
+          voiceHoldRef.current = null;
+          setVoiceWillCancel(false);
+          setStatusLabel('按住说话，松手发送 · 上滑取消');
+          return;
+        }
+        // 上滑取消 = 丢掉这一段；松手 = 交给 useVoiceInput 收录音并发转写。
+        if (voiceCancelRef.current) voice.cancel('已取消录音');
+        else voice.end();
+      },
+      onPanResponderTerminate: () => {
+        if (voiceHoldRef.current) {
+          clearTimeout(voiceHoldRef.current);
+          voiceHoldRef.current = null;
+        }
+        voice.cancel('已取消录音');
+      },
+    }),
+  );
+
+  const canSend = !hasUnreadyFiles && Boolean(draft.trim() || picked.length || readyFiles.length);
+
+  /**
+   * APPROVAL-2 停止键合一：运行中且输入框全空（无文字/图片/待发文件，也不在
+   * 编辑排队消息）时，右下角主圆钮直接渲染为停止键；一开始打字就切回 ↑
+   * （排队/插话）。顶栏的「停止」胶囊与转圈指示器由它取代。
+   */
+  const showStop =
+    running && !editingQueue && !draft.trim() && picked.length === 0 && pickedFiles.length === 0;
+
+  const sendMessage = useCallback((raw: string) => {
+    // 编辑排队消息：走 queue-update 的 edit，不要新发一条。
+    if (editingQueue) {
+      const next = raw.trim();
+      if (!next) return;
+      const edited = client.send({
+        type: 'queue-update',
+        sessionId: session.sessionId,
+        itemId: editingQueue,
+        action: 'edit',
+        text: next,
+      });
+      if (!edited) {
+        // 断线时别把改到一半的内容清掉：留在输入框里，重连后再发。
+        setError('连接已断开，排队消息没改成');
+        return;
+      }
+      setEditingQueue(null);
+      setDraft('');
+      return;
+    }
+    // 语音转写也会调用这里，不能只靠按钮禁用来防止失败附件被清空。
+    if (hasUnreadyFiles) {
+      setError('附件尚未上传完成，请等待连接恢复，或重试、移除失败附件');
+      return;
+    }
+    const text = [quote ? formatQuote(quote) : '', raw.trim()].filter(Boolean).join('\n\n');
+    const images = picked;
+    const files = readyFiles;
+    if (!text && images.length === 0 && files.length === 0) return;
+    // 每条消息都带 requestId：网关会把它回显在错误帧里，失败时才能对上号。
+    const requestId = randomUUID();
+    const sent = client.send({
+      type: 'message',
+      requestId,
+      sessionId: session.sessionId,
+      text,
+      clientTimeZone: TIME_ZONE,
+      mode: running ? sendMode : 'queue',
+      images: images.length
+        ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
+        : undefined,
+      files: files.length
+        ? files.map((item) => ({ receiptId: item.state.receiptId as string }))
+        : undefined,
+    });
+    if (sent) {
+      tapFeedback();
+      setError(null);
+      setDraft('');
+      setPicked([]);
+      for (const item of files) uploaderRef.current?.cancel(item.id);
+      setPickedFiles([]);
+      setQuote(null);
+      // 帧已经写进 socket，但「写进去」不等于「收到了」：进发件箱等 `sent` 回执，
+      // 超时转「未确认 · 可能没送达」可手动重试——与断线路径同一条回执闭环。
+      outbox.track({
+        sessionId: session.sessionId,
+        gatewayId,
+        text,
+        images: images.length
+          ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
+          : undefined,
+        files: files.length
+          ? files.map((item) => ({ receiptId: item.state.receiptId as string }))
+          : undefined,
+        mode: running ? sendMode : 'queue',
+        requestId,
+      });
+      onRunningChangeRef.current(true);
+      // 自己发消息一定是要看最新进展的。
+      atBottomRef.current = true;
+      followRef.current = true;
+      setShowJump(false);
+      // 贴底第一枪交给 onContentSizeChange 的贴底分支（followRef 已置真，用
+      // 「本次量到的真实高度」落地，不像 scrollToEnd 按滞后高度算、落短一截）。
+      // 但待发行和「发送方式」条是同一批上屏的：一个加内容高度、一个减视口
+      // 高度，那一枪偶尔量到条挂载前的高度——真机实测：回显慢时自己这条停在
+      // 视口下沿只露个顶。照键盘弹起的补枪口径，等布局落定后按真实高度再落。
+      setTimeout(() => {
+        if (followRef.current) pinToBottom(false);
+      }, 60);
+      setTimeout(() => {
+        if (followRef.current) pinToBottom(false);
+      }, 280);
+    } else if (files.length > 0) {
+      // 收据绑在连接上，离线重发没有意义，直接告诉用户等联网再发。
+      setError('文件需要在线发送，等连接恢复后再试');
+    } else {
+      // 断线了别把用户打的字扔掉：落进发件箱，重连后自动补发。
+      outbox.add({
+        sessionId: session.sessionId,
+        gatewayId,
+        // 纯图片消息的正文留空：占位串只用于本地显示，发给服务端会变成真的「［图片］」。
+        text,
+        images: images.length
+          ? images.map((item) => ({ mediaType: item.mediaType, data: item.data, name: item.name }))
+          : undefined,
+        mode: running ? sendMode : 'queue',
+      });
+      setDraft('');
+      setPicked([]);
+      setQuote(null);
+      setError(null);
+    }
+  }, [client, editingQueue, gatewayId, hasUnreadyFiles, picked, quote, readyFiles, running, sendMode, session.sessionId]);
+
+  /** 输入框那条路径：发草稿。语音那条走 sendMessage 直接发转写结果。 */
+  const send = useCallback(() => sendMessage(draft), [draft, sendMessage]);
+  useEffect(() => {
+    sendRef.current = sendMessage;
+  });
+
+  /** 离线待发的消息：直接删掉，不再重试。 */
+  const discardOffline = useCallback((id: string) => {
+    outbox.remove(id);
+  }, []);
+
+  /** 未确认/失败的离线消息：点「重试」换一个新 requestId 再发；没连着就等下次 ready。 */
+  const retryOffline = useCallback(
+    (id: string) => {
+      if (!outbox.retry(id)) return;
+      if (conn === 'ready') outbox.flush((frame) => client.send(frame), gatewayId);
+    },
+    [client, conn, gatewayId],
+  );
+
+  /** 长按菜单里能做什么，取决于这条消息是什么类型。 */
+  const messageActions = useMemo(() => {
+    const message = actionMessage;
+    if (!message) return [];
+    const actions: SheetAction[] = [];
+    const text = 'text' in message ? message.text : '';
+    if (text) actions.push({ id: 'copy', label: '复制文本' });
+    if (text) {
+      actions.push({
+        id: 'select',
+        label: '选择文本',
+        hint: '进专门的选择页，拖手柄挑任意片段',
+      });
+    }
+    if ('seq' in message && typeof message.seq === 'number') {
+      actions.push({
+        id: 'fork',
+        label: '从这里分叉',
+        hint: '以这条消息为界复制一份新会话，原来的不动',
+      });
+    }
+    if (message.kind === 'user' && text) {
+      actions.push({ id: 'edit', label: '重新编辑', hint: '把内容放回输入框' });
+    }
+    return actions;
+  }, [actionMessage]);
+
+  const runMessageAction = useCallback(
+    (id: string) => {
+      const message = actionMessage;
+      setActionMessage(null);
+      if (!message) return;
+      if (id === 'copy') {
+        const text = 'text' in message ? message.text : '';
+        if (!text) return;
+        void Clipboard.setStringAsync(text).then(
+          () => showToast('已复制'),
+          () => showToast('复制失败'),
+        );
+        return;
+      }
+      if (id === 'select') {
+        if (!('text' in message)) return;
+        setSelectMessage(message);
+        return;
+      }
+      if (id === 'fork') {
+        if (!('seq' in message) || typeof message.seq !== 'number') return;
+        client.send({
+          type: 'fork',
+          sessionId: session.sessionId,
+          atSeq: message.seq,
+          historyFormatVersion: HISTORY_FORMAT_VERSION,
+        });
+        showToast('正在分叉…');
+        return;
+      }
+      if (id === 'edit') {
+        if (!('text' in message)) return;
+        setDraft(message.text);
+        composerRef.current?.focus();
+      }
+    },
+    [actionMessage, client, session.sessionId, showToast],
+  );
+
+  /** 把排队中的消息拉回输入框改；改完用 queue-update 的 edit 覆盖。 */
+  const startEditQueued = useCallback((queueId: string, text: string) => {
+    setEditingQueue(queueId);
+    setDraft(text);
+    setQuote(null);
+    composerRef.current?.focus();
+  }, []);
+
+  const cancelEditQueued = useCallback(() => {
+    setEditingQueue(null);
+    setDraft('');
+  }, []);
+
+  const removeQueued = useCallback(
+    (queueId: string) => {
+      const sent = client.send({
+        type: 'queue-update',
+        sessionId: session.sessionId,
+        itemId: queueId,
+        action: 'remove',
+      });
+      if (!sent) setError('连接已断开，队列没改成');
+    },
+    [client, session.sessionId],
+  );
+
+  const steerQueued = useCallback(
+    (queueId: string) => {
+      const sent = client.send({
+        type: 'queue-update',
+        sessionId: session.sessionId,
+        itemId: queueId,
+        action: 'steer',
+      });
+      if (!sent) setError('连接已断开，插话没发出去');
+    },
+    [client, session.sessionId],
+  );
+
+  // 回执缺失时的兜底：老网关不回 `sent`、只把正文回显时，正式回显出现即视为送达，
+  // 撤掉等确认的条目。只动 'sending' 的——待发/失败的条目重来不会被历史同文本误清；
+  // 纯图片条目（text 为空）不参与文本匹配，等回执或超时由用户拍板。
+  useEffect(() => {
+    const sending = outbox
+      .list(session.sessionId)
+      .filter((item) => item.status === 'sending' && item.text);
+    if (sending.length === 0) return;
+    const seen = new Set<string>();
+    for (const item of queued) if (item.text) seen.add(item.text);
+    for (const message of messages) {
+      if (message.kind === 'user' && message.text) seen.add(message.text);
+    }
+    for (const item of sending) {
+      if (seen.has(item.text)) outbox.remove(item.id);
+    }
+  }, [messages, queued, session.sessionId, offlineItems]);
+
+  /** 审批面板要展示的东西：目标文件、diff（含 edit 工具合成 diff）、推理动机、后续命令、风险等级。 */
+  const approvalInfo = useMemo(() => {
+    if (!approval) return null;
+    // 没有 callId 或工具调用已不在当前历史窗口时，宁可显示「无法定位」，
+    // 也不要猜「最后一条工具」——猜错会把审批对象指向错的命令/文件。
+    const call = approval.callId
+      ? messages.find((message) => message.kind === 'tool' && message.callId === approval.callId)
+      : undefined;
+    const args = call && call.kind === 'tool' ? parseArgs(call.args) : null;
+    const diffData =
+      call && call.kind === 'tool'
+        ? extractToolDiff(call.name, call.args, call.output)
+        : null;
+    const filePath =
+      diffData?.file ??
+      (args && typeof args.file_path === 'string'
+        ? args.file_path
+        : args && typeof args.path === 'string'
+          ? args.path
+          : undefined);
+    const cmd =
+      call && call.kind === 'tool' ? toolCommand(call.name, call.args) : undefined;
+    const lastAssistant = [...messages].reverse().find((m) => m.kind === 'assistant');
+    const lastReasoning =
+      lastAssistant && lastAssistant.kind === 'assistant' ? lastAssistant.reasoning : undefined;
+    const displayReason = pickDisplayReason(approval.displayReason, approval.reason);
+    return {
+      target: filePath ?? approval.toolName ?? '工具调用',
+      dir: dirOf(filePath),
+      detail: displayReason || (lastReasoning ? lastReasoning.split('\n')[0] : undefined),
+      diff: diffData?.diff,
+      additions: diffData?.additions,
+      deletions: diffData?.deletions,
+      nextCommand: cmd,
+      /** shell/exec 类审批必须看到真实命令，不能只靠 reason 文案。 */
+      commandRequired: isShellTool(approval.toolName),
+      risk: approvalRisk(approval, cmd),
+    };
+  }, [approval, messages]);
+
+  // 目录级信任：同目录、低风险的后续补丁直接放行，不再打断（§3.4）。
+  useEffect(() => {
+    if (!approval || !approvalInfo) return;
+    if (approvalInfo.commandRequired && !approvalInfo.nextCommand?.trim()) return;
+    if (approvalInfo.risk.level !== 'normal') return;
+    if (!approvalInfo.dir || !trustedDirs.includes(approvalInfo.dir)) return;
+    if (autoApprovedRef.current.has(approval.approvalId)) return;
+    autoApprovedRef.current.add(approval.approvalId);
+    setDecidedId(approval.approvalId);
+    respondApproval('allowed-once', '目录信任');
+    showToast(`已按目录信任放行 · ${approvalInfo.dir}`);
+  }, [approval, approvalInfo, trustedDirs, respondApproval, showToast]);
+
+
+  const baseRows: ChatMessage[] = useMemo(() => {
+    if (!streaming) return messages;
+    const split = splitThinkTags(streaming.text);
+    const combinedReasoning =
+      [streaming.reasoning, split.reasoning].filter(Boolean).join('\n\n') || undefined;
+    return [
+      ...messages,
+      {
+        id: `stream-${streaming.attemptId}`,
+        kind: 'assistant',
+        text: split.text,
+        reasoning: combinedReasoning,
+        time: streaming.startedAt,
+        streaming: true,
+      },
+    ];
+  }, [messages, streaming]);
+
+  /**
+   * 轨迹页的审批记录：SessionScreen 不随会话切换卸载，得自己按会话分；
+   * 历史里已经有同一条（gateway 的审计事件对）时，本机回显让位，不然会画两遍。
+   * 只按 callId 对——两边都拿不到 callId 的时候宁可贵一条回显，也不要漏掉历史记录。
+   */
+  const trajectoryApprovals = useMemo(() => {
+    const inHistory = new Set(
+      messages
+        .filter((message): message is ApprovalRecord => message.kind === 'approval' && !!message.callId)
+        .map((message) => message.callId as string),
+    );
+    return approvalLog.filter(
+      (item) =>
+        (!item.sessionId || item.sessionId === session.sessionId) &&
+        (!item.callId || !inHistory.has(item.callId)),
+    );
+  }, [approvalLog, messages, session.sessionId]);
+
+  const rows: StreamRow[] = useMemo(() => {
+    const extras: ChatMessage[] = [
+      ...queued.map((item) => ({
+        id: `queue-${item.id}`,
+        kind: 'queued' as const,
+        text: item.text,
+        time: 0,
+        queueId: item.id,
+        placement: item.placement,
+      })),
+      ...offlineItems.map((item) => ({
+        id: `offline-${item.id}`,
+        kind: 'queued' as const,
+        // 发件箱里纯图片的正文是空的，气泡上仍要有个占位说明。
+        text: item.text || (item.images?.length ? IMAGE_ONLY_TEXT : ''),
+        time: 0,
+        queueId: item.id,
+        pending: true,
+        offline: true,
+        offlineStatus: item.displayStatus,
+        offlineError: item.error,
+      })),
+    ];
+    // 连续的 tool 调用合并成一组，其余消息原样透传。
+    return groupMessages([...baseRows, ...extras], { running });
+  }, [baseRows, offlineItems, queued, running]);
+
+  // 帧回调里要按索引回滚到「最后一条用户消息」，只能读渲染后的 rows。
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  /** 最后一个活动胶囊的 id：只有它会在「实时一轮刚收拢」时播放收拢动画。 */
+  const lastActivityId = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      if (rows[i].kind === 'activity') return rows[i].id;
+    }
+    return null;
+  }, [rows]);
+
+  // 进会话先把上次没发完的草稿捞回来。切换会话时先清空，
+  // 否则上一会话的文字会被当成这一会话的草稿写回去。
+  useEffect(() => {
+    draftReadyRef.current = false;
+    let cancelled = false;
+    void loadDraft(session.sessionId).then((text) => {
+      if (cancelled) return;
+      const delivery = pendingDeliveryRef.current;
+      pendingDeliveryRef.current = null;
+      setDraft(delivery ? (text.trim() ? text + ' ' + delivery.text : delivery.text) : text);
+      draftReadyRef.current = true;
+      if (delivery) {
+        composerRef.current?.focus();
+        onVoiceDeliveryTaken?.(delivery.key);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.sessionId, onVoiceDeliveryTaken]);
+
+  // 首页语音到上限的文字投递：本会话的才收。页面还开着就直接合并；
+  // 草稿还没读完就先记账，交给上面的 loadDraft 一起合并（先合并会被读盘覆盖掉）。
+  useEffect(() => {
+    if (!voiceDelivery || voiceDelivery.sessionId !== session.sessionId) return;
+    if (!draftReadyRef.current) {
+      pendingDeliveryRef.current = { key: voiceDelivery.key, text: voiceDelivery.text };
+      return;
+    }
+    setDraft((current) =>
+      current.trim() ? current + ' ' + voiceDelivery.text : voiceDelivery.text,
+    );
+    composerRef.current?.focus();
+    onVoiceDeliveryTaken?.(voiceDelivery.key);
+  }, [onVoiceDeliveryTaken, session.sessionId, voiceDelivery]);
+
+  // 草稿改动落盘（内部已做防抖）。没加载完之前不写，避免把空值覆盖掉磁盘上的草稿。
+  useEffect(() => {
+    if (!draftReadyRef.current) return;
+    saveDraft(session.sessionId, draft);
+  }, [draft, session.sessionId]);
+
+  // 发件箱是模块级单例，订阅一次就能跟着增删重绘
+  //（含「待确认」超时翻成「未确认」的那次通知）。
+  useEffect(() => {
+    const sync = () => setOfflineItems(outbox.listForDisplay(session.sessionId));
+    sync();
+    return outbox.subscribe(sync);
+  }, [session.sessionId]);
+
+
+  // / 之后还没打空格时才弹目录；打了空格说明在写参数，别挡着输入框。
+  const slashQuery = draft.startsWith('/') ? draft.slice(1) : null;
+  const paletteGroups = useMemo(() => {
+    if (slashQuery === null || /\s/.test(slashQuery)) return [];
+    return filterCommands(commandGroups, slashQuery);
+  }, [commandGroups, slashQuery]);
+  const statsLine = useMemo(() => describeStats(stats), [stats]);
+
+  /**
+   * 跳到某一轮：rows 里找到第一条 seq >= 目标的事件就滚过去。
+   * 还没加载到那一段就先往回翻页，翻到之后这个 effect 会因为 rows 变化再跑一次。
+   */
+  useEffect(() => {
+    const target = jumpTargetRef.current;
+    if (target === null) return;
+    const index = rows.findIndex((row) => {
+      const seq = (row as { seq?: number }).seq;
+      return typeof seq === 'number' && seq >= target;
+    });
+    if (index >= 0) {
+      jumpTargetRef.current = null;
+      atBottomRef.current = false;
+      setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 }), 60);
+      return;
+    }
+    if (hasOlder) loadOlder();
+  }, [hasOlder, jumpTick, loadOlder, rows]);
+
+  return (
+    <View style={styles.root}>
+      {/* 2px 上下文水位线：不占排版高度，扫一眼就知道还剩多少上下文。 */}
+      <ContextHairline ratio={contextPct / 100} />
+      {/* 右侧弧形会话转盘：按住感应条上下滑或轻点呼出，松手切换会话。 */}
+      <ArcDial
+        sessions={sessions}
+        activeId={session.sessionId}
+        blockedIds={blockedSessionIds}
+        onSelect={onOpenSession}
+        onOpenChange={setDialOpen}
+      />
+      <View style={styles.header}>
+        <Pressable
+          testID="session-back"
+          onPress={onBack}
+          hitSlop={12}
+          style={styles.back}
+          accessibilityRole="button"
+          accessibilityLabel="返回会话列表"
+        >
+          <Text style={styles.backText} allowFontScaling={false}>
+            ‹
+          </Text>
+        </Pressable>
+        <Pressable
+          style={styles.titleWrap}
+          onLongPress={() => setInfoSheet(true)}
+          delayLongPress={320}
+          accessibilityHint="长按查看会话信息"
+          accessibilityActions={[{ name: 'longpress', label: '会话信息' }]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'longpress') setInfoSheet(true);
+          }}
+        >
+          <Text style={styles.title} numberOfLines={1}>
+            {session.projections?.values.title ?? '未命名会话'}
+          </Text>
+        </Pressable>
+        {approval ? (
+          <StatusPill text="待批复" tone="gate" onPress={() => setTriageOpen(true)} />
+        ) : running ? (
+          <StatusPill text="THINKING" tone="busy" />
+        ) : null}
+        {todos && todos.length > 0 ? (
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => setTasksOpen(true)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.outlineText}>
+              任务 {todos.filter((item) => item.status === 'completed').length}/{todos.length}
+            </Text>
+          </Pressable>
+        ) : goal ? (
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => setTasksOpen(true)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.outlineText}>目标</Text>
+          </Pressable>
+        ) : null}
+        {outline.length > 0 ? (
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => setOutlineOpen(true)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.outlineText}>轮次</Text>
+          </Pressable>
+        ) : null}
+        {/* 停止入口已合并进右下角主圆钮（APPROVAL-2）；这里只留占位保持标题行平衡。 */}
+        <View style={styles.placeholder} />
+      </View>
+
+      {/* 对话 / 轨迹切换：对话流里正文优先（思考/工具折叠），轨迹页摊开完整时间线 */}
+      <View style={styles.viewTabs}>
+        <Pressable
+          style={[styles.viewTab, viewMode === 'chat' ? styles.viewTabOn : null]}
+          onPress={() => {
+            tapFeedback();
+            setViewMode('chat');
+          }}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: viewMode === 'chat' }}
+        >
+          <Text style={[styles.viewTabText, viewMode === 'chat' ? styles.viewTabTextOn : null]}>
+            对话
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.viewTab, viewMode === 'trajectory' ? styles.viewTabOn : null]}
+          onPress={() => {
+            tapFeedback();
+            setViewMode('trajectory');
+          }}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: viewMode === 'trajectory' }}
+        >
+          <Text style={[styles.viewTabText, viewMode === 'trajectory' ? styles.viewTabTextOn : null]}>
+            轨迹
+          </Text>
+        </Pressable>
+      </View>
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior="padding"
+        keyboardVerticalOffset={8}
+      >
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={t.text.muted} />
+          </View>
+        ) : viewMode === 'trajectory' ? (
+          <TrajectoryView messages={baseRows} approvals={trajectoryApprovals} running={running} />
+        ) : (
+          <FlatList<StreamRow>
+            ref={listRef}
+            scrollEnabled={!dialOpen}
+            data={rows}
+            keyExtractor={(item) => item.id}
+            // 下载进度只改 fileStates，不刷新 data；不给 extraData 卡片状态根本不会重绘。
+            extraData={fileStates}
+            contentContainerStyle={styles.list}
+            keyboardShouldPersistTaps="handled"
+            onScroll={handleScroll}
+            onScrollBeginDrag={() => {
+              // 只有手指真的拖动才停止跟随；setContentOffset 不会触发这个回调。
+              followRef.current = false;
+            }}
+            scrollEventThrottle={16}
+            onLayout={() => {
+              // 键盘/横竖屏（以及 running 翻转引起的「发送方式」行出没）改了列表高度时，
+              // 正在跟随就重新贴底（pinToBottom 用最近量到的真实高度，不用 scrollToEnd
+              // 的滞后目标——那正是「发送瞬间被顶掉 + 回到底部悬挂」的一半成因）。
+              if (followRef.current) pinToBottom(false);
+            }}
+            onScrollToIndexFailed={(info) => {
+              // 目标行还没渲染出来时 FlatList 会失败，先按平均行高估个位置再重试。
+              listRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: false,
+              });
+              setTimeout(
+                () => listRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0 }),
+                160,
+              );
+            }}
+            onContentSizeChange={(_width, height) => {
+              const anchor = prependAnchorRef.current;
+              if (anchor) {
+                prependAnchorRef.current = null;
+                const added = height - anchor.height;
+                if (added > 0) {
+                  // 前面插进来多少，就把视口往下推多少，用户看到的那一行原地不动。
+                  const offset = anchor.offset + added;
+                  metricsRef.current = { height, offset };
+                  listRef.current?.scrollToOffset({ offset, animated: false });
+                  return;
+                }
+              }
+              metricsRef.current = { height, offset: metricsRef.current.offset };
+              if (followRef.current || atBottomRef.current) {
+                // scrollToEnd / scrollToOffset 里没给 offset 时，用的都是 JS 侧滞后的
+                // 内容高度当目标，落地常常差几十像素——atBottom 被这种「差一点」误判成
+                // 假之后，本轮剩下的生长就全不再跟，终答就停在折线下方（真机 trace：
+                // 目标按滞后高度算，dist=86 触发误判，后续 500+px 生长一动不动）。
+                // 直接拿这次量到的真实高度当 offset（超出会被原生钳到真底），落地即精确到底。
+                listRef.current?.scrollToOffset({ offset: height, animated: false });
+              }
+            }}
+            ListHeaderComponent={
+              <View style={styles.olderWrap}>
+                {loadingOlder ? (
+                  <ActivityIndicator size="small" color={t.text.muted} />
+                ) : hasOlder ? (
+                  <Pressable onPress={loadOlder} hitSlop={10}>
+                    <Text style={styles.olderAction}>加载更早的消息</Text>
+                  </Pressable>
+                ) : messages.length > 0 ? (
+                  <Text style={styles.olderEnd}>已经是最早的消息</Text>
+                ) : null}
+              </View>
+            }
+            ListEmptyComponent={
+              loadFailed ? (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.empty}>历史没加载出来</Text>
+                  <Pressable
+                    style={styles.retryButton}
+                    onPress={() => {
+                      tapFeedback();
+                      retryFirstScreen();
+                    }}
+                  >
+                    <Text style={styles.retryButtonText}>重试</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Text style={styles.empty}>
+                  {conn === 'ready' ? '还没有消息' : '连接断开，重连后会自动加载历史'}
+                </Text>
+              )
+            }
+            renderItem={({ item, index }) => {
+              const rowTime = (row: StreamRow): number => {
+                if (row.kind === 'tools') return row.tools[0]?.time ?? 0;
+                if (row.kind === 'activity') {
+                  const first = row.steps[0];
+                  if (!first) return 0;
+                  return first.kind === 'tools' ? (first.tools[0]?.time ?? 0) : first.message.time;
+                }
+                return row.message.time;
+              };
+              const time = rowTime(item);
+              const previous = rows[index - 1];
+              const previousTime = previous ? rowTime(previous) : 0;
+              return (
+                <View>
+                  {dayLabel(time) && dayLabel(time) !== dayLabel(previousTime) ? (
+                    <Text style={styles.dayDivider}>{dayLabel(time)}</Text>
+                  ) : null}
+                  {item.kind === 'activity' ? (
+                    <View style={styles.toolGroupWrap}>
+                      <ActivityGroup
+                        steps={item.steps}
+                        animateIn={running && item.id === lastActivityId}
+                        pendingCallId={approval?.callId}
+                        onOpenGate={() => setTriageOpen(true)}
+                        onQuoteLine={(line) =>
+                          setQuote({
+                            lang: 'diff',
+                            label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+                            code: line.text,
+                          })
+                        }
+                      />
+                    </View>
+                  ) : item.kind === 'tools' ? (
+                    <View style={styles.toolGroupWrap}>
+                      <ToolGroup
+                        tools={item.tools}
+                        pendingCallId={approval?.callId}
+                        onOpenGate={() => setTriageOpen(true)}
+                        onQuoteLine={(line) =>
+                          setQuote({
+                            lang: 'diff',
+                            label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+                            code: line.text,
+                          })
+                        }
+                      />
+                    </View>
+                  ) : (
+                    // 流式草稿行刚被这条正式行换掉时（landingRowIdRef 命中）：
+                    // 出现侧补 240ms 淡入——Android Fabric 下 LayoutAnimation
+                    // 默认关闭，这是 FLOW-1 ③ 收拢观感的替代修法。
+                    <RowFadeIn
+                      enabled={item.id === landingRowIdRef.current}
+                      onConsumed={consumeLanding}
+                    >
+                      <MessageRow
+                        message={item.message}
+                        attachmentCache={attachmentCache}
+                        onNeedAttachment={requestAttachment}
+                        onRemoveQueued={removeQueued}
+                        onEditQueued={startEditQueued}
+                        onSteerQueued={steerQueued}
+                        fileStates={fileStates}
+                        onOpenFile={openFile}
+                        canDownloadFiles={canDownloadFiles}
+                        onDiscardOffline={discardOffline}
+                        onRetryOffline={retryOffline}
+                        onLongPress={setActionMessage}
+                        onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
+                      />
+                    </RowFadeIn>
+                  )}
+                </View>
+              );
+            }}
+          />
+        )}
+
+        <TriageSheet
+          visible={triageOpen && Boolean(approval)}
+          target={approvalInfo?.target ?? ''}
+          reason={approvalInfo?.detail}
+          diff={approvalInfo?.diff}
+          nextCommand={approvalInfo?.nextCommand}
+          commandRequired={approvalInfo?.commandRequired}
+          highRisk={approvalInfo?.risk.level === 'high'}
+          busy={Boolean(approval && decidedId === approval.approvalId)}
+          error={interactionError}
+          trusted={Boolean(approvalInfo?.dir && trustedDirs.includes(approvalInfo.dir))}
+          dir={approvalInfo?.dir}
+          onToggleTrust={() => toggleTrustedDir(approvalInfo?.dir)}
+          onClose={() => setTriageOpen(false)}
+          onApprove={() => decideApproval('allowed-once')}
+          onReject={() => decideApproval('rejected')}
+          onQuote={(line) =>
+            setQuote({
+              lang: 'diff',
+              label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+              code: line.text,
+            })
+          }
+        />
+
+        <InteractionSheet
+          approval={null}
+          question={question}
+          error={interactionError}
+          hidden={sheetHidden}
+          onDismiss={() => setSheetHidden(true)}
+          onApproval={respondApproval}
+          onAnswer={answerQuestion}
+          onCancelQuestion={cancelQuestion}
+        />
+
+        <ActionSheet
+          visible={infoSheet}
+          title={session.projections?.values.title ?? '未命名会话'}
+          subtitle={session.cwd ?? undefined}
+          actions={infoActions}
+          onPick={runInfoAction}
+          onClose={() => setInfoSheet(false)}
+        />
+
+        <ActionSheet
+          visible={presetSheet}
+          title="模式"
+          subtitle={
+            presetLocked
+              ? '会话已经开始过，模式已固定；想换模式请新建会话'
+              : '只对还没开始过的会话生效'
+          }
+          actions={presetActions}
+          onPick={pickPreset}
+          onClose={() => setPresetSheet(false)}
+        />
+
+        <ActionSheet
+          visible={actionMessage !== null}
+          title={actionMessage && 'text' in actionMessage ? previewOf(actionMessage.text) : undefined}
+          actions={messageActions}
+          onPick={runMessageAction}
+          onClose={() => setActionMessage(null)}
+        />
+
+        {selectMessage ? (
+          <TextSelectionSheet
+            visible
+            title={selectMessage.kind === 'assistant' ? '选择回答文本' : '选择消息文本'}
+            text={'text' in selectMessage ? selectMessage.text : ''}
+            onClose={() => setSelectMessage(null)}
+          />
+        ) : null}
+
+        {toast ? (
+          <View style={styles.toast} pointerEvents="none">
+            <Text style={styles.toastText}>{toast}</Text>
+          </View>
+        ) : null}
+
+        {sheetHidden && question ? (
+          <Pressable style={styles.pendingBar} onPress={() => setSheetHidden(false)}>
+            <View style={styles.pendingBarDot} />
+            <Text style={styles.pendingBarText} numberOfLines={1}>
+              {'待回答 · ' + question.questions.length + ' 个问题'}
+            </Text>
+            <Text style={styles.pendingBarAction}>打开</Text>
+          </Pressable>
+        ) : null}
+
+        <CommandOptionsSheet
+          state={optionSheet}
+          onClose={() => setOptionSheet(null)}
+          onPick={chooseOption}
+        />
+
+        <TasksSheet
+          visible={tasksOpen}
+          todos={todos}
+          goal={goal}
+          onClose={() => setTasksOpen(false)}
+          onPause={() => goalAction('goal-pause')}
+          onResume={() => goalAction('goal-resume')}
+          onClear={() => goalAction('goal-clear')}
+        />
+
+        <OutlineSheet
+          visible={outlineOpen}
+          items={outline}
+          onClose={() => setOutlineOpen(false)}
+          onPick={(item) => {
+            jumpTargetRef.current = item.seq;
+            // 跳转期间别再让「回到底部」的自动跟随生效。
+            atBottomRef.current = false;
+            setOutlineOpen(false);
+            setJumpTick((value) => value + 1);
+          }}
+        />
+
+        {graceLabel ? (
+          <GraceUndo label={graceLabel} onUndo={undoDecision} onExpire={expireGrace} />
+        ) : null}
+
+        {approval && approvalInfo && !graceLabel ? (
+          <ApprovalDock
+            target={approvalInfo.target}
+            detail={approvalInfo.detail}
+            command={approvalInfo.nextCommand}
+            commandRequired={approvalInfo.commandRequired}
+            queueCount={approvals.length}
+            error={interactionError}
+            additions={approvalInfo.additions}
+            deletions={approvalInfo.deletions}
+            highRisk={approvalInfo.risk.level === 'high'}
+            riskLabels={approvalInfo.risk.labels}
+            busy={decidedId === approval.approvalId}
+            trusted={Boolean(approvalInfo.dir && trustedDirs.includes(approvalInfo.dir))}
+            onToggleTrust={() => toggleTrustedDir(approvalInfo.dir)}
+            onApprove={() => decideApproval('allowed-once')}
+            onReject={() => decideApproval('rejected')}
+            onExpand={() => setTriageOpen(true)}
+          />
+        ) : null}
+
+        <View>
+          {picked.length > 0 ? (
+            <View style={styles.pickedRow}>
+              {picked.map((item) => (
+                <View key={item.id} style={styles.pickedItem}>
+                  <Image source={{ uri: item.uri }} style={styles.pickedImage} resizeMode="cover" />
+                  <Pressable style={styles.pickedRemove} onPress={() => removePicked(item.id)} hitSlop={6}>
+                    <Text style={styles.pickedRemoveText}>×</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {showJump ? (
+            <View pointerEvents="box-none" style={styles.jumpWrap}>
+              <Pressable style={styles.jump} onPress={jumpToBottom}>
+                <Text style={styles.jumpText}>回到底部</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {running ? (
+            <View style={styles.modeRow}>
+              <Text style={styles.modeLabel}>发送方式</Text>
+              <Pressable
+                style={[styles.modeChip, sendMode === 'queue' ? styles.modeChipOn : null]}
+                onPress={() => setSendMode('queue')}
+              >
+                <Text style={[styles.modeText, sendMode === 'queue' ? styles.modeTextOn : null]}>排队</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modeChip, sendMode === 'steer' ? styles.modeChipOn : null]}
+                onPress={() => setSendMode('steer')}
+              >
+                <Text style={[styles.modeText, sendMode === 'steer' ? styles.modeTextOn : null]}>插话</Text>
+              </Pressable>
+              <Text style={styles.modeHint}>
+                {sendMode === 'steer' ? '立即插入当前回合' : '这一轮结束后发送'}
+              </Text>
+            </View>
+          ) : null}
+          <ModelPermissionBar client={client} sessionId={session.sessionId} />
+          {statusLabel || statsLine ? (
+            <View style={styles.statusBar}>
+              {canPickPreset && presetList.presets.length > 0 ? (
+                <Pressable
+                  style={[styles.statusChipBox, presetLocked ? styles.statusChipBoxLocked : null]}
+                  onPress={() => setPresetSheet(true)}
+                >
+                  <Text style={[styles.statusChipText, presetLocked ? styles.statusChipTextLocked : null]}>
+                    {presetName(presetList.presets, presetId)}
+                    {presetLocked ? ' · 锁定' : ''}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {statusLabel ? (
+                <Animated.Text style={[styles.statusChip, { opacity: statusFade }]}>
+                  {statusLabel}
+                </Animated.Text>
+              ) : null}
+              {statsLine ? (
+                <Text style={styles.statusMeta} numberOfLines={1}>
+                  {statsLine}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+          {editingQueue ? (
+            <View style={styles.editBar}>
+              <Text style={styles.editBarText}>正在编辑排队消息</Text>
+              <Pressable hitSlop={8} onPress={cancelEditQueued}>
+                <Text style={styles.editBarAction}>取消</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {pickedFiles.length > 0 ? (
+            <View style={styles.fileChipRow}>
+              {pickedFiles.map((item) => {
+                const state = item.state;
+                const label =
+                  state.status === 'waiting'
+                    ? '等待连接后上传'
+                    : state.status === 'hashing'
+                      ? '校验中'
+                      : state.status === 'uploading'
+                        ? `${Math.round((state.progress ?? 0) * 100)}%`
+                        : state.status === 'done'
+                          ? formatBytes(item.size)
+                          : state.message ?? '上传失败';
+                return (
+                  <View
+                    key={item.id}
+                    style={[styles.fileChip, state.status === 'error' ? styles.fileChipError : null]}
+                  >
+                    <Text style={styles.fileChipName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.fileChipState,
+                        state.status === 'error' ? styles.fileChipStateError : null,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                    {state.status === 'error' ? (
+                      <Pressable
+                        hitSlop={8}
+                        onPress={() => retryPickedFile(item.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`重试上传 ${item.name}`}
+                      >
+                        <Text style={styles.fileChipState}>重试</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => removePickedFile(item.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`移除附件 ${item.name}`}
+                    >
+                      <Text style={styles.fileChipClose} allowFontScaling={false}>
+                        ×
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+          {quote ? (
+            <View style={styles.quoteBar}>
+              <Text style={styles.quoteTag}>引用{quote.lang ? ' · ' + quote.lang : ''}</Text>
+              <Text style={styles.quoteText} numberOfLines={1}>
+                {quote.code.split('\n')[0].trim()}
+              </Text>
+              <Pressable
+                hitSlop={8}
+                onPress={() => setQuote(null)}
+                accessibilityRole="button"
+                accessibilityLabel="取消引用"
+              >
+                <Text style={styles.quoteClose} allowFontScaling={false}>
+                  ×
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {conn !== 'ready' ? (
+            <View style={styles.connBar}>
+              <View style={styles.connDot} />
+              <Text style={styles.connText}>
+                {conn === 'connecting' ? '正在连接网关…' : '连接已断开，正在自动重连'}
+              </Text>
+            </View>
+          ) : null}
+          <CommandPalette groups={paletteGroups} onPick={pickCommand} />
+          <View style={styles.composer}>
+            <Pressable
+              testID="session-attach"
+              style={[styles.attach, picking ? styles.attachDisabled : null]}
+              onPress={askImageSource}
+              disabled={picking}
+              accessibilityRole="button"
+              accessibilityLabel="添加附件"
+              accessibilityState={{ disabled: picking }}
+            >
+              {picking ? (
+                <ActivityIndicator size="small" color={t.text.muted} />
+              ) : (
+                <Text style={styles.attachText} allowFontScaling={false}>
+                  ＋
+                </Text>
+              )}
+            </Pressable>
+            {/* 麦克风嵌在输入框内部右侧：未录音浅灰图标，录音时绿底 + 淡绿呼吸光晕 */}
+            <View style={styles.inputWrap}>
+              <TextInput
+                ref={composerRef}
+                testID="session-composer-input"
+                accessibilityLabel="消息输入框"
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={
+                  recording
+                    ? voiceWillCancel
+                      ? '松手取消'
+                      : `正在聆听 ${formatClock(voice.elapsed)} / ${formatClock(voice.limit)}`
+                    : '发消息…'
+                }
+                placeholderTextColor={
+                  recording
+                    ? voiceWillCancel
+                      ? t.semantic.dangerText
+                      : voice.almostUp
+                        ? t.semantic.gateAmberText
+                        : t.semantic.diffAddText
+                    : t.text.muted
+                }
+                // 空白会话（双击鲸鱼新建出来的）直接把键盘叫起来，省一次点击
+                autoFocus={Boolean(session.blank)}
+                multiline
+              />
+              {/* 录音期间不再给 ✕：上滑取消就是它。转写要等结果，才留一个撤回。 */}
+              {transcribing ? (
+                <Pressable
+                  style={styles.voiceCancel}
+                  onPress={() => {
+                    tapFeedback();
+                    voice.cancelTranscription();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="取消"
+                >
+                  <View style={styles.cancelGlyph}>
+                    <View style={[styles.cancelBar, { backgroundColor: t.text.muted }]} />
+                    <View style={[styles.cancelBar, styles.cancelBarAlt, { backgroundColor: t.text.muted }]} />
+                  </View>
+                </Pressable>
+              ) : null}
+              {/* 按住说话、松手发送、上滑取消（与首页宠物同一套手势）。
+                  外层是按住区域：36×36 撑满胶囊高度，再往上下各借 8dp——
+                  **left 给 0**，绝不压到左边输入框的长按选择/粘贴。 */}
+              <View
+                {...voicePanRef.current.panHandlers}
+                style={styles.micTouch}
+                hitSlop={{ top: 8, bottom: 8, right: 6, left: 0 }}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={recording ? '松开结束录音' : '按住说话'}
+                accessibilityHint="按住说话，松手发送，上滑取消"
+              >
+                {/* 圆底始终透明：录音状态只由呼吸光晕和文案表达，
+                    再叠一层实心色底会在光晕上压出一个色块。 */}
+                <View style={styles.micInInput}>
+                  {recording ? (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.micGlowInner,
+                        // 滑过取消线时整圈光变红——状态全由这一圈呼吸灯表达，
+                        // 圆底和图标本身始终不动。
+                        {
+                          backgroundColor: voiceWillCancel
+                            ? t.semantic.dangerText
+                            : t.semantic.diffAddText,
+                        },
+                        {
+                          // 不透明度封顶 0.55、缩放从 1.15 起：吸气到底时也不会
+                          // 变成一个盖住图标的实心圆，始终是「绕着图标的一圈晕」。
+                          opacity: voiceGlow.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.55],
+                          }),
+                          transform: [
+                            {
+                              scale: voiceGlow.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1.15, 1.6],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
+                  ) : null}
+                  {transcribing ? (
+                    <ActivityIndicator size="small" color={t.text.muted} />
+                  ) : (
+                    <View style={styles.micGlyph}>
+                      <View style={[styles.micGlyphHead, { backgroundColor: t.text.muted }]} />
+                      <View style={[styles.micGlyphBase, { backgroundColor: t.text.muted }]} />
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+            <Pressable
+              testID="session-send"
+              style={[
+                styles.send,
+                showStop ? styles.sendStop : null,
+                (showStop ? cancelling : !canSend) && styles.sendDisabled,
+              ]}
+              disabled={showStop ? cancelling : !canSend}
+              onPress={showStop ? cancelTurn : send}
+              accessibilityRole="button"
+              accessibilityLabel={showStop ? '停止本回合' : '发送'}
+              accessibilityState={{ disabled: showStop ? cancelling : !canSend }}
+            >
+              {showStop ? (
+                <View style={styles.stopGlyph} />
+              ) : (
+                <Text style={styles.sendText} allowFontScaling={false}>
+                  ↑
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/** 128000 → 128k，1500 → 1.5k，方便塞进一行统计条。 */
+function compactTokens(value: number): string {
+  if (value >= 100000) return Math.round(value / 1000) + 'k';
+  if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(value);
+}
+
+/** 缓存命中率：命中读占「计费输入 + 缓存读 + 缓存写」的比例。 */
+function cacheHitPercent(totals?: {
+  inputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+}): number | null {
+  if (!totals) return null;
+  const read = totals.cacheReadTokens ?? 0;
+  const total = (totals.inputTokens ?? 0) + read + (totals.cacheWriteTokens ?? 0);
+  if (total <= 0) return null;
+  return Math.round((read / total) * 100);
+}
+
+function describeStats(stats: SessionStatsFrame | null): string | null {
+  if (!stats) return null;
+  const parts: string[] = [];
+  const sessionStats = stats.sessionStats;
+  if (typeof sessionStats?.turns === 'number') parts.push('轮次 ' + sessionStats.turns);
+  if (typeof sessionStats?.steps === 'number') parts.push('步骤 ' + sessionStats.steps);
+  const pressure = stats.contextPressure;
+  if (typeof pressure?.pressureTokens === 'number' && typeof pressure?.contextWindow === 'number') {
+    parts.push('上下文 ' + compactTokens(pressure.pressureTokens) + '/' + compactTokens(pressure.contextWindow));
+  }
+  const cache = cacheHitPercent(stats.tokenUsage?.totals);
+  if (cache !== null) parts.push('缓存 ' + cache + '%');
+  return parts.length ? parts.join(' · ') : null;
+}
+
+
+/** 离线气泡那一行状态：待发等联网、发送中等回执、超时未确认、拒收可重试。 */
+function offlineStatusText(
+  status: 'pending' | 'sending' | 'unconfirmed' | 'failed' | undefined,
+  error?: string,
+): string {
+  switch (status) {
+    case 'sending':
+      return '已发送，等确认…';
+    case 'unconfirmed':
+      return '未确认 · 可能没送达';
+    case 'failed':
+      return error ? `发送失败：${error}` : '发送失败';
+    default:
+      return '待发送 · 联网后自动重发';
+  }
+}
+
+/**
+ * 落地行淡入（F3 修法，240ms）：流式草稿行被正式行整行换掉的那一次提交，
+ * 正式行挂载时从 0 淡入到 1，补上「收拢」的出现侧观感。
+ *
+ * 为什么不用 LayoutAnimation：RN 0.88 在 Android 新架构（Fabric/Bridgeless）下
+ * enableLayoutAnimationsOnAndroid 默认 false——configureNext 被静默吞掉，
+ * 怎么调时机都不会画（iOS 默认开启，所以 collapse.ts 的上膛保留）。
+ * 诚实的缺口：删除侧（旧展开行消失）仍是瞬没——不保留旧节点没法淡出。
+ */
+function RowFadeIn({
+  enabled,
+  onConsumed,
+  children,
+}: {
+  enabled: boolean;
+  onConsumed?: () => void;
+  children: ReactNode;
+}) {
+  const [opacity] = useState(() => new Animated.Value(enabled ? 0 : 1));
+  useEffect(() => {
+    if (!enabled) return;
+    // 新挂载的行（换行落地）从 0 开始；已挂载的行（草稿行原地折叠）重置回 0 再放。
+    // 两种情况都是「内容整块换掉」的出现侧，用同一条 240ms 淡入补上。
+    opacity.setValue(0);
+    Animated.timing(opacity, { toValue: 1, duration: FADE_IN_MS, useNativeDriver: true }).start();
+    onConsumed?.();
+  }, [enabled, opacity, onConsumed]);
+  // 恒定包一层：enabled 后续从 true 变 false 时不能换树形，否则整行会被重挂载。
+  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
+}
+
+function MessageRow({
+  message,
+  attachmentCache,
+  onNeedAttachment,
+  onRemoveQueued,
+  onSteerQueued,
+  onEditQueued,
+  fileStates,
+  onOpenFile,
+  canDownloadFiles,
+  onDiscardOffline,
+  onRetryOffline,
+  onLongPress,
+  onQuoteCode,
+}: {
+  message: ChatMessage;
+  attachmentCache: Record<string, string>;
+  onNeedAttachment: (attachmentId: string) => void;
+  onRemoveQueued: (queueId: string) => void;
+  onSteerQueued: (queueId: string) => void;
+  onEditQueued: (queueId: string, text: string) => void;
+  fileStates: Record<string, FileUiState>;
+  onOpenFile: (path: string) => void;
+  canDownloadFiles: boolean;
+  onDiscardOffline: (id: string) => void;
+  onRetryOffline: (id: string) => void;
+  onLongPress: (message: ChatMessage) => void;
+  onQuoteCode: (lang: string, code: string) => void;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  /** 本地回显图片的全屏预览；历史图片走 MessageImages 自己的查看器。 */
+  const [preview, setPreview] = useState<string | null>(null);
+  if (message.kind === 'files') {
+    // 网关没开文件下载能力时，卡片只会是个点不动的按钮，直接不画。
+    if (!canDownloadFiles) return null;
+    return (
+      <View style={styles.filesRow}>
+        <FileCards files={message.files} states={fileStates} onOpen={onOpenFile} />
+      </View>
+    );
+  }
+  if (message.kind === 'queued') {
+    const steering = message.placement === 'steering';
+    return (
+      <View style={[styles.bubbleRow, styles.rowRight]}>
+        <View style={[styles.bubble, styles.bubbleUser, styles.bubbleQueued]}>
+          {message.localUris?.length ? (
+            <>
+              <View style={styles.localImages}>
+                {message.localUris.map((uri) => (
+                  <Pressable
+                    key={uri}
+                    onPress={() => setPreview(uri)}
+                    accessibilityRole="button"
+                    accessibilityLabel="查看图片"
+                  >
+                    <Image source={{ uri }} style={styles.localImage} resizeMode="cover" />
+                  </Pressable>
+                ))}
+              </View>
+              <ImageViewer uri={preview} onClose={() => setPreview(null)} />
+            </>
+          ) : null}
+          {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
+          <View style={styles.queuedFooter}>
+            <Text
+              style={[
+                styles.queuedTag,
+                message.failed || message.offlineStatus === 'failed'
+                  ? styles.queuedTagFailed
+                  : message.offlineStatus === 'unconfirmed'
+                    ? styles.queuedTagWarn
+                    : null,
+              ]}
+            >
+              {message.offline
+                ? offlineStatusText(message.offlineStatus, message.offlineError)
+                : steering
+                  ? '插话中 · 下一步生效'
+                  : '排队中'}
+            </Text>
+            {message.offline ? (
+              message.offlineStatus === 'sending' ? null : message.offlineStatus === 'pending' ? (
+                <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
+                  <Text style={styles.queuedAction}>删除</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.queuedActions}>
+                  <Pressable hitSlop={8} onPress={() => onRetryOffline(message.queueId)}>
+                    <Text style={styles.queuedAction}>重试</Text>
+                  </Pressable>
+                  <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
+                    <Text style={styles.queuedAction}>移除</Text>
+                  </Pressable>
+                </View>
+              )
+            ) : (
+              <View style={styles.queuedActions}>
+                <Pressable hitSlop={8} onPress={() => onEditQueued(message.queueId, message.text)}>
+                  <Text style={styles.queuedAction}>编辑</Text>
+                </Pressable>
+                {steering ? null : (
+                  <Pressable hitSlop={8} onPress={() => onSteerQueued(message.queueId)}>
+                    <Text style={styles.queuedAction}>插话发送</Text>
+                  </Pressable>
+                )}
+                <Pressable hitSlop={8} onPress={() => onRemoveQueued(message.queueId)}>
+                  <Text style={styles.queuedAction}>撤回</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  }
+  if (message.kind === 'notice') {
+    return (
+      <View style={styles.noticeRow}>
+        <Text
+          style={[styles.noticeText, message.tone === 'warn' ? styles.noticeWarn : null]}
+        >
+          {message.text}
+        </Text>
+      </View>
+    );
+  }
+  // 轨迹页专属的行。对话流里这些落到最后一个 return 就会画成用户气泡，必须显式挡掉：
+  // 上下文注入和审批记录在对话流里没有可操作性（审批有专门的决策坞），
+  // 每轮结论只在「这轮不是正常结束」时留一行——正常结束是噪音。
+  if (message.kind === 'context' || message.kind === 'approval') return null;
+  if (message.kind === 'outcome') {
+    if (!message.failed) return null;
+    return (
+      <View style={styles.noticeRow}>
+        <Text style={styles.noticeWarn}>{message.text}</Text>
+      </View>
+    );
+  }
+  // 工具调用已经在列表层合并成 ToolGroup，这里只兜底。
+  if (message.kind === 'tool') return null;
+  if (message.kind === 'assistant') {
+    // Stage 1/2 展开推理，Stage 3 自动折叠成胶囊，正式回答单独一张提亮卡片。
+    return (
+      <View style={styles.assistantWrap}>
+        {message.reasoning ? (
+          <ThinkPill
+            text={message.reasoning}
+            streaming={message.streaming}
+            answerStarted={Boolean(message.text && message.text.trim().length > 0)}
+            startedAt={message.time}
+          />
+        ) : null}
+        {message.text || (!message.reasoning && message.streaming) || message.failure ? (
+          <AnswerCard failed={Boolean(message.failure)}>
+            <Pressable
+              onLongPress={() => onLongPress(message)}
+              delayLongPress={320}
+              accessibilityHint="长按打开消息操作"
+            >
+              {message.text ? (
+                <MarkdownView
+                  text={message.text}
+                  onFileLink={canDownloadFiles ? onOpenFile : undefined}
+                  onQuoteCode={onQuoteCode}
+                  onQuoteLine={(line) =>
+                    onQuoteCode(
+                      [line.file, line.lineNo].filter(Boolean).join(':') || 'code',
+                      line.text,
+                    )
+                  }
+                />
+              ) : (
+                <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>
+              )}
+              {message.failure ? <Text style={styles.failure}>{message.failure}</Text> : null}
+            </Pressable>
+          </AnswerCard>
+        ) : null}
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.bubbleRow, styles.rowRight]}>
+      <Pressable
+        onLongPress={() => onLongPress(message)}
+        delayLongPress={320}
+        style={[styles.bubble, styles.bubbleUser]}
+        accessibilityHint="长按打开消息操作"
+      >
+        {'images' in message && message.images?.length ? (
+          <MessageImages refs={message.images} cache={attachmentCache} onNeed={onNeedAttachment} />
+        ) : null}
+        {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
+      </Pressable>
+    </View>
+  );
+}
+
+/** 会话页样式：颜色全部走色板，浅色/深色各建一份并缓存。 */
+function makeStyles(t: Palette) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.bg.canvas },
+  waterline: { height: 2, backgroundColor: t.border.subtle },
+  waterlineFill: { height: 2 },
+  flex: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  back: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  backText: { color: t.text.primary, fontSize: 28, lineHeight: 30 },
+  titleWrap: { flex: 1 },
+  title: { flex: 1, color: t.text.primary, fontSize: 16, fontWeight: '600' },
+  placeholder: { width: 20 },
+  error: { color: t.semantic.dangerText, fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
+  toast: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 96,
+    alignItems: 'center',
+  },
+  toastText: {
+    backgroundColor: t.bg.dockGlass,
+    color: t.text.primary,
+    fontSize: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  list: { paddingHorizontal: 14, paddingBottom: 12 },
+  empty: { color: t.text.muted, textAlign: 'center', marginTop: 40 },
+  emptyBox: { alignItems: 'center' },
+  retryButton: {
+    marginTop: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: t.border.default,
+  },
+  retryButtonText: { color: t.text.primary, fontSize: 13 },
+  olderWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, minHeight: 44 },
+  olderAction: { color: t.text.secondary, fontSize: 13, fontWeight: '600' },
+  olderEnd: { color: t.text.muted, fontSize: 12 },
+  dayDivider: {
+    color: t.text.muted,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  bubbleRow: { flexDirection: 'row', marginBottom: 10 },
+  assistantWrap: { gap: 8, marginBottom: 12, flexShrink: 1 },
+  toolGroupWrap: { marginBottom: 10 },
+  rowRight: { justifyContent: 'flex-end' },
+  rowLeft: { justifyContent: 'flex-start' },
+  bubble: { maxWidth: '86%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
+  bubbleUser: { backgroundColor: t.bg.surface },
+  bubbleQueued: { backgroundColor: t.bg.subtle },
+  queuedFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginTop: 4,
+  },
+  queuedTag: { color: t.text.muted, fontSize: 10 },
+  queuedTagFailed: { color: t.semantic.dangerText },
+  queuedTagWarn: { color: t.semantic.gateAmberText },
+  queuedActions: { flexDirection: 'row', gap: 12 },
+  queuedAction: { color: t.text.primary, fontSize: 10, fontWeight: '600' },
+  // 助手消息可能带表格/代码块，撑满整行才能算出可滚动的宽度。
+  bubbleAssistant: { backgroundColor: t.bg.surface, flexGrow: 1, maxWidth: '100%' },
+  bubbleText: { color: t.text.primary, fontSize: 15, lineHeight: 21 },
+  reasoning: { color: t.text.muted, fontSize: 12, lineHeight: 17, marginBottom: 6, fontStyle: 'italic' },
+  reasoningTag: { color: t.text.muted, fontStyle: 'normal' },
+  reasoningToggle: { color: t.text.muted, fontSize: 11, marginTop: 2, marginBottom: 6 },
+  failure: { color: t.semantic.dangerText, fontSize: 12, marginTop: 6 },
+  toolCard: {
+    backgroundColor: t.bg.subtle,
+    borderWidth: 1,
+    borderColor: t.border.subtle,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  toolCardError: { borderColor: t.semantic.dangerText },
+  toolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  toolName: {
+    color: t.text.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  toolSummary: { flex: 1, color: t.text.secondary, fontSize: 13 },
+  toolError: { color: t.semantic.dangerText, fontSize: 11 },
+  toolCommand: {
+    color: t.text.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 6,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  toolBody: {
+    color: t.text.secondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.border.subtle,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  toolPending: { color: t.text.muted, fontSize: 11, marginTop: 6 },
+  toolMore: { color: t.text.muted, fontSize: 10, marginTop: 6 },
+  filesRow: { paddingHorizontal: 2, marginBottom: 10 },
+  noticeRow: { alignItems: 'center', marginVertical: 8 },
+  noticeText: {
+    color: t.text.muted,
+    fontSize: 11,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    lineHeight: 16,
+  },
+  /** 压缩 / 重试 / 非正常结束的轮次：比普通通知重一档，别被当成系统闲聊划过去。 */
+  noticeWarn: { color: t.semantic.gateAmberText },
+  pendingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: t.semantic.gateAmberBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.border.default,
+  },
+  pendingBarDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.semantic.gateAmberText },
+  pendingBarText: { flex: 1, color: t.semantic.gateAmberText, fontSize: 13 },
+  pendingBarAction: { color: t.semantic.gateAmberText, fontSize: 13, fontWeight: '700' },
+  jumpWrap: {
+    position: 'absolute',
+    top: -44,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  jump: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: t.bg.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.border.default,
+  },
+  jumpText: { color: t.text.secondary, fontSize: 12 },
+  modeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+  },
+  modeLabel: { color: t.text.muted, fontSize: 11, marginRight: 2 },
+  modeChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: t.bg.surface },
+  modeChipOn: { backgroundColor: t.action.primaryBg },
+  modeText: { color: t.text.muted, fontSize: 11 },
+  modeTextOn: { color: t.action.primaryText, fontWeight: '600' },
+  modeHint: { color: t.text.muted, fontSize: 11, marginLeft: 4 },
+  statusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+  },
+  viewTabs: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  viewTab: {
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: t.bg.surface,
+  },
+  viewTabOn: { backgroundColor: t.action.primaryBg },
+  viewTabText: { color: t.text.muted, fontSize: 11.5, fontWeight: '600' },
+  viewTabTextOn: { color: t.action.primaryText },
+  statusChip: {
+    color: t.text.primary,
+    fontSize: 10.5,
+    fontWeight: '600',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: t.bg.surface,
+  },
+  statusChipBox: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: t.bg.surface,
+  },
+  statusChipBoxLocked: { backgroundColor: t.bg.surface },
+  statusChipText: { color: t.text.secondary, fontSize: 10.5, fontWeight: '600' },
+  statusChipTextLocked: { color: t.text.muted },
+  statusMeta: { flex: 1, color: t.text.muted, fontSize: 10.5 },
+  editBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 14,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: t.semantic.gateAmberBg,
+  },
+  editBarText: { color: t.semantic.gateAmberText, fontSize: 11.5 },
+  editBarAction: { color: t.text.primary, fontSize: 11.5, fontWeight: '600' },
+  fileChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 6,
+  },
+  fileChip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: '100%',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: t.bg.surface,
+  },
+  fileChipError: { backgroundColor: t.semantic.dangerBg },
+  fileChipName: { maxWidth: 160, color: t.text.primary, fontSize: 11.5 },
+  fileChipState: { color: t.text.muted, fontSize: 10.5 },
+  fileChipStateError: { color: t.semantic.dangerText },
+  fileChipClose: { color: t.text.muted, fontSize: 15, lineHeight: 17 },
+  quoteBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: t.bg.surface,
+    borderLeftWidth: 2,
+    borderLeftColor: t.text.primary,
+  },
+  quoteTag: { color: t.text.primary, fontSize: 10.5, fontWeight: '700' },
+  quoteText: { flex: 1, color: t.text.secondary, fontSize: 11 },
+  quoteClose: { color: t.text.muted, fontSize: 16, lineHeight: 18 },
+  connBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 14,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: t.semantic.gateAmberBg,
+  },
+  connDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.semantic.gateAmberText },
+  connText: { color: t.semantic.gateAmberText, fontSize: 11 },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.border.subtle,
+  },
+  /** 输入框容器：背景与圆角在这里，麦克风按钮嵌在右侧内部。 */
+  inputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    minHeight: 36,
+    maxHeight: 116,
+    backgroundColor: t.bg.surface,
+    borderRadius: 18,
+    paddingLeft: 14,
+    paddingRight: 3,
+  },
+  input: {
+    flex: 1,
+    paddingTop: 8,
+    paddingBottom: 8,
+    color: t.text.primary,
+    fontSize: 15,
+  },
+  /** 按住区域：比圆形视觉大一圈，撑满胶囊高度，按住更稳。 */
+  micTouch: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micInInput: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** 录音/转写期间的取消：和麦克风按钮同尺寸，浅灰小圆，轻量不抢主操作。
+      尺寸和下边距都跟 micInInput 对齐，两个按钮才像一对。 */
+  voiceCancel: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginBottom: 3,
+    marginRight: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.bg.subtle,
+  },
+  /** ✕ 也用手绘的两根圆头短棒，不用字体里的 ×：那个字重比麦克风细、
+      光学居中还跟着字体度量走，跟旁边手绘的字形放一起就是「不搭」。
+      棒厚 1.5 与 micGlyphBase 同款，圆角取其一半 = 圆头。 */
+  cancelGlyph: { width: 12, height: 12 },
+  cancelBar: {
+    position: 'absolute',
+    top: 5.25,
+    left: 0,
+    width: 12,
+    height: 1.5,
+    borderRadius: 0.75,
+    transform: [{ rotate: '45deg' }],
+  },
+  cancelBarAlt: { transform: [{ rotate: '-45deg' }] },
+  /** 录音光晕：与按钮同尺寸的圆，缓慢放大淡出。 */
+  micGlowInner: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: t.semantic.diffAddText,
+  },
+  micGlyph: { alignItems: 'center', gap: 1.5 },
+  micGlyphHead: { width: 5.5, height: 9, borderRadius: 3 },
+  micGlyphBase: { width: 9, height: 1.5, borderRadius: 1 },
+  /** 和 ＋、麦克风同一尺寸的圆钮：三个 36pt 圆排成一排。 */
+  send: {
+    width: 36,
+    height: 36,
+    marginLeft: 8,
+    backgroundColor: t.action.primaryBg,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendDisabled: { opacity: 0.3 },
+  sendText: { color: t.action.primaryText, fontSize: 19, lineHeight: 22, fontWeight: '700' },
+  /** 运行中且输入空：主圆钮变停止（暗红底 + 纸白方块，APPROVAL-2 键合一） */
+  sendStop: { backgroundColor: t.semantic.dangerText },
+  stopGlyph: { width: 11, height: 11, borderRadius: 2.5, backgroundColor: t.action.primaryText },
+  localImages: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
+  localImage: { width: 120, height: 90, borderRadius: 8, backgroundColor: t.bg.surface },
+  attach: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    backgroundColor: t.bg.surface,
+  },
+  attachDisabled: { opacity: 0.4 },
+  attachText: { color: t.text.muted, fontSize: 20, lineHeight: 22 },
+  pickedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  pickedItem: { position: 'relative' },
+  pickedImage: { width: 64, height: 64, borderRadius: 8, backgroundColor: t.bg.surface },
+  pickedRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: t.border.default,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickedRemoveText: { color: t.text.secondary, fontSize: 12, lineHeight: 14, fontWeight: '700' },
+  outlineButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: t.bg.surface,
+  },
+  outlineText: { color: t.text.secondary, fontSize: 12, fontWeight: '600' },
+  });
+}
+

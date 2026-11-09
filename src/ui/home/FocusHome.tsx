@@ -1,0 +1,399 @@
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useThemedStyles } from '../theme';
+import { PetStage } from './PetStage';
+import type { Palette } from '../../theme/tokens';
+import type { FocusEntry } from '../../protocol/focus';
+
+/**
+ * 首页「聚焦」页：上半屏只放需要人管的会话，下半屏是一枚语音球。
+ *
+ * 网格高度由内容撑开（0~4 张），球区吃掉剩余空间——比例是算出来的，
+ * 不是把屏幕切成 64/36。屏幕矮、字放大时都不会裁切。
+ */
+export interface FocusItem extends FocusEntry {
+  /** 会话的 cwd，用来在卡片角上标一行短目录名 */
+  cwd: string;
+  /** 发件箱里这个会话还没确认的消息数（断线待发 / 未确认 / 失败，与全部会话 tab 同口径） */
+  outboxCount: number;
+}
+
+interface Props {
+  items: FocusItem[];
+  connected: boolean;
+  pendingTotal: number;
+  /** 语音是否可用；不可用时按住球给提示而不是静默失败 */
+  voiceReady: boolean;
+  /** 当前工作区名字，显示在网格上方 */
+  workspaceLabel: string;
+  onPickWorkspace: () => void;
+  onOpen: (sessionId: string) => void;
+  onCreate: () => void;
+  onHoldOrb: () => void;
+  onHoldCard: (sessionId: string) => void;
+  /** 松手：结束录音 */
+  onRelease: () => void;
+  /** 上滑取消这次录音 */
+  onCancelVoice: () => void;
+  recording: boolean;
+  transcribing: boolean;
+  /** 已录秒数 / 有效上限（秒），录音时写在宠物脚下那行 */
+  voiceElapsed: number;
+  voiceLimit: number;
+  /** 剩余不到 10 秒：那行转琥珀色 */
+  voiceAlmostUp: boolean;
+  /** 首页整体状态：有人等着 / 有任务在跑 / 都闲着——宠物跟着变 */
+  mood: 'alert' | 'working' | 'idle';
+  /** 未读会话（有新消息但还没点进去） */
+  unreadIds: ReadonlySet<string>;
+  /** 外部提示（识别失败、录音太短），走宠物气泡 */
+  notice?: { text: string; token: number } | null;
+}
+
+export function FocusHome({
+  items,
+  connected,
+  pendingTotal,
+  voiceReady,
+  workspaceLabel,
+  onPickWorkspace,
+  onOpen,
+  onCreate,
+  onHoldOrb,
+  onHoldCard,
+  onRelease,
+  onCancelVoice,
+  recording,
+  transcribing,
+  voiceElapsed,
+  voiceLimit,
+  voiceAlmostUp,
+  mood,
+  unreadIds,
+  notice,
+}: Props) {
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <View style={styles.root}>
+      <View style={styles.head}>
+        <Text
+          style={styles.headTitle}
+          maxFontSizeMultiplier={1.2}
+          numberOfLines={1}
+          accessibilityRole="header"
+        >
+          ACTIVE FOCUS · 最近会话{items.length > 0 ? `（${items.length}）` : ''}
+        </Text>
+        <Text style={styles.headHint} maxFontSizeMultiplier={1.2} numberOfLines={1}>
+          点按进入 · 按住直接语音回
+        </Text>
+      </View>
+
+      <Pressable
+        style={styles.wsRow}
+        onPress={onPickWorkspace}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={`选择新会话工作区，当前 ${workspaceLabel}`}
+        accessibilityHint="之后新建的会话会开在这个目录"
+      >
+        <Text style={styles.wsLabel} maxFontSizeMultiplier={1.3}>
+          新会话开在
+        </Text>
+        <Text style={styles.wsName} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+          {workspaceLabel} ›
+        </Text>
+      </Pressable>
+
+      {items.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle} maxFontSizeMultiplier={1.3}>
+            {connected ? '还没有会话' : '连接断开'}
+          </Text>
+          <Text style={styles.emptyHint} maxFontSizeMultiplier={1.3}>
+            {connected ? '按住下方语音球，直接开第一个任务' : '顶部提示可以点一下重连'}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.grid}>
+          {items.map((item, index) => (
+            <FocusCard
+              key={item.sessionId}
+              item={item}
+              index={index}
+              onOpen={onOpen}
+              onHold={onHoldCard}
+              onRelease={onRelease}
+              onCancelVoice={onCancelVoice}
+              voiceReady={voiceReady}
+              unread={unreadIds.has(item.sessionId)}
+            />
+          ))}
+        </View>
+      )}
+
+      <View style={styles.orbStage}>
+        <PetStage
+          voiceReady={voiceReady}
+          recording={recording}
+          transcribing={transcribing}
+          voiceElapsed={voiceElapsed}
+          voiceLimit={voiceLimit}
+          voiceAlmostUp={voiceAlmostUp}
+          mood={mood}
+          notice={notice}
+          onVoiceStart={onHoldOrb}
+          onVoiceLaunch={onRelease}
+          onVoiceCancel={onCancelVoice}
+          onCreate={onCreate}
+        />
+      </View>
+    </View>
+  );
+}
+
+/** 2x2 卡片：宽度按容器百分比，高度由内容撑开，字号有上限倍率。 */
+function FocusCard({
+  item,
+  index,
+  onOpen,
+  onHold,
+  onRelease,
+  onCancelVoice,
+  voiceReady,
+  unread,
+}: {
+  item: FocusItem;
+  index: number;
+  onOpen: (sessionId: string) => void;
+  onHold: (sessionId: string) => void;
+  onRelease: () => void;
+  onCancelVoice: () => void;
+  voiceReady: boolean;
+  unread: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const waiting = item.pendingCount > 0;
+  const dir = shortDir(item.cwd);
+  /** 正按着这张卡（长按已触发）。 */
+  const heldRef = useRef(false);
+  // onCancelVoice 每帧都是新箭头函数，只能走 ref：进依赖数组会让清理每帧跑一次，
+  // 把刚开的录音立刻取消掉。
+  const cancelRef = useRef(onCancelVoice);
+  useEffect(() => {
+    cancelRef.current = onCancelVoice;
+  });
+  // 按住期间卡片被列表重排挤出网格时，Pressable 卸载后 onPressOut 不会再来，
+  // 没人收尾的录音会一直录到上限。卸载时自己放弃这一段。
+  useEffect(
+    () => () => {
+      if (heldRef.current) {
+        heldRef.current = false;
+        cancelRef.current();
+      }
+    },
+    [],
+  );
+  return (
+    <Pressable
+      style={[styles.card, waiting ? styles.cardWaiting : styles.cardRunning]}
+      onPress={() => onOpen(item.sessionId)}
+      onLongPress={() => {
+        heldRef.current = true;
+        onHold(item.sessionId);
+      }}
+      onPressOut={() => {
+        heldRef.current = false;
+        onRelease();
+      }}
+      delayLongPress={600}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title || '未命名会话'}，${waiting ? '待审批' : item.running ? '进行中' : '已就绪'}${unread ? '，有未读' : ''}${item.outboxCount > 0 ? `，${item.outboxCount} 条待发送` : ''}`}
+      accessibilityHint={voiceReady ? '点按进入会话；长按直接语音回复' : '点按进入会话'}
+    >
+      <View style={styles.cardTop}>
+        <StatusDot waiting={waiting} running={item.running} unread={unread} />
+        <Text style={styles.cardDir} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+          {dir}
+        </Text>
+        {item.outboxCount > 0 ? (
+          <Text style={styles.outboxTag} maxFontSizeMultiplier={1.2}>
+            待发送 {item.outboxCount}
+          </Text>
+        ) : null}
+        <Text
+          style={[
+            styles.cardTag,
+            waiting ? styles.tagWaiting : item.running ? styles.tagRunning : styles.tagIdle,
+          ]}
+          maxFontSizeMultiplier={1.2}
+        >
+          {waiting ? '待审批' : item.running ? '进行中' : '已就绪'}
+        </Text>
+      </View>
+      <Text style={styles.cardTitle} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+        {item.title || '未命名会话'}
+      </Text>
+      <Text style={styles.cardSummary} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+        {plainText(item.summary) ||
+          (waiting ? 'agent 停在这里，等你确认' : item.running ? '正在回复…' : '上一轮已结束')}
+      </Text>
+      <View style={styles.cardBottom}>
+        <Text style={styles.cardTime} maxFontSizeMultiplier={1.2}>
+          {`#${String(index + 1).padStart(2, '0')} · ${relativeTime(item.updatedAt)}`}
+        </Text>
+        {voiceReady ? (
+          <Text style={styles.cardHold} maxFontSizeMultiplier={1.2}>
+            按住直回
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * 卡片左上角的状态点：
+ * 待审批 = 暖砂；进行中 = 绿点 + 呼吸圈；有未读 = 绿点；其余 = 灰点。
+ */
+function StatusDot({
+  waiting,
+  running,
+  unread,
+}: {
+  waiting: boolean;
+  running: boolean;
+  unread: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const [pulse] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!running) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(pulse, { toValue: 1, duration: 1400, useNativeDriver: true }),
+    );
+    pulse.setValue(0);
+    loop.start();
+    return () => loop.stop();
+  }, [pulse, running]);
+
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] });
+  const live = running || unread;
+
+  return (
+    <View style={styles.dotWrap}>
+      {running ? (
+        <Animated.View
+          style={[styles.dotHalo, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+        />
+      ) : null}
+      <View
+        style={[styles.dot, waiting ? styles.dotWaiting : live ? styles.dotLive : styles.dotIdle]}
+      />
+    </View>
+  );
+}
+
+/** 大纲里的回复是 markdown 原文，卡片上只留文字：去掉标题井号、星号、行内代码。 */
+function plainText(text: string): string {
+  return text
+    .replace(/[*#>`]/g, '')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** 只取最后两层目录，和弧形转盘的副标题保持一致的省略方式。 */
+function shortDir(cwd: string): string {
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  return parts.slice(-2).join('/') || '默认目录';
+}
+
+function relativeTime(at: number): string {
+  if (!at) return '';
+  const diff = Date.now() - at;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' 分钟前';
+  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' 小时前';
+  return Math.floor(diff / 86_400_000) + ' 天前';
+}
+
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, paddingHorizontal: 16 },
+    head: { paddingTop: 4, paddingBottom: 8, gap: 2 },
+    headTitle: { color: t.text.primary, fontSize: 13, fontWeight: '700', letterSpacing: 0.6 },
+    headHint: { color: t.text.muted, fontSize: 11 },
+    wsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingBottom: 10,
+    },
+    wsLabel: { color: t.text.muted, fontSize: 11 },
+    wsName: { color: t.text.secondary, fontSize: 12, fontWeight: '600', flexShrink: 1 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    card: {
+      width: '48.5%',
+      minHeight: 112,
+      borderRadius: 16,
+      padding: 12,
+      gap: 6,
+    },
+    cardWaiting: {
+      backgroundColor: t.bg.elevatedAnswer,
+      borderWidth: 1,
+      borderColor: t.semantic.gateAmberText,
+    },
+    cardRunning: {
+      backgroundColor: t.bg.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border.default,
+    },
+    cardTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    dotWrap: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' },
+    dot: { width: 6, height: 6, borderRadius: 3 },
+    dotWaiting: { backgroundColor: t.semantic.gateAmberText },
+    dotLive: { backgroundColor: t.semantic.live },
+    dotIdle: { backgroundColor: t.text.muted },
+    // 进行中的绿点会向外扩一圈淡绿，静止时不占视觉
+    dotHalo: {
+      position: 'absolute',
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: t.semantic.live,
+    },
+    cardDir: { flex: 1, color: t.text.muted, fontSize: 10 },
+    // 待发送徽标：与「全部会话」tab 的 tagWarn 同色（琥珀胶囊），断线消息不只在暗处
+    outboxTag: {
+      color: t.semantic.gateAmberText,
+      backgroundColor: t.semantic.gateAmberBg,
+      fontSize: 9.5,
+      fontWeight: '600',
+      paddingHorizontal: 6,
+      paddingVertical: 1.5,
+      borderRadius: 999,
+      overflow: 'hidden',
+    },
+    cardTag: { fontSize: 10, fontWeight: '700' },
+    tagWaiting: { color: t.semantic.gateAmberText },
+    tagRunning: { color: t.text.secondary },
+    tagIdle: { color: t.text.muted },
+    cardTitle: { color: t.text.primary, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+    cardSummary: { color: t.text.secondary, fontSize: 11, lineHeight: 15 },
+    cardBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' },
+    cardTime: { color: t.text.muted, fontSize: 10 },
+    cardHold: { color: t.text.muted, fontSize: 10 },
+    emptyBox: { paddingVertical: 26, gap: 6 },
+    emptyTitle: { color: t.text.primary, fontSize: 15, fontWeight: '600' },
+    emptyHint: { color: t.text.muted, fontSize: 12 },
+    // 舞台自己撑开：上面是卡片网格（flexShrink 0），这里吃掉剩下所有空间。
+    orbStage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  });
