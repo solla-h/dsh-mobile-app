@@ -96,11 +96,11 @@ Numbers cannot have leading zeros. For example:
 
 | Field | Published APK example |
 | --- | --- |
-| Tag / filename | `v0.1.0-alpha.4` / `dsh-mobile-v0.1.0-alpha.4.apk` |
+| Tag / filename | `v0.1.0-alpha.5` / `dsh-mobile-v0.1.0-alpha.5.apk` |
 | `package.json` version | `0.1.0` |
 | `app.json` expo.version | `0.1.0` |
 | `compatibility.json` app.version | `0.1.0` |
-| `app.json` expo.android.versionCode | `4` |
+| `app.json` expo.android.versionCode | `5` |
 
 Android versionName uses the version core; the tag and filename preserve the prerelease suffix.
 VersionCode must be a positive integer ≤ 2,100,000,000 and greater than every other `v*` tag's value.
@@ -110,15 +110,15 @@ Older tags without an explicit versionCode count as 1. The workflow never bumps 
 2. Validate metadata, then tag the merged commit (use a new tag for each release):
 
    ```bash
-   node scripts/release-metadata.mjs v0.1.0-alpha.5
-   git tag -a v0.1.0-alpha.5 -m "DSH Mobile v0.1.0-alpha.5"
-   git push origin v0.1.0-alpha.5
+   node scripts/release-metadata.mjs v0.1.0-alpha.6
+   git tag -a v0.1.0-alpha.6 -m "DSH Mobile v0.1.0-alpha.6"
+   git push origin v0.1.0-alpha.6
    ```
 
 3. Watch **Actions → Android release**. If the trigger was missed, dispatch from master:
 
    ```bash
-   gh workflow run android-release.yml --ref master -f tag=v0.1.0-alpha.5
+   gh workflow run android-release.yml --ref master -f tag=v0.1.0-alpha.6
    ```
 
 Never move a published tag or replace its APK. If code needs changing, create a new version/tag.
@@ -139,7 +139,7 @@ On Windows PowerShell, compare the displayed hashes with the corresponding SHA25
 
 ```powershell
 Get-Content .\SHA256SUMS
-Get-FileHash .\dsh-mobile-v0.1.0-alpha.4.apk -Algorithm SHA256
+Get-FileHash .\dsh-mobile-v0.1.0-alpha.5.apk -Algorithm SHA256
 Get-FileHash .\build-info.json -Algorithm SHA256
 ```
 
