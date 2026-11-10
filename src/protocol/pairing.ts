@@ -1,4 +1,5 @@
 import type { PairingPayload } from './types';
+import { tr } from '../i18n';
 
 const BASE64URL_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -9,9 +10,9 @@ const BASE64URL_ALPHABET =
  */
 export function decodeBase64Url(input: string): Uint8Array {
   const text = input.trim();
-  if (text.length === 0) throw new Error('配对内容为空');
+  if (text.length === 0) throw new Error(tr("配对内容为空"));
   if (!/^[A-Za-z0-9_-]+$/.test(text)) {
-    throw new Error('配对内容不是合法 Base64URL（不能包含 = 或空格）');
+    throw new Error(tr("配对内容不是合法 Base64URL（不能包含 = 或空格）"));
   }
   const bytes = new Uint8Array(Math.floor((text.length * 6) / 8));
   let buffer = 0;
@@ -19,7 +20,7 @@ export function decodeBase64Url(input: string): Uint8Array {
   let index = 0;
   for (let i = 0; i < text.length; i += 1) {
     const value = BASE64URL_ALPHABET.indexOf(text[i]);
-    if (value < 0) throw new Error('配对内容包含非法字符');
+    if (value < 0) throw new Error(tr("配对内容包含非法字符"));
     buffer = (buffer << 6) | value;
     bits += 6;
     if (bits >= 8) {
@@ -118,23 +119,23 @@ export function parsePairingPayload(text: string, now = Date.now()): PairingPayl
   try {
     payload = JSON.parse(json);
   } catch {
-    throw new Error('配对内容解码后不是 JSON');
+    throw new Error(tr("配对内容解码后不是 JSON"));
   }
   if (typeof payload !== 'object' || payload === null) {
-    throw new Error('配对内容格式不正确');
+    throw new Error(tr("配对内容格式不正确"));
   }
   const candidate = payload as Partial<PairingPayload>;
   if (candidate.version !== 2) {
-    throw new Error(`不支持的配对版本：${String(candidate.version)}`);
+    throw new Error(tr("不支持的配对版本：{0}", [String(candidate.version)]));
   }
   if (typeof candidate.publicUrl !== 'string' || !/^wss?:\/\//.test(candidate.publicUrl)) {
-    throw new Error('配对内容缺少有效的 WebSocket 地址');
+    throw new Error(tr("配对内容缺少有效的 WebSocket 地址"));
   }
   if (typeof candidate.pairingCode !== 'string' || candidate.pairingCode.length === 0) {
-    throw new Error('配对内容缺少配对码');
+    throw new Error(tr("配对内容缺少配对码"));
   }
   if (typeof candidate.expiresAt !== 'number' || candidate.expiresAt <= now) {
-    throw new Error('配对码已过期，请在 WebUI 重新生成');
+    throw new Error(tr("配对码已过期，请在 WebUI 重新生成"));
   }
   // 不可信载荷：endpoints 可能是任意 JSON，先按数组收，再逐条过安全门。
   const rawEndpoints = Array.isArray(candidate.endpoints) ? candidate.endpoints : [];
@@ -143,7 +144,7 @@ export function parsePairingPayload(text: string, now = Date.now()): PairingPayl
     if (isPairingUrlAllowed(url) && !allowed.includes(url)) allowed.push(url);
   }
   if (allowed.length === 0) {
-    throw new Error('配对内容里没有安全的连接地址：公网明文 ws:// 已拦截，请用 wss:// 或局域网地址重新配对');
+    throw new Error(tr("配对内容里没有安全的连接地址：公网明文 ws:// 已拦截，请用 wss:// 或局域网地址重新配对"));
   }
   const publicUrl = allowed.find((url) => url.startsWith('wss://')) ?? allowed[0];
   return {

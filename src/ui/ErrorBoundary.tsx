@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 /**
  * 会话页的错误边界（OBS-1）：一个渲染异常只把会话页换成降级卡，
@@ -51,27 +52,27 @@ function FallbackCard({
   return (
     <View style={styles.wrap}>
       <View style={styles.card}>
-        <Text style={styles.title}>会话页出了点问题</Text>
+        <Text style={styles.title}>{tr("会话页出了点问题")}</Text>
         <Text style={styles.body} numberOfLines={4}>
           {message}
         </Text>
-        <Text style={styles.hint}>其它页面不受影响。可以原地重试，或先返回会话列表。</Text>
+        <Text style={styles.hint}>{tr("其它页面不受影响。可以原地重试，或先返回会话列表。")}</Text>
         <View style={styles.actions}>
           <Pressable
             style={[styles.button, styles.retryButton]}
             onPress={onRetry}
             accessibilityRole="button"
-            accessibilityLabel="重试"
+            accessibilityLabel={tr("重试")}
           >
-            <Text style={styles.retryText}>重试</Text>
+            <Text style={styles.retryText}>{tr("重试")}</Text>
           </Pressable>
           <Pressable
             style={styles.button}
             onPress={onBack}
             accessibilityRole="button"
-            accessibilityLabel="返回会话列表"
+            accessibilityLabel={tr("返回会话列表")}
           >
-            <Text style={styles.backText}>返回列表</Text>
+            <Text style={styles.backText}>{tr("返回列表")}</Text>
           </Pressable>
         </View>
       </View>

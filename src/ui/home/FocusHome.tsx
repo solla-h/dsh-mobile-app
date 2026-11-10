@@ -4,6 +4,7 @@ import { useThemedStyles } from '../theme';
 import { PetStage } from './PetStage';
 import type { Palette } from '../../theme/tokens';
 import type { FocusEntry } from '../../protocol/focus';
+import { tr } from '../../i18n';
 
 /**
  * 首页「聚焦」页：上半屏只放需要人管的会话，下半屏是一枚语音球。
@@ -82,10 +83,12 @@ export function FocusHome({
           numberOfLines={1}
           accessibilityRole="header"
         >
-          ACTIVE FOCUS · 最近会话{items.length > 0 ? `（${items.length}）` : ''}
+          
+          {tr("最近会话")}{items.length > 0 ? `（${items.length}）` : ''}
         </Text>
         <Text style={styles.headHint} maxFontSizeMultiplier={1.2} numberOfLines={1}>
-          点按进入 · 按住直接语音回
+          
+          {tr("点按进入 · 按住直接语音回")}
         </Text>
       </View>
 
@@ -94,11 +97,12 @@ export function FocusHome({
         onPress={onPickWorkspace}
         hitSlop={6}
         accessibilityRole="button"
-        accessibilityLabel={`选择新会话工作区，当前 ${workspaceLabel}`}
-        accessibilityHint="之后新建的会话会开在这个目录"
+        accessibilityLabel={tr("选择新会话工作区，当前 {0}", [workspaceLabel])}
+        accessibilityHint={tr("之后新建的会话会开在这个目录")}
       >
         <Text style={styles.wsLabel} maxFontSizeMultiplier={1.3}>
-          新会话开在
+          
+          {tr("新会话开在")}
         </Text>
         <Text style={styles.wsName} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           {workspaceLabel} ›
@@ -108,10 +112,10 @@ export function FocusHome({
       {items.length === 0 ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle} maxFontSizeMultiplier={1.3}>
-            {connected ? '还没有会话' : '连接断开'}
+            {connected ? tr("还没有会话") : tr("连接断开")}
           </Text>
           <Text style={styles.emptyHint} maxFontSizeMultiplier={1.3}>
-            {connected ? '按住下方语音球，直接开第一个任务' : '顶部提示可以点一下重连'}
+            {connected ? tr("按住下方语音球，直接开第一个任务") : tr("顶部提示可以点一下重连")}
           </Text>
         </View>
       ) : (
@@ -208,8 +212,8 @@ function FocusCard({
       }}
       delayLongPress={600}
       accessibilityRole="button"
-      accessibilityLabel={`${item.title || '未命名会话'}，${waiting ? '待审批' : item.running ? '进行中' : '已就绪'}${unread ? '，有未读' : ''}${item.outboxCount > 0 ? `，${item.outboxCount} 条待发送` : ''}`}
-      accessibilityHint={voiceReady ? '点按进入会话；长按直接语音回复' : '点按进入会话'}
+      accessibilityLabel={`${item.title || tr("未命名会话")}，${waiting ? tr("待审批") : item.running ? tr("进行中") : tr("空闲")}${unread ? tr("，有未读") : ''}${item.outboxCount > 0 ? tr("，{0} 条待发送", [item.outboxCount]) : ''}`}
+      accessibilityHint={voiceReady ? tr("点按进入会话；长按直接语音回复") : tr("点按进入会话")}
     >
       <View style={styles.cardTop}>
         <StatusDot waiting={waiting} running={item.running} unread={unread} />
@@ -218,7 +222,8 @@ function FocusCard({
         </Text>
         {item.outboxCount > 0 ? (
           <Text style={styles.outboxTag} maxFontSizeMultiplier={1.2}>
-            待发送 {item.outboxCount}
+            
+            {tr("待发送")} {item.outboxCount}
           </Text>
         ) : null}
         <Text
@@ -228,15 +233,15 @@ function FocusCard({
           ]}
           maxFontSizeMultiplier={1.2}
         >
-          {waiting ? '待审批' : item.running ? '进行中' : '已就绪'}
+          {waiting ? tr("待审批") : item.running ? tr("进行中") : tr("空闲")}
         </Text>
       </View>
       <Text style={styles.cardTitle} numberOfLines={2} maxFontSizeMultiplier={1.3}>
-        {item.title || '未命名会话'}
+        {item.title || tr("未命名会话")}
       </Text>
       <Text style={styles.cardSummary} numberOfLines={2} maxFontSizeMultiplier={1.3}>
         {plainText(item.summary) ||
-          (waiting ? 'agent 停在这里，等你确认' : item.running ? '正在回复…' : '上一轮已结束')}
+          (waiting ? tr("agent 停在这里，等你确认") : item.running ? tr("正在回复…") : tr("上一轮已结束"))}
       </Text>
       <View style={styles.cardBottom}>
         <Text style={styles.cardTime} maxFontSizeMultiplier={1.2}>
@@ -244,7 +249,8 @@ function FocusCard({
         </Text>
         {voiceReady ? (
           <Text style={styles.cardHold} maxFontSizeMultiplier={1.2}>
-            按住直回
+            
+            {tr("按住直回")}
           </Text>
         ) : null}
       </View>
@@ -312,16 +318,16 @@ function plainText(text: string): string {
 /** 只取最后两层目录，和弧形转盘的副标题保持一致的省略方式。 */
 function shortDir(cwd: string): string {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
-  return parts.slice(-2).join('/') || '默认目录';
+  return parts.slice(-2).join('/') || tr("默认目录");
 }
 
 function relativeTime(at: number): string {
   if (!at) return '';
   const diff = Date.now() - at;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' 分钟前';
-  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' 小时前';
-  return Math.floor(diff / 86_400_000) + ' 天前';
+  if (diff < 60_000) return tr("刚刚");
+  if (diff < 3_600_000) return Math.floor(diff / 60_000) + tr(" 分钟前");
+  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + tr(" 小时前");
+  return Math.floor(diff / 86_400_000) + tr(" 天前");
 }
 
 const makeStyles = (t: Palette) =>

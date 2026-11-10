@@ -56,12 +56,12 @@ describe('buildHomeRows', () => {
     expect(last.kind).toBe('session');
   });
 
-  it('没有 cwd 的会话落到「未归组」', () => {
+  it('没有 cwd 的会话落到「未分组」', () => {
     const rows = buildHomeRows([session('loose')], workspaces(), {
       collapsed: {},
       showArchived: false,
       archivedIds: [],
     });
-    expect(rows[0]).toMatchObject({ kind: 'group', title: '未归组' });
+    expect(rows[0]).toMatchObject({ kind: 'group', title: '未分组' });
   });
 });

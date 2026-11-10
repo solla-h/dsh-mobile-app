@@ -5,6 +5,7 @@
  * 普通补丁仍然单击秒批，不破坏单手审批的节奏。
  */
 import type { PendingApproval } from './interactions';
+import { tr } from '../i18n';
 
 export type RiskLevel = 'normal' | 'high';
 
@@ -14,24 +15,24 @@ interface Rule {
 }
 
 const RULES: Rule[] = [
-  { pattern: /\brm\s+(-[a-z]+\s+)*-[a-z]*[rf]/i, label: '递归删除' },
+  { pattern: /\brm\s+(-[a-z]+\s+)*-[a-z]*[rf]/i, get label() { return tr("递归删除"); } },
   // Windows / PowerShell 的等价物：Remove-Item -Recurse、del /s、rd /s 等。
-  { pattern: /\b(remove-item|del|erase|rd|rmdir)\b[^\n]*(-recurse|-r\b|\/s\b)/i, label: '递归删除' },
-  { pattern: /\bgit\s+push\b[^\n]*(-f\b|--force)/i, label: '强推' },
-  { pattern: /\bgit\s+reset\s+--hard/i, label: '硬重置' },
-  { pattern: /\bgit\s+clean\s+-[a-z]*[fd]/i, label: '清理未跟踪文件' },
-  { pattern: /\b(mkfs|fdisk|parted)\b/i, label: '磁盘操作' },
-  { pattern: /\b(format-volume|clear-disk|initialize-disk|diskpart)\b/i, label: '磁盘操作' },
-  { pattern: /\bdd\s+if=/i, label: '裸写设备' },
-  { pattern: /\bsudo\b/i, label: '提权' },
-  { pattern: /\bchmod\s+(-R\s+)?777\b/i, label: '放开权限' },
-  { pattern: /\bdrop\s+(table|database|schema)\b/i, label: '删表' },
-  { pattern: /\btruncate\s+table\b/i, label: '清空表' },
-  { pattern: /\bdelete\s+from\s+\w+\s*(;|$)/i, label: '全表删除' },
-  { pattern: /\b(kubectl|helm)\s+delete\b/i, label: '删集群资源' },
-  { pattern: /\bdocker\s+(system\s+prune|rm\s+-f)/i, label: '删容器' },
-  { pattern: /:\s*>\s*\/dev\/sd/i, label: '覆写磁盘' },
-  { pattern: /\b(shutdown|reboot|halt|stop-computer|restart-computer)\b/i, label: '关机重启' },
+  { pattern: /\b(remove-item|del|erase|rd|rmdir)\b[^\n]*(-recurse|-r\b|\/s\b)/i, get label() { return tr("递归删除"); } },
+  { pattern: /\bgit\s+push\b[^\n]*(-f\b|--force)/i, get label() { return tr("强推"); } },
+  { pattern: /\bgit\s+reset\s+--hard/i, get label() { return tr("硬重置"); } },
+  { pattern: /\bgit\s+clean\s+-[a-z]*[fd]/i, get label() { return tr("清理未跟踪文件"); } },
+  { pattern: /\b(mkfs|fdisk|parted)\b/i, get label() { return tr("磁盘操作"); } },
+  { pattern: /\b(format-volume|clear-disk|initialize-disk|diskpart)\b/i, get label() { return tr("磁盘操作"); } },
+  { pattern: /\bdd\s+if=/i, get label() { return tr("裸写设备"); } },
+  { pattern: /\bsudo\b/i, get label() { return tr("提权"); } },
+  { pattern: /\bchmod\s+(-R\s+)?777\b/i, get label() { return tr("放开权限"); } },
+  { pattern: /\bdrop\s+(table|database|schema)\b/i, get label() { return tr("删表"); } },
+  { pattern: /\btruncate\s+table\b/i, get label() { return tr("清空表"); } },
+  { pattern: /\bdelete\s+from\s+\w+\s*(;|$)/i, get label() { return tr("全表删除"); } },
+  { pattern: /\b(kubectl|helm)\s+delete\b/i, get label() { return tr("删集群资源"); } },
+  { pattern: /\bdocker\s+(system\s+prune|rm\s+-f)/i, get label() { return tr("删容器"); } },
+  { pattern: /:\s*>\s*\/dev\/sd/i, get label() { return tr("覆写磁盘"); } },
+  { pattern: /\b(shutdown|reboot|halt|stop-computer|restart-computer)\b/i, get label() { return tr("关机重启"); } },
 ];
 
 export interface RiskVerdict {

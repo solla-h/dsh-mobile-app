@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { describePhase, type GoalInfo, type TodoItem } from '../protocol/tasks';
 import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 const STATUS_MARK: Record<string, string> = {
   completed: '✓',
@@ -35,34 +36,35 @@ export function TasksSheet({
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => undefined}>
           <Text style={styles.title}>
-            任务{todos && todos.length ? ` · ${done}/${todos.length}` : ''}
+            
+            {tr("任务")}{todos && todos.length ? ` · ${done}/${todos.length}` : ''}
           </Text>
 
           {goal ? (
             <View style={styles.goalCard}>
               <View style={styles.goalHeader}>
-                <Text style={styles.goalTag}>目标</Text>
+                <Text style={styles.goalTag}>{tr("目标")}</Text>
                 <Text style={styles.goalPhase}>{describePhase(goal.phase)}</Text>
               </View>
               <Text style={styles.goalText}>{goal.objective}</Text>
               {goal.roundsStarted !== undefined || goal.maxGoalRounds !== undefined ? (
                 <Text style={styles.goalMeta}>
-                  轮次 {goal.roundsStarted ?? 0}
+                  Round {goal.roundsStarted ?? 0}
                   {goal.maxGoalRounds ? ' / ' + goal.maxGoalRounds : ''}
                 </Text>
               ) : null}
               <View style={styles.goalActions}>
                 {goal.phase === 'paused' || goal.phase === 'blocked' ? (
                   <Pressable style={styles.goalAction} onPress={onResume}>
-                    <Text style={styles.goalActionText}>继续</Text>
+                    <Text style={styles.goalActionText}>{tr("继续")}</Text>
                   </Pressable>
                 ) : (
                   <Pressable style={styles.goalAction} onPress={onPause}>
-                    <Text style={styles.goalActionText}>暂停</Text>
+                    <Text style={styles.goalActionText}>{tr("暂停")}</Text>
                   </Pressable>
                 )}
                 <Pressable style={styles.goalAction} onPress={onClear}>
-                  <Text style={[styles.goalActionText, styles.danger]}>清除</Text>
+                  <Text style={[styles.goalActionText, styles.danger]}>{tr("清除")}</Text>
                 </Pressable>
               </View>
             </View>
@@ -90,7 +92,7 @@ export function TasksSheet({
               ))
             ) : (
               <Text style={styles.empty}>
-                {todos === null ? '这个会话还没有任务列表' : '任务列表是空的'}
+                {todos === null ? tr("这个会话还没有任务列表") : tr("任务列表是空的")}
               </Text>
             )}
           </ScrollView>

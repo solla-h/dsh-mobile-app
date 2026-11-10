@@ -4,6 +4,7 @@ import { useThemedStyles } from '../theme';
 import { ScheduleSheet } from './ScheduleSheet';
 import type { GatewayClient } from '../../transport/gateway-client';
 import type { Palette } from '../../theme/tokens';
+import { tr } from '../../i18n';
 
 /**
  * 定时任务页：只读账本。
@@ -73,19 +74,22 @@ export function SchedulesView({
   return (
     <View style={styles.root}>
       <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-        定时巡航账本
+        
+        {tr("定时巡航账本")}
       </Text>
       <Text style={styles.subtitle} maxFontSizeMultiplier={1.3}>
-        静默规律运行 · 仅在异常时通知你
+        
+        {tr("静默规律运行 · 仅在异常时通知你")}
       </Text>
 
       {rows.length === 0 ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle} maxFontSizeMultiplier={1.3}>
-            {catalogReady ? '这台网关还没有定时任务' : '正在读取定时任务…'}
+            {catalogReady ? tr("这台网关还没有定时任务") : tr("正在读取定时任务…")}
           </Text>
           <Text style={styles.emptyHint} maxFontSizeMultiplier={1.3}>
-            定时任务由 agent 用 schedule_create 创建，手机端目前只读。
+            
+            {tr("定时任务由 agent 用 schedule_create 创建，手机端目前只读。")}
           </Text>
         </View>
       ) : (

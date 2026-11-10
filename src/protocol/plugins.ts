@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * plugin-management-v1：与 DSH Web 插件页对齐的管理帧。
  *
@@ -121,10 +122,10 @@ export const BUILTIN_BUNDLES = Object.freeze([
 
 /** Web 页内置配置卡片的固定顺序与中文名。 */
 export const OFFICIAL_ITEM_LABELS: Record<string, string> = {
-  shell: 'Shell 沙箱',
-  'agent-loop': 'Agent 循环',
-  subagent: '子智能体',
-  'web-search': '联网搜索',
+  get shell() { return tr("Shell 沙箱"); },
+  get 'agent-loop'() { return tr("Agent 循环"); },
+  get subagent() { return tr("子智能体"); },
+  get 'web-search'() { return tr("网页搜索"); },
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -423,15 +424,15 @@ export function mapSettingsChanged(raw: unknown): { ns: string; revision?: numbe
 export function describeApplication(result: ChangeResult): string | null {
   switch (result.application) {
     case 'applied':
-      return result.changed ? '已生效' : '无变化';
+      return result.changed ? tr("已生效") : tr("无变化");
     case 'restart-required':
-      return '已保存，重启 DSH Web 后生效';
+      return tr("已保存，重启 DSH Web 后生效");
     case 'overridden':
-      return '已被更高优先级的配置覆盖';
+      return tr("已被更高优先级的配置覆盖");
     case 'failed':
-      return result.error ?? '操作失败';
+      return result.error ?? tr("操作失败");
     case 'cancelled':
-      return '已取消';
+      return tr("已取消");
     default:
       return null;
   }

@@ -12,6 +12,7 @@ import {
 import { PILL_HEIGHT, TYPE } from '../../theme/tokens';
 import { softFeedback, tapFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
+import { tr } from '../../i18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -89,7 +90,7 @@ export function ThinkPill({ text, streaming, answerStarted, startedAt, elapsed }
         onPress={toggle}
         hitSlop={4}
         accessibilityRole="button"
-        accessibilityLabel={open ? '收起思考过程' : '展开思考过程'}
+        accessibilityLabel={open ? tr("收起思考过程") : tr("展开思考过程")}
       >
         {activelyThinking ? (
           <ActivityIndicator size="small" color={t.text.muted} style={styles.spinner} />
@@ -97,7 +98,7 @@ export function ThinkPill({ text, streaming, answerStarted, startedAt, elapsed }
           <Text style={[styles.sparkle, { color: t.text.muted }]}>✦</Text>
         )}
         <Text style={[styles.label, { color: t.text.primary }]} numberOfLines={1}>
-          {activelyThinking ? '正在深度思考 <think>…' : '已深度思考'}
+          {activelyThinking ? tr("正在深度思考 <think>…") : tr("已深度思考")}
         </Text>
         <Text style={[styles.meta, { color: t.text.muted }]} numberOfLines={1}>
           ({[timeLabel, tokenEst].filter(Boolean).join(' · ')})
@@ -108,7 +109,7 @@ export function ThinkPill({ text, streaming, answerStarted, startedAt, elapsed }
           </Text>
         ) : null}
         <View style={styles.tail}>
-          <Text style={[styles.meta, { color: t.text.muted }]}>{open ? '收起' : '展开'}</Text>
+          <Text style={[styles.meta, { color: t.text.muted }]}>{open ? tr("收起") : tr("展开")}</Text>
           <Text style={[styles.chevron, { color: t.text.muted }]}>{open ? '⌃' : '⌄'}</Text>
         </View>
       </Pressable>

@@ -11,6 +11,7 @@ import { tapFeedback } from '../haptics';
 import { useTheme, useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { GatewayClient } from '../../transport/gateway-client';
+import { tr } from '../../i18n';
 
 /**
  * 定时任务详情抽屉：改标题、删除、看投递历史。
@@ -63,10 +64,10 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
         if (!result) return;
         if (result.updated) {
           tapFeedback();
-          setNotice('已保存');
+          setNotice(tr("已保存"));
           onChanged();
         } else {
-          setNotice('保存失败：' + (result.code ?? '任务可能已被修改或结束'));
+          setNotice(tr("保存失败：") + (result.code ?? tr("任务可能已被修改或结束")));
           onChanged();
         }
       } else if (kind === 'schedule-delete') {
@@ -78,7 +79,7 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
           onClose();
           onChanged();
         } else {
-          setNotice('删除失败：' + (result.code ?? '任务未找到'));
+          setNotice(tr("删除失败：") + (result.code ?? tr("任务未找到")));
           onChanged();
         }
       } else if (kind === 'schedule-history') {
@@ -86,13 +87,13 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
         setBusy(false);
         if (result) {
           setHistory(result.records);
-          if (result.code) setNotice('历史读取异常：' + result.code);
+          if (result.code) setNotice(tr("历史读取异常：") + result.code);
         }
       } else if (kind === 'error') {
         setBusy(false);
         const frameRecord = frame as { requestType?: string; message?: string };
         if (frameRecord.requestType?.startsWith('schedule-')) {
-          setNotice(frameRecord.message ?? '操作失败');
+          setNotice(frameRecord.message ?? tr("操作失败"));
         }
       }
     });
@@ -120,12 +121,12 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
   const remove = useCallback(() => {
     if (!sessionId || !id) return;
     Alert.alert(
-      '删除定时任务',
-      '删除后这条任务的投递记录也会移除（已入队的消息不会撤回）。确定？',
+      tr("删除定时任务"),
+      tr("删除后这条任务的投递记录也会移除（已入队的消息不会撤回）。确定？"),
       [
-        { text: '取消', style: 'cancel' },
+        { text: tr("取消"), style: 'cancel' },
         {
-          text: '删除',
+          text: tr("删除"),
           style: 'destructive',
           onPress: () => {
             setBusy(true);
@@ -173,12 +174,12 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
 
           {editable ? (
             <>
-              <Text style={styles.section}>改标题</Text>
+              <Text style={styles.section}>{tr("改标题")}</Text>
               <TextInput
                 style={styles.input}
                 value={title}
                 onChangeText={setTitle}
-                placeholder="任务标题"
+                placeholder={tr("任务标题")}
                 placeholderTextColor={t.text.muted}
                 editable={!busy}
               />
@@ -188,29 +189,29 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
                   disabled={busy}
                   onPress={saveTitle}
                 >
-                  <Text style={styles.buttonTextPrimary}>{busy ? '处理中…' : '保存标题'}</Text>
+                  <Text style={styles.buttonTextPrimary}>{busy ? tr("处理中…") : tr("保存标题")}</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.button, styles.buttonNeutral, busy && styles.buttonDisabled]}
                   disabled={busy}
                   onPress={loadHistory}
                 >
-                  <Text style={styles.buttonText}>投递历史</Text>
+                  <Text style={styles.buttonText}>{tr("投递历史")}</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.button, styles.buttonDanger, busy && styles.buttonDisabled]}
                   disabled={busy}
                   onPress={remove}
                 >
-                  <Text style={styles.buttonTextDanger}>删除</Text>
+                  <Text style={styles.buttonTextDanger}>{tr("删除")}</Text>
                 </Pressable>
               </View>
 
               {history !== null ? (
                 <>
-                  <Text style={styles.section}>最近投递</Text>
+                  <Text style={styles.section}>{tr("最近投递")}</Text>
                   {history.length === 0 ? (
-                    <Text style={styles.empty}>还没有投递记录。</Text>
+                    <Text style={styles.empty}>{tr("还没有投递记录。")}</Text>
                   ) : (
                     <ScrollView style={styles.historyBox} nestedScrollEnabled>
                       {history.map((record, index) => (
@@ -219,7 +220,7 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
                             {record.at ? new Date(record.at).toLocaleString() : '—'}
                           </Text>
                           <Text style={styles.historyStatus}>
-                            {[record.status, record.kind].filter(Boolean).join(' · ') || '记录'}
+                            {[record.status, record.kind].filter(Boolean).join(' · ') || tr("记录")}
                           </Text>
                           {record.summary ? (
                             <Text style={styles.historySummary} numberOfLines={2}>
@@ -234,11 +235,12 @@ export function ScheduleSheet({ client, item, onClose, onChanged }: Props) {
               ) : null}
             </>
           ) : (
-            <Text style={styles.empty}>这条任务没有归属会话，只能查看。</Text>
+            <Text style={styles.empty}>{tr("这条任务没有归属会话，只能查看。")}</Text>
           )}
 
           <Text style={styles.footnote}>
-            新定时任务由 agent 用 schedule_create 工具创建；这里只做管理。
+            
+            {tr("新定时任务由 agent 用 schedule_create 工具创建；这里只做管理。")}
           </Text>
         </Pressable>
       </Pressable>

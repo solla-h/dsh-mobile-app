@@ -1,6 +1,7 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 /**
  * 通用底部操作表。Android 没有 ActionSheetIOS，自己画一个，
@@ -87,9 +88,9 @@ export function ActionSheet({ visible, title, subtitle, actions, onPick, onClose
             style={[styles.row, styles.cancel]}
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="取消"
+            accessibilityLabel={tr("取消")}
           >
-            <Text style={styles.cancelText}>取消</Text>
+            <Text style={styles.cancelText}>{tr("取消")}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

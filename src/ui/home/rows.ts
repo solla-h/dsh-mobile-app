@@ -7,6 +7,7 @@
 
 import { deriveProjects } from '../../protocol/projects';
 import type { SessionItem, WorkspacesFrame } from '../../protocol/types';
+import { tr } from '../../i18n';
 
 export type HomeRow =
   | {
@@ -68,11 +69,11 @@ export function buildHomeRows(
     pushGroup(group.id, title, group.sessions.map((s) => s.sessionId), group.path);
   }
   if (board.loose.length > 0) {
-    pushGroup('loose', '未归组', board.loose.map((s) => s.sessionId));
+    pushGroup('loose', tr("未分组"), board.loose.map((s) => s.sessionId));
   }
   if (options.showArchived && archived.size > 0) {
     const archivedItems = sessions.filter((item) => archived.has(item.sessionId));
-    pushGroup('archived', '已归档', archivedItems.map((item) => item.sessionId), undefined, true);
+    pushGroup('archived', tr("已归档"), archivedItems.map((item) => item.sessionId), undefined, true);
   }
   return rows;
 }

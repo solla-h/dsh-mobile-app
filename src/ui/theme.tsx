@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { EINK_SLATE, MONO_FONT, PAPER, type Palette } from '../theme/tokens';
+import { useLanguageVersion } from '../i18n';
 import { useFontScale } from './fontScale';
 
 /**
@@ -19,6 +20,9 @@ export function useTheme(): Palette {
 export function useThemedStyles<T>(makeStyles: (t: Palette) => T): T {
   const t = useTheme();
   const { scale } = useFontScale();
+  // 文案在模块级 t() 里按当前语言求值，语言切换必须让所有组件重渲染。
+  // 项目里的样式全走这个入口，订阅放这里就不用给几十个组件各挂一个 hook。
+  useLanguageVersion();
   return useMemo(() => {
     const styles = makeStyles(t);
     // 全局字号只缩放文字相关数值，间距/控件尺寸不受影响。

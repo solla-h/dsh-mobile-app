@@ -46,6 +46,7 @@ import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
 import { HostInfoSheet } from './src/ui/home/HostInfoSheet';
 import { FontScaleProvider } from './src/ui/fontScale';
+import { tr, LanguageProvider } from './src/i18n';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
 import {
@@ -88,22 +89,25 @@ function hostOf(url: string): string {
 }
 
 const STATE_LABEL: Record<ConnectionState, string> = {
-  idle: '未连接',
-  connecting: '连接中',
-  ready: '已连接',
-  closed: '已断开',
-  error: '连接异常',
+  get idle() { return tr("未连接"); },
+  get connecting() { return tr("连接中"); },
+  get ready() { return tr("已连接"); },
+  get closed() { return tr("已断开"); },
+  get error() { return tr("连接异常"); },
 };
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      {/* 必须包在 AppBody 外面：AppBody 自己就调用 useThemedStyles(makeAppStyles)，
-          放进它的 return 里的话，顶栏、设备条、搜索框、重命名弹窗这些样式读到的
-          永远是默认倍率，字号调大后和子页面不一致。 */}
-      <FontScaleProvider>
-        <AppBody />
-      </FontScaleProvider>
+      {/* 两个 Provider 都必须包在 AppBody 外面：AppBody 自己就调用
+          useThemedStyles(makeAppStyles)，放进它的 return 里的话，顶栏、设备条、
+          搜索框、重命名弹窗这些样式读到的永远是默认倍率，字号调大后和子页面不一致；
+          语言设置也要能在整棵树上被 useLanguage() 读到。 */}
+      <LanguageProvider>
+        <FontScaleProvider>
+          <AppBody />
+        </FontScaleProvider>
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 }
@@ -573,7 +577,7 @@ function AppBody() {
           // 走同一条路（往里写草稿再靠挂载时读取，页面已经开着就永远读不到）。
           setVoiceDelivery({ key: randomUUID(), sessionId: target.sessionId, text });
           openSessionById(target.sessionId);
-          notifyPet('到上限了，文字已放进输入框');
+          notifyPet(tr("到上限了，文字已放进输入框"));
           return;
         }
         // 新会话：先把文字挂起来，等 session-created 回来再投递。
@@ -588,7 +592,7 @@ function AppBody() {
           // 会话建不出来就退到剪贴板，别让这句话凭空消失。
           voiceDraftRef.current = null;
           void Clipboard.setStringAsync(text);
-          notifyPet('连接已断开，文字已复制到剪贴板');
+          notifyPet(tr("连接已断开，文字已复制到剪贴板"));
           return;
         }
         // 回包丢了不能挂死：超时按 rescueVoiceDraft 的语义退剪贴板。
@@ -596,9 +600,9 @@ function AppBody() {
           if (voiceDraftRef.current?.requestId !== requestId) return;
           voiceDraftRef.current = null;
           void Clipboard.setStringAsync(text);
-          notifyPet('新建会话超时，文字已复制到剪贴板');
+          notifyPet(tr("新建会话超时，文字已复制到剪贴板"));
         });
-        notifyPet('到上限了，正在新建会话');
+        notifyPet(tr("到上限了，正在新建会话"));
         return;
       }
       if (target.kind === 'session') {
@@ -606,7 +610,7 @@ function AppBody() {
         // 不能把一句「同意」当成普通消息发进去，先打开会话让用户看现场。
         if (control.state !== 'ready') {
           openSessionById(target.sessionId);
-          notifyPet('待办状态还没同步，已打开会话');
+          notifyPet(tr("待办状态还没同步，已打开会话"));
           return;
         }
         // 会话里有任何待处理项（审批/提问）时，语音只负责把用户带到现场，
@@ -619,14 +623,14 @@ function AppBody() {
           openSessionById(target.sessionId);
           if (approval) {
             setApprovalFocus(approval.rpcId);
-            notifyPet(`听到「${heard}」，请在审批卡上确认`);
+            notifyPet(tr("听到「{0}」，请在审批卡上确认", [heard]));
             if (approvalFocusTimerRef.current) clearTimeout(approvalFocusTimerRef.current);
             approvalFocusTimerRef.current = setTimeout(() => {
               setApprovalFocus((current) => (current === approval.rpcId ? null : current));
               approvalFocusTimerRef.current = null;
             }, 5000);
           } else {
-            notifyPet(`听到「${heard}」，这个会话在等你处理`);
+            notifyPet(tr("听到「{0}」，这个会话在等你处理", [heard]));
           }
           return;
         }
@@ -638,7 +642,7 @@ function AppBody() {
           text,
         });
         if (!sent) {
-          notifyPet('没发出去，检查网络后再试');
+          notifyPet(tr("没发出去，检查网络后再试"));
           return;
         }
         voiceMessagePendingRef.current = requestId;
@@ -653,7 +657,7 @@ function AppBody() {
         ...(currentWorkspaceId ? { workspaceId: currentWorkspaceId } : {}),
       });
       if (!sent) {
-        notifyPet('没发出去，检查网络后再试');
+        notifyPet(tr("没发出去，检查网络后再试"));
         return;
       }
       voiceCreateRequestRef.current = requestId;
@@ -661,7 +665,7 @@ function AppBody() {
       armRequestTimeout(requestId, () => {
         if (voiceCreateRequestRef.current !== requestId) return;
         voiceCreateRequestRef.current = null;
-        notifyPet('没收到网关回执，检查网络后再试');
+        notifyPet(tr("没收到网关回执，检查网络后再试"));
       });
     },
     [armRequestTimeout, client, control, currentWorkspaceId, notifyPet, openSessionById],
@@ -918,15 +922,15 @@ function AppBody() {
                 blank: false,
               });
               client.send({ type: 'sessions' });
-              notifyPet('已发出');
+              notifyPet(tr("已发出"));
             } else {
-              notifyPet('已发出，但没拿到会话 id');
+              notifyPet(tr("已发出，但没拿到会话 id"));
             }
             break;
           }
           if (voiceMessagePendingRef.current && sent.requestId === voiceMessagePendingRef.current) {
             voiceMessagePendingRef.current = null;
-            notifyPet('已发出');
+            notifyPet(tr("已发出"));
           }
           break;
         }
@@ -981,7 +985,7 @@ function AppBody() {
           const held = takeVoiceDraft(created.requestId);
           if (held) {
             setVoiceDelivery({ key: randomUUID(), sessionId: created.sessionId, text: held });
-            notifyPet('到上限了，文字已放进输入框');
+            notifyPet(tr("到上限了，文字已放进输入框"));
           }
           break;
         }
@@ -1017,11 +1021,11 @@ function AppBody() {
           handleVoiceFailure(failure);
           if (voiceMessagePendingRef.current && failure.requestId === voiceMessagePendingRef.current) {
             voiceMessagePendingRef.current = null;
-            notifyPet('没发出去，检查网络后再试');
+            notifyPet(tr("没发出去，检查网络后再试"));
           }
           if (voiceCreateRequestRef.current && failure.requestId === voiceCreateRequestRef.current) {
             voiceCreateRequestRef.current = null;
-            notifyPet('没发出去，检查网络后再试');
+            notifyPet(tr("没发出去，检查网络后再试"));
           }
           // 到上限那句语音卡在「等新会话」上：建会话失败就退剪贴板，
           // 别让它挂在 ref 里、被之后随便哪次新建的会话消费掉。
@@ -1031,7 +1035,7 @@ function AppBody() {
             (failure.requestId === undefined ||
               failure.requestId === voiceDraftRef.current.requestId)
           ) {
-            rescueVoiceDraft('会话没建成，文字已复制到剪贴板');
+            rescueVoiceDraft(tr("会话没建成，文字已复制到剪贴板"));
           }
           // 目录读失败就留在选择器里显示，别把用户弹回列表页。
           if (failure.requestType === 'directories') {
@@ -1079,11 +1083,11 @@ function AppBody() {
         // 旧版本没记网关的条目按当前网关收养一次并说一声。
         const flushed = outbox.flush((frame) => client.send(frame), savedRef.current?.id);
         if (flushed.adopted > 0) {
-          notifyPet(`${flushed.adopted} 条旧待发消息按当前网关继续发送`);
+          notifyPet(tr("{0} 条旧待发消息按当前网关继续发送", [flushed.adopted]));
         }
       } else {
         // 等 session-created 的那句语音草稿等不到了：重连后网关也不会重放响应。
-        rescueVoiceDraft('连接断了，文字已复制到剪贴板');
+        rescueVoiceDraft(tr("连接断了，文字已复制到剪贴板"));
       }
     });
     const offFrame = client.onFrame(handleFrame);
@@ -1118,7 +1122,7 @@ function AppBody() {
         });
         if (gateway.token) void startControl(gateway);
       } catch (failure) {
-        setError(failure instanceof Error ? failure.message : '连接失败');
+        setError(failure instanceof Error ? failure.message : tr("连接失败"));
       } finally {
         setBusy(false);
       }
@@ -1148,7 +1152,7 @@ function AppBody() {
       setPairingText('');
       await connectWith(gateway, payload.pairingCode);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '配对失败');
+      setError(failure instanceof Error ? failure.message : tr("配对失败"));
     } finally {
       pairingRef.current = false;
     }
@@ -1223,8 +1227,8 @@ function AppBody() {
       if (creatingRequestRef.current !== requestId) return;
       creatingRequestRef.current = null;
       setCreating(false);
-      setError('建会话超时了，再点一次「新建会话」');
-      notifyPet('建会话超时，重试一下');
+      setError(tr("建会话超时了，再点一次「新建会话」"));
+      notifyPet(tr("建会话超时，重试一下"));
     });
     // 选中工作区就开在里面；没选就让宿主用默认目录，不去猜。
     const sent = client.send({
@@ -1236,7 +1240,7 @@ function AppBody() {
       settleRequestTimeout(requestId);
       creatingRequestRef.current = null;
       setCreating(false);
-      setError('连接已断开，重连后再试');
+      setError(tr("连接已断开，重连后再试"));
     }
   }, [armRequestTimeout, client, connected, currentWorkspaceId, notifyPet, settleRequestTimeout]);
 
@@ -1276,15 +1280,15 @@ function AppBody() {
         label: item.title,
         hint: item.path,
       })),
-      { id: 'default', label: '默认目录', hint: '用网关自己的默认工作目录' },
-      { id: 'create-mobile', label: '新建 mobile 工作区', hint: '在宿主 home 下建 mobile 目录并注册' },
+      { id: 'default', label: tr("默认目录"), hint: tr("用网关自己的默认工作目录") },
+      { id: 'create-mobile', label: tr("新建 mobile 工作区"), hint: tr("在宿主 home 下建 mobile 目录并注册") },
     ];
   }, [workspaceFrame]);
 
   const workspaceLabel = useMemo(() => {
-    if (!currentWorkspaceId) return '默认目录';
+    if (!currentWorkspaceId) return tr("默认目录");
     const found = workspaceFrame?.items.find((item) => item.workspaceId === currentWorkspaceId);
-    return found?.title ?? '默认目录';
+    return found?.title ?? tr("默认目录");
   }, [currentWorkspaceId, workspaceFrame]);
 
   /** 拉一层目录；不带 path 就是宿主 home。 */
@@ -1294,7 +1298,7 @@ function AppBody() {
       setDirLoading(true);
       if (!client.send({ type: 'directories', path })) {
         setDirLoading(false);
-        setDirError('连接已断开，无法读取目录');
+        setDirError(tr("连接已断开，无法读取目录"));
       }
     },
     [client],
@@ -1305,7 +1309,7 @@ function AppBody() {
     const cwd = dirListing?.path;
     if (!cwd) return;
     if (!connected) {
-      setDirError('连接已断开，重连后再试');
+      setDirError(tr("连接已断开，重连后再试"));
       return;
     }
     setDirPicker(false);
@@ -1317,21 +1321,21 @@ function AppBody() {
       if (creatingRequestRef.current !== requestId) return;
       creatingRequestRef.current = null;
       setCreating(false);
-      setError('建会话超时了，再点一次「新建会话」');
-      notifyPet('建会话超时，重试一下');
+      setError(tr("建会话超时了，再点一次「新建会话」"));
+      notifyPet(tr("建会话超时，重试一下"));
     });
     if (!client.send({ type: 'session-create', requestId, cwd })) {
       settleRequestTimeout(requestId);
       creatingRequestRef.current = null;
       setCreating(false);
-      setError('连接已断开，重连后再试');
+      setError(tr("连接已断开，重连后再试"));
     }
   }, [armRequestTimeout, client, connected, dirListing, notifyPet, settleRequestTimeout]);
 
   const createActions = useMemo<SheetAction[]>(
     () => [
-      { id: 'default', label: '新建会话', hint: '用网关的默认工作目录' },
-      { id: 'pick', label: '选择目录…', hint: '指定一个项目目录再开始' },
+      { id: 'default', label: tr("新建会话"), hint: tr("用网关的默认工作目录") },
+      { id: 'pick', label: tr("选择目录…"), hint: tr("指定一个项目目录再开始") },
     ],
     [],
   );
@@ -1358,20 +1362,20 @@ function AppBody() {
       const current = item.id === saved?.id;
       const conflicted = rendezvousConflicts.has(item.gatewayId ?? item.rendezvous?.gatewayId ?? '');
       const hint = [
-        current ? (connected ? '当前 · 已连接' : '当前') : null,
+        current ? (connected ? tr("当前 · 已连接") : tr("当前")) : null,
         hostOf(item.url),
-        conflicted ? '网关身份已变化，重新扫码后可恢复自动找回' : null,
+        conflicted ? tr("网关身份已变化，重新扫码后可恢复自动找回") : null,
       ]
         .filter(Boolean)
         .join(' · ');
       return { id: 'gw:' + item.id, label: (current ? '✓ ' : '') + name, hint };
     });
-    list.push({ id: 'add', label: '＋ 添加网关', hint: '扫码或粘贴配对串' });
+    list.push({ id: 'add', label: tr("＋ 添加网关"), hint: tr("扫码或粘贴配对串") });
     if (saved) {
       list.push({
         id: 'forget',
-        label: '移除当前网关',
-        hint: '只删本地记录，服务器上的设备授权需要另行撤销',
+        label: tr("移除当前网关"),
+        hint: tr("只删本地记录，服务器上的设备授权需要另行撤销"),
         destructive: true,
       });
     }
@@ -1421,10 +1425,10 @@ function AppBody() {
   const forgetGateway = useCallback(
     (gateway: SavedGateway) => {
       const name = gateway.gatewayName ?? gateway.label ?? new URL(gateway.url).host;
-      Alert.alert('移除网关', `不再连接 ${name}？本地记录会被删除。`, [
-        { text: '取消', style: 'cancel' },
+      Alert.alert(tr("移除网关"), tr("不再连接 {0}？本地记录会被删除。", [name]), [
+        { text: tr("取消"), style: 'cancel' },
         {
-          text: '移除',
+          text: tr("移除"),
           style: 'destructive',
           onPress: () => {
             void (async () => {
@@ -1463,7 +1467,7 @@ function AppBody() {
     const title = renameDraft.trim();
     if (!target) return;
     if (!title) {
-      Alert.alert('名称不能为空');
+      Alert.alert(tr("名称不能为空"));
       return;
     }
     client.send({ type: 'session-rename', sessionId: target.sessionId, title });
@@ -1479,17 +1483,17 @@ function AppBody() {
     return [
       {
         id: 'rename',
-        label: '重命名',
-        hint: item.projections?.values.title ?? '未命名会话',
+        label: tr("重命名"),
+        hint: item.projections?.values.title ?? tr("未命名会话"),
       },
       {
         id: 'fork',
-        label: '从最近一轮分叉',
-        hint: '复制出一个新会话，原会话不动',
+        label: tr("从最近一轮分叉"),
+        hint: tr("复制出一个新会话，原会话不动"),
       },
       isArchived
-        ? { id: 'unarchive', label: '取消归档' }
-        : { id: 'archive', label: '归档', hint: '从列表里收起来，随时可以再显示' },
+        ? { id: 'unarchive', label: tr("取消归档") }
+        : { id: 'archive', label: tr("归档"), hint: tr("从列表里收起来，随时可以再显示") },
     ];
   }, [archived, menuSession]);
 
@@ -1520,12 +1524,12 @@ function AppBody() {
 
   const handleForget = useCallback(async () => {
     Alert.alert(
-      '清除配对？',
-      '清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。',
+      tr("清除配对？"),
+      tr("清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。"),
       [
-        { text: '取消', style: 'cancel' },
+        { text: tr("取消"), style: 'cancel' },
         {
-          text: '清除',
+          text: tr("清除"),
           style: 'destructive',
           onPress: () => {
             void (async () => {
@@ -1576,14 +1580,14 @@ function AppBody() {
             onPress={() => setGatewaySheet(true)}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={`网关：${hello?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? '未配置网关'}`}
-            accessibilityHint="打开网关菜单，切换或添加网关"
+            accessibilityLabel={tr("网关：{0}", [hello?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? tr("未配置网关")])}
+            accessibilityHint={tr("打开网关菜单，切换或添加网关")}
           >
             <Text style={styles.title}>
               DSH{gateways.length > 1 ? <Text style={styles.titleCount}> {gateways.length}</Text> : null}
             </Text>
             <Text style={styles.subtitle} numberOfLines={1}>
-              {hello?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? '未配置网关'}
+              {hello?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? tr("未配置网关")}
               <Text style={styles.subtitleChevron}> ›</Text>
             </Text>
           </Pressable>
@@ -1591,7 +1595,7 @@ function AppBody() {
             style={styles.statusPill}
             accessible
             accessibilityRole="text"
-            accessibilityLabel={`连接状态：${STATE_LABEL[state]}`}
+            accessibilityLabel={tr("连接状态：{0}", [STATE_LABEL[state]])}
           >
             <View
               style={[
@@ -1606,19 +1610,19 @@ function AppBody() {
 
         {detail && !connected ? (
           <Pressable
-            onPress={saved && !detail.includes('重新配对') ? handleReconnect : undefined}
+            onPress={saved && !detail.includes(tr("重新配对")) ? handleReconnect : undefined}
             hitSlop={6}
-            accessibilityRole={saved && !detail.includes('重新配对') ? 'button' : 'text'}
+            accessibilityRole={saved && !detail.includes(tr("重新配对")) ? 'button' : 'text'}
             accessibilityHint={
-              saved && !detail.includes('重新配对') ? '点按重新连接网关' : undefined
+              saved && !detail.includes(tr("重新配对")) ? tr("点按重新连接网关") : undefined
             }
           >
             <Text style={styles.hint}>
               {detail}
-              {detail.includes('重新配对')
-                ? ' · 点顶部网关名'
+              {detail.includes(tr("重新配对"))
+                ? tr(" · 点顶部网关名")
                 : saved
-                  ? ' · 点这里重连'
+                  ? tr(" · 点这里重连")
                   : ''}
             </Text>
           </Pressable>
@@ -1631,9 +1635,9 @@ function AppBody() {
             onPress={() => setError(null)}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityHint="点按关闭提示"
+            accessibilityHint={tr("点按关闭提示")}
           >
-            <Text style={styles.error}>{error} · 点击关闭</Text>
+            <Text style={styles.error}>{error}  {tr("· 点击关闭")}</Text>
           </Pressable>
         ) : null}
 
@@ -1698,15 +1702,15 @@ function AppBody() {
                   style={styles.gatePill}
                   onPress={() => openSession(blocked[0])}
                   accessibilityRole="button"
-                  accessibilityHint="跳到第一个等待审批或回答的会话"
+                  accessibilityHint={tr("跳到第一个等待审批或回答的会话")}
                 >
                   <View style={styles.pendingDot} />
                   <Text style={styles.gatePillText}>
                     {blocked.length === 1
-                      ? `${blocked[0].projections?.values.title ?? '一个会话'} 在等你`
-                      : `${blocked.length} 个会话在等你`}
+                      ? tr("{0} 在等你", [blocked[0].projections?.values.title ?? tr("一个会话")])
+                      : tr("{0} 个会话在等你", [blocked.length])}
                   </Text>
-                  <Text style={styles.gatePillGo}>打开</Text>
+                  <Text style={styles.gatePillGo}>{tr("打开")}</Text>
                 </Pressable>
               );
             })()}
@@ -1784,10 +1788,10 @@ function AppBody() {
             )}
             <BottomTabBar
               tabs={[
-                { key: 'focus', label: '聚焦', badge: pendingCount },
-                { key: 'all', label: '全部会话' },
-                { key: 'schedules', label: '定时任务' },
-                { key: 'plugins', label: '插件' },
+                { key: 'focus', label: tr("聚焦"), badge: pendingCount },
+                { key: 'all', label: tr("全部会话") },
+                { key: 'schedules', label: tr("定时任务") },
+                { key: 'plugins', label: tr("插件") },
               ]}
               active={tab}
               onChange={(key) =>
@@ -1812,7 +1816,7 @@ function AppBody() {
 
       <ActionSheet
         visible={menuSession !== null}
-        title={menuSession?.projections?.values.title ?? '未命名会话'}
+        title={menuSession?.projections?.values.title ?? tr("未命名会话")}
         actions={sessionActions}
         onPick={runSessionAction}
         onClose={() => setMenuSession(null)}
@@ -1820,8 +1824,8 @@ function AppBody() {
 
       <ActionSheet
         visible={workspaceSheet}
-        title="当前工作区"
-        subtitle="只影响之后新建的会话，已有的会话不会移动"
+        title={tr("当前工作区")}
+        subtitle={tr("只影响之后新建的会话，已有的会话不会移动")}
         actions={workspaceActions}
         onPick={pickWorkspace}
         onClose={() => setWorkspaceSheet(false)}
@@ -1829,8 +1833,8 @@ function AppBody() {
 
       <ActionSheet
         visible={createSheet}
-        title="新建会话"
-        subtitle="会话跑起来之后目录就固定了，选错了只能重新建"
+        title={tr("新建会话")}
+        subtitle={tr("会话跑起来之后目录就固定了，选错了只能重新建")}
         actions={createActions}
         onPick={runCreateAction}
         onClose={() => setCreateSheet(false)}
@@ -1839,8 +1843,8 @@ function AppBody() {
       {hostSheet ? <HostInfoSheet control={control} onClose={() => setHostSheet(false)} /> : null}
       <ActionSheet
         visible={gatewaySheet}
-        title="网关"
-        subtitle="同一台设备可以记住多台网关，切换时会重新拉取会话列表"
+        title={tr("网关")}
+        subtitle={tr("同一台设备可以记住多台网关，切换时会重新拉取会话列表")}
         actions={gatewayActions}
         onPick={(id) => {
           if (id === 'add') {

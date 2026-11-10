@@ -1,4 +1,5 @@
 import type { ServerFrame } from './types';
+import { tr } from '../i18n';
 
 /**
  * 全局待办：审批 / 提问是 agent 停下来等人的唯一原因。
@@ -138,9 +139,9 @@ export function describePending(items: PendingInteraction[]): string {
   const approvals = items.filter((item) => item.kind === 'approval');
   const questions = items.filter((item) => item.kind === 'question');
   const parts: string[] = [];
-  if (approvals.length === 1) parts.push(approvals[0].toolName ? '待审批 · ' + approvals[0].toolName : '待审批');
-  else if (approvals.length > 1) parts.push('待审批 · ' + approvals.length);
-  if (questions.length === 1) parts.push('待回答');
-  else if (questions.length > 1) parts.push('待回答 · ' + questions.length);
+  if (approvals.length === 1) parts.push(approvals[0].toolName ? tr("待审批 · ") + approvals[0].toolName : tr("待审批"));
+  else if (approvals.length > 1) parts.push(tr("待审批 · ") + approvals.length);
+  if (questions.length === 1) parts.push(tr("待回答"));
+  else if (questions.length > 1) parts.push(tr("待回答 · ") + questions.length);
   return parts.join('　');
 }

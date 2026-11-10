@@ -3,6 +3,7 @@ import { File } from 'expo-file-system';
 
 import { base64DecodedBytes } from '../protocol/files';
 import type { ClientFrame } from '../protocol/types';
+import { tr } from '../i18n';
 
 /**
  * 把手机上的文件传到网关（file-upload-v1）。
@@ -34,18 +35,18 @@ interface Waiter {
 const LOCAL_MAX_BYTES = 24 * 1024 * 1024;
 
 const FAILURE_TEXT: Record<string, string> = {
-  'file-upload-unavailable': '网关没开文件上传',
-  'file-too-large': '文件太大',
-  'file-upload-limit': '同时上传的文件太多，等一个传完再试',
-  'file-upload-offset': '分片偏移对不上，已中断',
-  'file-upload-invalid-data': '分片数据不合法，已中断',
-  'file-upload-size': '文件内容和声明的大小不一致',
-  'file-upload-incomplete': '文件没传完',
-  'file-upload-checksum': 'SHA-256 校验失败',
-  'file-upload-not-found': '上传会话已失效',
-  'file-upload-cancelled': '上传已取消',
-  'session-not-found': '会话不存在',
-  'bad-request': '上传参数不合法',
+  get 'file-upload-unavailable'() { return tr("网关没开文件上传"); },
+  get 'file-too-large'() { return tr("文件太大"); },
+  get 'file-upload-limit'() { return tr("同时上传的文件太多，等一个传完再试"); },
+  get 'file-upload-offset'() { return tr("分片偏移对不上，已中断"); },
+  get 'file-upload-invalid-data'() { return tr("分片数据不合法，已中断"); },
+  get 'file-upload-size'() { return tr("文件内容和声明的大小不一致"); },
+  get 'file-upload-incomplete'() { return tr("文件没传完"); },
+  get 'file-upload-checksum'() { return tr("SHA-256 校验失败"); },
+  get 'file-upload-not-found'() { return tr("上传会话已失效"); },
+  get 'file-upload-cancelled'() { return tr("上传已取消"); },
+  get 'session-not-found'() { return tr("会话不存在"); },
+  get 'bad-request'() { return tr("上传参数不合法"); },
 };
 
 /**
@@ -103,7 +104,7 @@ export class FileUploader {
       this.uploads.set(id, { file: upload.file, state });
       this.onState(id, state);
     }
-    this.rejectWaiters('连接已断开');
+    this.rejectWaiters(tr("连接已断开"));
   }
 
   private rejectWaiters(message: string): void {
@@ -169,18 +170,18 @@ export class FileUploader {
   ): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       if (this.disposed) {
-        reject(new Error('已离开会话'));
+        reject(new Error(tr("已离开会话")));
         return;
       }
       const timer = setTimeout(() => {
         this.waiters.delete(key);
-        reject(new Error('网关没有响应'));
+        reject(new Error(tr("网关没有响应")));
       }, timeoutMs);
       this.waiters.set(key, { resolve, reject, timer });
       if (!this.send(frame)) {
         this.waiters.delete(key);
         clearTimeout(timer);
-        reject(new Error('连接已断开'));
+        reject(new Error(tr("连接已断开")));
       }
     });
   }
@@ -206,9 +207,9 @@ export class FileUploader {
     try {
       const name = file.name || 'file';
       const size = typeof file.size === 'number' ? file.size : null;
-      if (size === null || size <= 0) throw new Error('读不到文件大小');
+      if (size === null || size <= 0) throw new Error(tr("读不到文件大小"));
       if (size > LOCAL_MAX_BYTES) {
-        throw new Error(`超过 ${Math.floor(LOCAL_MAX_BYTES / 1024 / 1024)} MB，手机上先压缩或拆分`);
+        throw new Error(tr("超过 {0} MB，手机上先压缩或拆分", [Math.floor(LOCAL_MAX_BYTES / 1024 / 1024)]));
       }
       update({ status: 'hashing', progress: 0 });
       const sha256 = await file.digest('SHA-256');
@@ -228,7 +229,7 @@ export class FileUploader {
         }
         return;
       }
-      if (!uploadId) throw new Error('网关没有返回 uploadId');
+      if (!uploadId) throw new Error(tr("网关没有返回 uploadId"));
       upload.uploadId = uploadId;
       const chunkBytes =
         typeof opened.chunkBytes === 'number' && opened.chunkBytes > 0 ? opened.chunkBytes : 256 * 1024;
@@ -254,11 +255,11 @@ export class FileUploader {
         );
         if (!active()) return;
         const nextOffset = accepted.nextOffset;
-        if (typeof nextOffset !== 'number') throw new Error('网关没有返回 nextOffset');
+        if (typeof nextOffset !== 'number') throw new Error(tr("网关没有返回 nextOffset"));
         chars += slice.length;
         // 末片带 '=' 填充，解码字节数比 chars/4*3 少 1~2，必须按真实字节累加。
         sentBytes += base64DecodedBytes(slice);
-        if (nextOffset !== sentBytes) throw new Error('分片偏移对不上，已中断');
+        if (nextOffset !== sentBytes) throw new Error(tr("分片偏移对不上，已中断"));
         update({
           status: 'uploading',
           progress: Math.min(1, sentBytes / size),
@@ -273,12 +274,12 @@ export class FileUploader {
       );
       if (!active()) return;
       const receiptId = typeof finished.receiptId === 'string' ? finished.receiptId : '';
-      if (!receiptId) throw new Error('网关没有返回 receiptId');
+      if (!receiptId) throw new Error(tr("网关没有返回 receiptId"));
       update({ status: 'done', progress: 1, receiptId });
     } catch (error) {
       if (!active()) return;
       if (uploadId) this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
-      const message = error instanceof Error ? error.message : '上传失败';
+      const message = error instanceof Error ? error.message : tr("上传失败");
       update(message === '连接已断开' ? { status: 'waiting' } : { status: 'error', message });
     }
   }
@@ -295,6 +296,6 @@ export class FileUploader {
   dispose(): void {
     this.disposed = true;
     for (const id of this.uploads.keys()) this.cancel(id);
-    this.rejectWaiters('已离开会话');
+    this.rejectWaiters(tr("已离开会话"));
   }
 }

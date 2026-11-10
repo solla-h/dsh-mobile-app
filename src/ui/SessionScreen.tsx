@@ -26,6 +26,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
+import { currentLanguage, tr } from '../i18n';
 import {
   applyRealtime,
   mergeSnapshot,
@@ -178,7 +179,7 @@ interface PickedImage {
 }
 
 /** 纯图片消息在气泡里显示成这个，也当作本地回显的去重键。 */
-const IMAGE_ONLY_TEXT = '［图片］';
+const imageOnlyText = () => tr("［图片］");
 
 const DEFAULT_IMAGE_LIMITS: ImageLimits = {
   maxImageBytes: 20 * 1024 * 1024,
@@ -203,13 +204,13 @@ function dayLabel(ms: number): string | null {
   if (!ms) return null;
   const day = startOfDay(ms);
   const diff = Math.round((startOfDay(Date.now()) - day) / 86400000);
-  if (diff === 0) return '今天';
-  if (diff === 1) return '昨天';
+  if (diff === 0) return tr("今天");
+  if (diff === 1) return tr("昨天");
   const date = new Date(ms);
   const sameYear = date.getFullYear() === new Date().getFullYear();
   return sameYear
-    ? `${date.getMonth() + 1}月${date.getDate()}日`
-    : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    ? tr("{0}月{1}日", [date.getMonth() + 1, date.getDate()])
+    : tr("{0}年{1}月{2}日", [date.getFullYear(), date.getMonth() + 1, date.getDate()]);
 }
 
 /** 引用代码块 / Diff 某一行时拼进消息里的文本；太长就截断，别把一整屏代码塞进去。 */
@@ -217,9 +218,9 @@ function formatQuote(quote: { lang: string; code: string; label?: string }): str
   const lines = quote.code.split('\n');
   const shown = lines.slice(0, 12);
   const fence = '```' + (quote.lang || '');
-  const tail = lines.length > shown.length ? [`…（共 ${lines.length} 行）`] : [];
+  const tail = lines.length > shown.length ? [tr("…（共 {0} 行）", [lines.length])] : [];
   const what = quote.label ? ` ${quote.label}` : quote.lang ? `（${quote.lang}）` : '';
-  return [`> 引用${what}：`, fence, ...shown, ...tail, '```'].join('\n');
+  return [tr("> 引用{0}：", [what]), fence, ...shown, ...tail, '```'].join('\n');
 }
 
 /** 长按菜单标题：只给一眼能认出是哪条消息的摘要。 */
@@ -417,7 +418,7 @@ export function SessionScreen({
       // 到上限自动停的那一段：文字放回输入框，改完再发，不代发半句话。
       if (reason === 'cap') {
         setDraft(merged);
-        setStatusLabel('到上限了，文字已放回输入框');
+        setStatusLabel(tr("到上限了，文字已放回输入框"));
         composerRef.current?.focus();
         return;
       }
@@ -600,7 +601,7 @@ export function SessionScreen({
       firstScreenRequestRef.current = null;
       setLoading(false);
       setLoadFailed(true);
-      setError('连接已断开，重连后会自动加载历史');
+      setError(tr("连接已断开，重连后会自动加载历史"));
     }
   }, [client, session.sessionId]);
 
@@ -879,9 +880,9 @@ export function SessionScreen({
         if (decidedRpcRef.current === resolved.rpcId) {
           decidedRpcRef.current = null;
         } else if (resolved.outcome === 'cancelled' || resolved.outcome === 'unavailable') {
-          showToast('这条审批已撤回或无人应答');
+          showToast(tr("这条审批已撤回或无人应答"));
         } else {
-          showToast('这条审批已在其他端处理');
+          showToast(tr("这条审批已在其他端处理"));
         }
         return;
       }
@@ -896,9 +897,9 @@ export function SessionScreen({
           if (receipt.reason === 'not-pending') {
             setApprovals((current) => removeApproval(current, receipt.rpcId));
             setInteractionError(null);
-            showToast('这次审批已经失效（可能已在别的端处理）');
+            showToast(tr("这次审批已经失效（可能已在别的端处理）"));
           } else {
-            setInteractionError('审批提交被拒绝，请重试');
+            setInteractionError(tr("审批提交被拒绝，请重试"));
           }
         }
         return;
@@ -921,7 +922,7 @@ export function SessionScreen({
         const receipt = frame as unknown as { accepted?: boolean; reason?: string };
         if (receipt.accepted === false) {
           setInteractionError(
-            receipt.reason === 'not-pending' ? '这个问题已经失效（可能已在别的端回答）' : '答案被拒绝，请检查后再提交',
+            receipt.reason === 'not-pending' ? tr("这个问题已经失效（可能已在别的端回答）") : tr("答案被拒绝，请检查后再提交"),
           );
         }
         return;
@@ -942,7 +943,7 @@ export function SessionScreen({
           {
             id: 'cmd-' + Date.now(),
             kind: 'notice',
-            text: result ? done.line + ' · ' + result : done.line + ' 已执行',
+            text: result ? done.line + ' · ' + result : done.line + tr(" 已执行"),
             time: Date.now(),
           },
         ]);
@@ -1030,7 +1031,7 @@ export function SessionScreen({
         if (result.sessionId && result.sessionId !== session.sessionId) return;
         if (result.accepted === false) {
           setCancelling(false);
-          setError('这一轮已经结束了，没有可停止的任务');
+          setError(tr("这一轮已经结束了，没有可停止的任务"));
         }
         return;
       }
@@ -1042,7 +1043,7 @@ export function SessionScreen({
       }
       if (kind === 'queue-item-updated') {
         const result = frame as unknown as { accepted?: boolean; action?: string };
-        if (result.accepted === false) setError('排队消息没有改成，可能已经开始执行了');
+        if (result.accepted === false) setError(tr("排队消息没有改成，可能已经开始执行了"));
         return;
       }
       if (kind === 'session-stream-reset') {
@@ -1064,7 +1065,7 @@ export function SessionScreen({
           client.send({ type: 'session-agent-preset', sessionId: session.sessionId });
           setError(
             failure.code === 'agent-preset/locked'
-              ? '这个会话已经开始过了，模式不能再改'
+              ? tr("这个会话已经开始过了，模式不能再改")
               : `${failure.code ?? 'error'}：${failure.message ?? ''}`,
           );
           return;
@@ -1190,7 +1191,7 @@ export function SessionScreen({
       firstScreenRequestRef.current = null;
       setLoading(false);
       setLoadFailed(true);
-      setError('历史加载超时，点「重试」重新加载');
+      setError(tr("历史加载超时，点「重试」重新加载"));
     }, FIRST_SCREEN_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [loading]);
@@ -1325,7 +1326,7 @@ export function SessionScreen({
         setGraceLabel(null);
         setDecidedId(null);
         decidedRpcRef.current = null;
-        setInteractionError('离线：这次审批没发出去，重连后请重新拍板');
+        setInteractionError(tr("离线：这次审批没发出去，重连后请重新决定"));
         return;
       }
       decidedRpcRef.current = target.rpcId;
@@ -1342,7 +1343,7 @@ export function SessionScreen({
             id: `approval-${target.rpcId}`,
             kind: 'approval',
             decision: outcome === 'allowed-once' ? 'approved' : 'denied',
-            target: [target.toolName, reason].filter(Boolean).join(' · ') || '工具调用',
+            target: [target.toolName, reason].filter(Boolean).join(' · ') || tr("工具调用"),
             callId: target.callId,
             via,
             sessionId: target.sessionId,
@@ -1372,7 +1373,7 @@ export function SessionScreen({
       if (!approval) return;
       graceRef.current = { approval, outcome };
       setDecidedId(approval.approvalId);
-      setGraceLabel(outcome === 'allowed-once' ? '已批准' : '已拦截');
+      setGraceLabel(outcome === 'allowed-once' ? tr("已允许") : tr("已拒绝"));
       setTriageOpen(false);
     },
     [approval],
@@ -1382,7 +1383,7 @@ export function SessionScreen({
     graceRef.current = null;
     setGraceLabel(null);
     setDecidedId(null);
-    showToast('已撤回拍板');
+    showToast(tr("已撤回决定"));
   }, [showToast]);
 
   const expireGrace = useCallback(() => {
@@ -1394,7 +1395,7 @@ export function SessionScreen({
       const nextBlocked = blockedSessionIds.find((id) => id !== session.sessionId);
       if (nextBlocked) {
         setTimeout(() => {
-          showToast('已自动跳至下一个待审批会话');
+          showToast(tr("已自动跳至下一个待审批会话"));
           onOpenSession(nextBlocked);
         }, MOTION.autoHopMs);
       }
@@ -1470,16 +1471,16 @@ export function SessionScreen({
       const next = [...current];
       for (const item of items) {
         if (item.bytes > maxBytes) {
-          Alert.alert('图片太大', `${item.name ?? '这张图'} 有 ${formatBytes(item.bytes)}，单张上限是 ${formatBytes(maxBytes)}。`);
+          Alert.alert(tr("图片太大"), tr("{0} 有 {1}，单张上限是 {2}。", [item.name ?? tr("这张图"), formatBytes(item.bytes), formatBytes(maxBytes)]));
           continue;
         }
         if (next.length >= maxCount) {
-          Alert.alert('图片太多', `一条消息最多 ${maxCount} 张。`);
+          Alert.alert(tr("图片太多"), tr("一条消息最多 {0} 张。", [maxCount]));
           break;
         }
         const total = next.reduce((sum, entry) => sum + entry.bytes, 0);
         if (total + item.bytes > maxTotal) {
-          Alert.alert('总大小超限', `一条消息的图片总计不能超过 ${formatBytes(maxTotal)}。`);
+          Alert.alert(tr("总大小超限"), tr("一条消息的图片总计不能超过 {0}。", [formatBytes(maxTotal)]));
           break;
         }
         next.push(item);
@@ -1496,7 +1497,7 @@ export function SessionScreen({
           if (source === 'camera') {
             const permission = await ImagePicker.requestCameraPermissionsAsync();
             if (!permission.granted) {
-              Alert.alert('没有相机权限', '请在系统设置里允许 DSH 使用相机。');
+              Alert.alert(tr("没有相机权限"), tr("请在系统设置里允许 DSH 使用相机。"));
               return;
             }
           }
@@ -1527,7 +1528,7 @@ export function SessionScreen({
           }
           addPicked(items);
         } catch (failure) {
-          Alert.alert('选择图片失败', failure instanceof Error ? failure.message : String(failure));
+          Alert.alert(tr("选择图片失败"), failure instanceof Error ? failure.message : String(failure));
         } finally {
           setPicking(false);
         }
@@ -1550,7 +1551,7 @@ export function SessionScreen({
           ...current,
           {
             id,
-            name: file.name || '文件',
+            name: file.name || tr("文件"),
             size: typeof file.size === 'number' ? file.size : 0,
             file,
             state: { status: 'waiting' },
@@ -1558,7 +1559,7 @@ export function SessionScreen({
         ]);
         void uploader.upload(id, file);
       } catch (error) {
-        setError(error instanceof Error ? error.message : '选择文件失败');
+        setError(error instanceof Error ? error.message : tr("选择文件失败"));
       }
     })();
   }, []);
@@ -1577,12 +1578,12 @@ export function SessionScreen({
     // Android 的 AlertDialog 最多三个按钮，第四个「取消」会被丢掉；
     // 这里显式允许点外部/返回键关闭，别让用户被弹窗困住。
     Alert.alert(
-      '添加附件',
+      tr("添加附件"),
       undefined,
       [
-        { text: '拍照', onPress: () => pickImage('camera') },
-        { text: '从相册选择', onPress: () => pickImage('library') },
-        { text: '文件', onPress: pickFiles },
+        { text: tr("拍照"), onPress: () => pickImage('camera') },
+        { text: tr("从相册选择"), onPress: () => pickImage('library') },
+        { text: tr("文件"), onPress: pickFiles },
       ],
       { cancelable: true },
     );
@@ -1620,19 +1621,19 @@ export function SessionScreen({
       presetList.presets.map((preset) => ({
         id: preset.id,
         label: (preset.id === presetId ? '✓ ' : '') + (preset.name || preset.id),
-        hint: [preset.description, preset.broken ? '当前不可用' : null].filter(Boolean).join(' · ') || undefined,
+        hint: [preset.description, preset.broken ? tr("当前不可用") : null].filter(Boolean).join(' · ') || undefined,
         disabled: preset.broken || presetLocked || !presetList.modeSelectionEnabled,
       })),
     [presetId, presetList, presetLocked],
   );
 
   const infoActions = useMemo<SheetAction[]>(() => {
-    const list: SheetAction[] = [{ id: 'copy-id', label: '复制会话 ID', hint: session.sessionId }];
-    if (session.cwd) list.push({ id: 'copy-cwd', label: '复制工作目录', hint: session.cwd });
+    const list: SheetAction[] = [{ id: 'copy-id', label: tr("复制会话 ID"), hint: session.sessionId }];
+    if (session.cwd) list.push({ id: 'copy-cwd', label: tr("复制工作目录"), hint: session.cwd });
     if (session.parentSessionId) {
-      list.push({ id: 'parent', label: '打开来源会话', hint: session.parentSessionId });
+      list.push({ id: 'parent', label: tr("打开来源会话"), hint: session.parentSessionId });
     }
-    list.push({ id: 'archive', label: '归档这个会话', destructive: true });
+    list.push({ id: 'archive', label: tr("归档这个会话"), destructive: true });
     return list;
   }, [session]);
 
@@ -1640,11 +1641,11 @@ export function SessionScreen({
     (id: string) => {
       setInfoSheet(false);
       if (id === 'copy-id') {
-        void Clipboard.setStringAsync(session.sessionId).then(() => showToast('已复制会话 ID'));
+        void Clipboard.setStringAsync(session.sessionId).then(() => showToast(tr("已复制会话 ID")));
         return;
       }
       if (id === 'copy-cwd' && session.cwd) {
-        void Clipboard.setStringAsync(session.cwd).then(() => showToast('已复制目录'));
+        void Clipboard.setStringAsync(session.cwd).then(() => showToast(tr("已复制目录")));
         return;
       }
       if (id === 'parent' && session.parentSessionId) {
@@ -1674,7 +1675,11 @@ export function SessionScreen({
     if (!draft.startsWith('/')) return;
     if (commandRequestedRef.current) return;
     commandRequestedRef.current = true;
-    client.send({ type: 'commands', sessionId: session.sessionId, locale: 'zh-CN' });
+    client.send({
+      type: 'commands',
+      sessionId: session.sessionId,
+      locale: currentLanguage() === 'en' ? 'en-US' : 'zh-CN',
+    });
   }, [client, draft, session.sessionId]);
 
   const pickCommand = useCallback(
@@ -1701,7 +1706,7 @@ export function SessionScreen({
           images,
         });
         if (!sent) {
-          setError('连接已断开，命令未发送');
+          setError(tr("连接已断开，命令未发送"));
           return;
         }
         setDraft('');
@@ -1719,7 +1724,7 @@ export function SessionScreen({
         });
         if (!sent) {
           setOptionSheet(null);
-          setError('连接已断开，无法加载选项');
+          setError(tr("连接已断开，无法加载选项"));
         }
         return;
       }
@@ -1751,7 +1756,7 @@ export function SessionScreen({
     const sent = client.send({ type: 'session-cancel', sessionId: session.sessionId });
     if (!sent) {
       setCancelling(false);
-      setError('连接已断开，无法停止');
+      setError(tr("连接已断开，无法停止"));
       return;
     }
     // 万一 turn/end 没回来（比如这一轮刚好自己结束了），别让按钮一直卡在「停止中」。
@@ -1817,11 +1822,11 @@ export function SessionScreen({
           clearTimeout(voiceHoldRef.current);
           voiceHoldRef.current = null;
           setVoiceWillCancel(false);
-          setStatusLabel('按住说话，松手发送 · 上滑取消');
+          setStatusLabel(tr("按住说话，松手发送 · 上滑取消"));
           return;
         }
         // 上滑取消 = 丢掉这一段；松手 = 交给 useVoiceInput 收录音并发转写。
-        if (voiceCancelRef.current) voice.cancel('已取消录音');
+        if (voiceCancelRef.current) voice.cancel(tr("已取消录音"));
         else voice.end();
       },
       onPanResponderTerminate: () => {
@@ -1829,7 +1834,7 @@ export function SessionScreen({
           clearTimeout(voiceHoldRef.current);
           voiceHoldRef.current = null;
         }
-        voice.cancel('已取消录音');
+        voice.cancel(tr("已取消录音"));
       },
     }),
   );
@@ -1858,7 +1863,7 @@ export function SessionScreen({
       });
       if (!edited) {
         // 断线时别把改到一半的内容清掉：留在输入框里，重连后再发。
-        setError('连接已断开，排队消息没改成');
+        setError(tr("连接已断开，排队消息没改成"));
         return;
       }
       setEditingQueue(null);
@@ -1867,7 +1872,7 @@ export function SessionScreen({
     }
     // 语音转写也会调用这里，不能只靠按钮禁用来防止失败附件被清空。
     if (hasUnreadyFiles) {
-      setError('附件尚未上传完成，请等待连接恢复，或重试、移除失败附件');
+      setError(tr("附件尚未上传完成，请等待连接恢复，或重试、移除失败附件"));
       return;
     }
     const text = [quote ? formatQuote(quote) : '', raw.trim()].filter(Boolean).join('\n\n');
@@ -1931,7 +1936,7 @@ export function SessionScreen({
       }, 280);
     } else if (files.length > 0) {
       // 收据绑在连接上，离线重发没有意义，直接告诉用户等联网再发。
-      setError('文件需要在线发送，等连接恢复后再试');
+      setError(tr("文件需要在线发送，等连接恢复后再试"));
     } else {
       // 断线了别把用户打的字扔掉：落进发件箱，重连后自动补发。
       outbox.add({
@@ -1977,23 +1982,23 @@ export function SessionScreen({
     if (!message) return [];
     const actions: SheetAction[] = [];
     const text = 'text' in message ? message.text : '';
-    if (text) actions.push({ id: 'copy', label: '复制文本' });
+    if (text) actions.push({ id: 'copy', label: tr("复制文本") });
     if (text) {
       actions.push({
         id: 'select',
-        label: '选择文本',
-        hint: '进专门的选择页，拖手柄挑任意片段',
+        label: tr("选择文本"),
+        hint: tr("进专门的选择页，拖手柄挑任意片段"),
       });
     }
     if ('seq' in message && typeof message.seq === 'number') {
       actions.push({
         id: 'fork',
-        label: '从这里分叉',
-        hint: '以这条消息为界复制一份新会话，原来的不动',
+        label: tr("从这里分叉"),
+        hint: tr("以这条消息为界复制一份新会话，原来的不动"),
       });
     }
     if (message.kind === 'user' && text) {
-      actions.push({ id: 'edit', label: '重新编辑', hint: '把内容放回输入框' });
+      actions.push({ id: 'edit', label: tr("重新编辑"), hint: tr("把内容放回输入框") });
     }
     return actions;
   }, [actionMessage]);
@@ -2007,8 +2012,8 @@ export function SessionScreen({
         const text = 'text' in message ? message.text : '';
         if (!text) return;
         void Clipboard.setStringAsync(text).then(
-          () => showToast('已复制'),
-          () => showToast('复制失败'),
+          () => showToast(tr("已复制")),
+          () => showToast(tr("复制失败")),
         );
         return;
       }
@@ -2025,7 +2030,7 @@ export function SessionScreen({
           atSeq: message.seq,
           historyFormatVersion: HISTORY_FORMAT_VERSION,
         });
-        showToast('正在分叉…');
+        showToast(tr("正在分叉…"));
         return;
       }
       if (id === 'edit') {
@@ -2058,7 +2063,7 @@ export function SessionScreen({
         itemId: queueId,
         action: 'remove',
       });
-      if (!sent) setError('连接已断开，队列没改成');
+      if (!sent) setError(tr("连接已断开，队列没改成"));
     },
     [client, session.sessionId],
   );
@@ -2071,7 +2076,7 @@ export function SessionScreen({
         itemId: queueId,
         action: 'steer',
       });
-      if (!sent) setError('连接已断开，插话没发出去');
+      if (!sent) setError(tr("连接已断开，插话没发出去"));
     },
     [client, session.sessionId],
   );
@@ -2121,7 +2126,7 @@ export function SessionScreen({
       lastAssistant && lastAssistant.kind === 'assistant' ? lastAssistant.reasoning : undefined;
     const displayReason = pickDisplayReason(approval.displayReason, approval.reason);
     return {
-      target: filePath ?? approval.toolName ?? '工具调用',
+      target: filePath ?? approval.toolName ?? tr("工具调用"),
       dir: dirOf(filePath),
       detail: displayReason || (lastReasoning ? lastReasoning.split('\n')[0] : undefined),
       diff: diffData?.diff,
@@ -2143,8 +2148,8 @@ export function SessionScreen({
     if (autoApprovedRef.current.has(approval.approvalId)) return;
     autoApprovedRef.current.add(approval.approvalId);
     setDecidedId(approval.approvalId);
-    respondApproval('allowed-once', '目录信任');
-    showToast(`已按目录信任放行 · ${approvalInfo.dir}`);
+    respondApproval('allowed-once', tr("目录信任"));
+    showToast(tr("已按目录信任允许 · {0}", [approvalInfo.dir]));
   }, [approval, approvalInfo, trustedDirs, respondApproval, showToast]);
 
 
@@ -2198,7 +2203,7 @@ export function SessionScreen({
         id: `offline-${item.id}`,
         kind: 'queued' as const,
         // 发件箱里纯图片的正文是空的，气泡上仍要有个占位说明。
-        text: item.text || (item.images?.length ? IMAGE_ONLY_TEXT : ''),
+        text: item.text || (item.images?.length ? imageOnlyText() : ''),
         time: 0,
         queueId: item.id,
         pending: true,
@@ -2322,7 +2327,7 @@ export function SessionScreen({
           hitSlop={12}
           style={styles.back}
           accessibilityRole="button"
-          accessibilityLabel="返回会话列表"
+          accessibilityLabel={tr("返回会话列表")}
         >
           <Text style={styles.backText} allowFontScaling={false}>
             ‹
@@ -2332,20 +2337,20 @@ export function SessionScreen({
           style={styles.titleWrap}
           onLongPress={() => setInfoSheet(true)}
           delayLongPress={320}
-          accessibilityHint="长按查看会话信息"
-          accessibilityActions={[{ name: 'longpress', label: '会话信息' }]}
+          accessibilityHint={tr("长按查看会话信息")}
+          accessibilityActions={[{ name: 'longpress', label: tr("会话信息") }]}
           onAccessibilityAction={(event) => {
             if (event.nativeEvent.actionName === 'longpress') setInfoSheet(true);
           }}
         >
           <Text style={styles.title} numberOfLines={1}>
-            {session.projections?.values.title ?? '未命名会话'}
+            {session.projections?.values.title ?? tr("未命名会话")}
           </Text>
         </Pressable>
         {approval ? (
-          <StatusPill text="待批复" tone="gate" onPress={() => setTriageOpen(true)} />
+          <StatusPill text={tr("待审批")} tone="gate" onPress={() => setTriageOpen(true)} />
         ) : running ? (
-          <StatusPill text="THINKING" tone="busy" />
+          <StatusPill text={tr("运行中")} tone="busy" />
         ) : null}
         {todos && todos.length > 0 ? (
           <Pressable
@@ -2354,7 +2359,8 @@ export function SessionScreen({
             accessibilityRole="button"
           >
             <Text style={styles.outlineText}>
-              任务 {todos.filter((item) => item.status === 'completed').length}/{todos.length}
+              
+              {tr("任务")} {todos.filter((item) => item.status === 'completed').length}/{todos.length}
             </Text>
           </Pressable>
         ) : goal ? (
@@ -2363,7 +2369,7 @@ export function SessionScreen({
             onPress={() => setTasksOpen(true)}
             accessibilityRole="button"
           >
-            <Text style={styles.outlineText}>目标</Text>
+            <Text style={styles.outlineText}>{tr("目标")}</Text>
           </Pressable>
         ) : null}
         {outline.length > 0 ? (
@@ -2372,7 +2378,7 @@ export function SessionScreen({
             onPress={() => setOutlineOpen(true)}
             accessibilityRole="button"
           >
-            <Text style={styles.outlineText}>轮次</Text>
+            <Text style={styles.outlineText}>{tr("轮次")}</Text>
           </Pressable>
         ) : null}
         {/* 停止入口已合并进右下角主圆钮（APPROVAL-2）；这里只留占位保持标题行平衡。 */}
@@ -2391,7 +2397,8 @@ export function SessionScreen({
           accessibilityState={{ selected: viewMode === 'chat' }}
         >
           <Text style={[styles.viewTabText, viewMode === 'chat' ? styles.viewTabTextOn : null]}>
-            对话
+            
+            {tr("对话")}
           </Text>
         </Pressable>
         <Pressable
@@ -2404,7 +2411,8 @@ export function SessionScreen({
           accessibilityState={{ selected: viewMode === 'trajectory' }}
         >
           <Text style={[styles.viewTabText, viewMode === 'trajectory' ? styles.viewTabTextOn : null]}>
-            轨迹
+            
+            {tr("轨迹")}
           </Text>
         </Pressable>
       </View>
@@ -2484,17 +2492,17 @@ export function SessionScreen({
                   <ActivityIndicator size="small" color={t.text.muted} />
                 ) : hasOlder ? (
                   <Pressable onPress={loadOlder} hitSlop={10}>
-                    <Text style={styles.olderAction}>加载更早的消息</Text>
+                    <Text style={styles.olderAction}>{tr("加载更早的消息")}</Text>
                   </Pressable>
                 ) : messages.length > 0 ? (
-                  <Text style={styles.olderEnd}>已经是最早的消息</Text>
+                  <Text style={styles.olderEnd}>{tr("已经是最早的消息")}</Text>
                 ) : null}
               </View>
             }
             ListEmptyComponent={
               loadFailed ? (
                 <View style={styles.emptyBox}>
-                  <Text style={styles.empty}>历史没加载出来</Text>
+                  <Text style={styles.empty}>{tr("历史没加载出来")}</Text>
                   <Pressable
                     style={styles.retryButton}
                     onPress={() => {
@@ -2502,12 +2510,12 @@ export function SessionScreen({
                       retryFirstScreen();
                     }}
                   >
-                    <Text style={styles.retryButtonText}>重试</Text>
+                    <Text style={styles.retryButtonText}>{tr("重试")}</Text>
                   </Pressable>
                 </View>
               ) : (
                 <Text style={styles.empty}>
-                  {conn === 'ready' ? '还没有消息' : '连接断开，重连后会自动加载历史'}
+                  {conn === 'ready' ? tr("还没有消息") : tr("连接断开，重连后会自动加载历史")}
                 </Text>
               )
             }
@@ -2629,7 +2637,7 @@ export function SessionScreen({
 
         <ActionSheet
           visible={infoSheet}
-          title={session.projections?.values.title ?? '未命名会话'}
+          title={session.projections?.values.title ?? tr("未命名会话")}
           subtitle={session.cwd ?? undefined}
           actions={infoActions}
           onPick={runInfoAction}
@@ -2638,11 +2646,11 @@ export function SessionScreen({
 
         <ActionSheet
           visible={presetSheet}
-          title="模式"
+          title={tr("模式")}
           subtitle={
             presetLocked
-              ? '会话已经开始过，模式已固定；想换模式请新建会话'
-              : '只对还没开始过的会话生效'
+              ? tr("会话已经开始过，模式已固定；想换模式请新建会话")
+              : tr("只对还没开始过的会话生效")
           }
           actions={presetActions}
           onPick={pickPreset}
@@ -2660,7 +2668,7 @@ export function SessionScreen({
         {selectMessage ? (
           <TextSelectionSheet
             visible
-            title={selectMessage.kind === 'assistant' ? '选择回答文本' : '选择消息文本'}
+            title={selectMessage.kind === 'assistant' ? tr("选择回答文本") : tr("选择消息文本")}
             text={'text' in selectMessage ? selectMessage.text : ''}
             onClose={() => setSelectMessage(null)}
           />
@@ -2676,9 +2684,9 @@ export function SessionScreen({
           <Pressable style={styles.pendingBar} onPress={() => setSheetHidden(false)}>
             <View style={styles.pendingBarDot} />
             <Text style={styles.pendingBarText} numberOfLines={1}>
-              {'待回答 · ' + question.questions.length + ' 个问题'}
+              {tr("待回答 · ") + question.questions.length + tr(" 个问题")}
             </Text>
-            <Text style={styles.pendingBarAction}>打开</Text>
+            <Text style={styles.pendingBarAction}>{tr("打开")}</Text>
           </Pressable>
         ) : null}
 
@@ -2752,27 +2760,27 @@ export function SessionScreen({
           {showJump ? (
             <View pointerEvents="box-none" style={styles.jumpWrap}>
               <Pressable style={styles.jump} onPress={jumpToBottom}>
-                <Text style={styles.jumpText}>回到底部</Text>
+                <Text style={styles.jumpText}>{tr("回到底部")}</Text>
               </Pressable>
             </View>
           ) : null}
           {running ? (
             <View style={styles.modeRow}>
-              <Text style={styles.modeLabel}>发送方式</Text>
+              <Text style={styles.modeLabel}>{tr("发送方式")}</Text>
               <Pressable
                 style={[styles.modeChip, sendMode === 'queue' ? styles.modeChipOn : null]}
                 onPress={() => setSendMode('queue')}
               >
-                <Text style={[styles.modeText, sendMode === 'queue' ? styles.modeTextOn : null]}>排队</Text>
+                <Text style={[styles.modeText, sendMode === 'queue' ? styles.modeTextOn : null]}>{tr("排队")}</Text>
               </Pressable>
               <Pressable
                 style={[styles.modeChip, sendMode === 'steer' ? styles.modeChipOn : null]}
                 onPress={() => setSendMode('steer')}
               >
-                <Text style={[styles.modeText, sendMode === 'steer' ? styles.modeTextOn : null]}>插话</Text>
+                <Text style={[styles.modeText, sendMode === 'steer' ? styles.modeTextOn : null]}>{tr("插话")}</Text>
               </Pressable>
               <Text style={styles.modeHint}>
-                {sendMode === 'steer' ? '立即插入当前回合' : '这一轮结束后发送'}
+                {sendMode === 'steer' ? tr("立即插入当前轮次") : tr("这一轮结束后发送")}
               </Text>
             </View>
           ) : null}
@@ -2786,7 +2794,7 @@ export function SessionScreen({
                 >
                   <Text style={[styles.statusChipText, presetLocked ? styles.statusChipTextLocked : null]}>
                     {presetName(presetList.presets, presetId)}
-                    {presetLocked ? ' · 锁定' : ''}
+                    {presetLocked ? tr(" · 锁定") : ''}
                   </Text>
                 </Pressable>
               ) : null}
@@ -2804,9 +2812,9 @@ export function SessionScreen({
           ) : null}
           {editingQueue ? (
             <View style={styles.editBar}>
-              <Text style={styles.editBarText}>正在编辑排队消息</Text>
+              <Text style={styles.editBarText}>{tr("正在编辑排队消息")}</Text>
               <Pressable hitSlop={8} onPress={cancelEditQueued}>
-                <Text style={styles.editBarAction}>取消</Text>
+                <Text style={styles.editBarAction}>{tr("取消")}</Text>
               </Pressable>
             </View>
           ) : null}
@@ -2816,14 +2824,14 @@ export function SessionScreen({
                 const state = item.state;
                 const label =
                   state.status === 'waiting'
-                    ? '等待连接后上传'
+                    ? tr("等待连接后上传")
                     : state.status === 'hashing'
-                      ? '校验中'
+                      ? tr("校验中")
                       : state.status === 'uploading'
                         ? `${Math.round((state.progress ?? 0) * 100)}%`
                         : state.status === 'done'
                           ? formatBytes(item.size)
-                          : state.message ?? '上传失败';
+                          : state.message ?? tr("上传失败");
                 return (
                   <View
                     key={item.id}
@@ -2845,16 +2853,16 @@ export function SessionScreen({
                         hitSlop={8}
                         onPress={() => retryPickedFile(item.id)}
                         accessibilityRole="button"
-                        accessibilityLabel={`重试上传 ${item.name}`}
+                        accessibilityLabel={tr("重试上传 {0}", [item.name])}
                       >
-                        <Text style={styles.fileChipState}>重试</Text>
+                        <Text style={styles.fileChipState}>{tr("重试")}</Text>
                       </Pressable>
                     ) : null}
                     <Pressable
                       hitSlop={8}
                       onPress={() => removePickedFile(item.id)}
                       accessibilityRole="button"
-                      accessibilityLabel={`移除附件 ${item.name}`}
+                      accessibilityLabel={tr("移除附件 {0}", [item.name])}
                     >
                       <Text style={styles.fileChipClose} allowFontScaling={false}>
                         ×
@@ -2867,7 +2875,7 @@ export function SessionScreen({
           ) : null}
           {quote ? (
             <View style={styles.quoteBar}>
-              <Text style={styles.quoteTag}>引用{quote.lang ? ' · ' + quote.lang : ''}</Text>
+              <Text style={styles.quoteTag}>{tr("引用")}{quote.lang ? ' · ' + quote.lang : ''}</Text>
               <Text style={styles.quoteText} numberOfLines={1}>
                 {quote.code.split('\n')[0].trim()}
               </Text>
@@ -2875,7 +2883,7 @@ export function SessionScreen({
                 hitSlop={8}
                 onPress={() => setQuote(null)}
                 accessibilityRole="button"
-                accessibilityLabel="取消引用"
+                accessibilityLabel={tr("取消引用")}
               >
                 <Text style={styles.quoteClose} allowFontScaling={false}>
                   ×
@@ -2887,7 +2895,7 @@ export function SessionScreen({
             <View style={styles.connBar}>
               <View style={styles.connDot} />
               <Text style={styles.connText}>
-                {conn === 'connecting' ? '正在连接网关…' : '连接已断开，正在自动重连'}
+                {conn === 'connecting' ? tr("正在连接网关…") : tr("连接已断开，正在自动重连")}
               </Text>
             </View>
           ) : null}
@@ -2899,7 +2907,7 @@ export function SessionScreen({
               onPress={askImageSource}
               disabled={picking}
               accessibilityRole="button"
-              accessibilityLabel="添加附件"
+              accessibilityLabel={tr("添加附件")}
               accessibilityState={{ disabled: picking }}
             >
               {picking ? (
@@ -2915,16 +2923,16 @@ export function SessionScreen({
               <TextInput
                 ref={composerRef}
                 testID="session-composer-input"
-                accessibilityLabel="消息输入框"
+                accessibilityLabel={tr("消息输入框")}
                 style={styles.input}
                 value={draft}
                 onChangeText={setDraft}
                 placeholder={
                   recording
                     ? voiceWillCancel
-                      ? '松手取消'
-                      : `正在聆听 ${formatClock(voice.elapsed)} / ${formatClock(voice.limit)}`
-                    : '发消息…'
+                      ? tr("松手取消")
+                      : tr("正在聆听 {0} / {1}", [formatClock(voice.elapsed), formatClock(voice.limit)])
+                    : tr("发消息…")
                 }
                 placeholderTextColor={
                   recording
@@ -2948,7 +2956,7 @@ export function SessionScreen({
                     voice.cancelTranscription();
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel="取消"
+                  accessibilityLabel={tr("取消")}
                 >
                   <View style={styles.cancelGlyph}>
                     <View style={[styles.cancelBar, { backgroundColor: t.text.muted }]} />
@@ -2965,8 +2973,8 @@ export function SessionScreen({
                 hitSlop={{ top: 8, bottom: 8, right: 6, left: 0 }}
                 accessible
                 accessibilityRole="button"
-                accessibilityLabel={recording ? '松开结束录音' : '按住说话'}
-                accessibilityHint="按住说话，松手发送，上滑取消"
+                accessibilityLabel={recording ? tr("松开结束录音") : tr("按住说话")}
+                accessibilityHint={tr("按住说话，松手发送，上滑取消")}
               >
                 {/* 圆底始终透明：录音状态只由呼吸光晕和文案表达，
                     再叠一层实心色底会在光晕上压出一个色块。 */}
@@ -3023,7 +3031,7 @@ export function SessionScreen({
               disabled={showStop ? cancelling : !canSend}
               onPress={showStop ? cancelTurn : send}
               accessibilityRole="button"
-              accessibilityLabel={showStop ? '停止本回合' : '发送'}
+              accessibilityLabel={showStop ? tr("停止生成") : tr("发送")}
               accessibilityState={{ disabled: showStop ? cancelling : !canSend }}
             >
               {showStop ? (
@@ -3065,14 +3073,14 @@ function describeStats(stats: SessionStatsFrame | null): string | null {
   if (!stats) return null;
   const parts: string[] = [];
   const sessionStats = stats.sessionStats;
-  if (typeof sessionStats?.turns === 'number') parts.push('轮次 ' + sessionStats.turns);
-  if (typeof sessionStats?.steps === 'number') parts.push('步骤 ' + sessionStats.steps);
+  if (typeof sessionStats?.turns === 'number') parts.push(tr("轮次 ") + sessionStats.turns);
+  if (typeof sessionStats?.steps === 'number') parts.push(tr("步骤 ") + sessionStats.steps);
   const pressure = stats.contextPressure;
   if (typeof pressure?.pressureTokens === 'number' && typeof pressure?.contextWindow === 'number') {
-    parts.push('上下文 ' + compactTokens(pressure.pressureTokens) + '/' + compactTokens(pressure.contextWindow));
+    parts.push(tr("上下文 ") + compactTokens(pressure.pressureTokens) + '/' + compactTokens(pressure.contextWindow));
   }
   const cache = cacheHitPercent(stats.tokenUsage?.totals);
-  if (cache !== null) parts.push('缓存 ' + cache + '%');
+  if (cache !== null) parts.push(tr("缓存 ") + cache + '%');
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -3084,13 +3092,13 @@ function offlineStatusText(
 ): string {
   switch (status) {
     case 'sending':
-      return '已发送，等确认…';
+      return tr("已发送，等确认…");
     case 'unconfirmed':
-      return '未确认 · 可能没送达';
+      return tr("未确认 · 可能没送达");
     case 'failed':
-      return error ? `发送失败：${error}` : '发送失败';
+      return error ? tr("发送失败：{0}", [error]) : tr("发送失败");
     default:
-      return '待发送 · 联网后自动重发';
+      return tr("待发送 · 联网后自动重发");
   }
 }
 
@@ -3179,7 +3187,7 @@ function MessageRow({
                     key={uri}
                     onPress={() => setPreview(uri)}
                     accessibilityRole="button"
-                    accessibilityLabel="查看图片"
+                    accessibilityLabel={tr("查看图片")}
                   >
                     <Image source={{ uri }} style={styles.localImage} resizeMode="cover" />
                   </Pressable>
@@ -3203,36 +3211,36 @@ function MessageRow({
               {message.offline
                 ? offlineStatusText(message.offlineStatus, message.offlineError)
                 : steering
-                  ? '插话中 · 下一步生效'
-                  : '排队中'}
+                  ? tr("插话中 · 下一步生效")
+                  : tr("排队中")}
             </Text>
             {message.offline ? (
               message.offlineStatus === 'sending' ? null : message.offlineStatus === 'pending' ? (
                 <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
-                  <Text style={styles.queuedAction}>删除</Text>
+                  <Text style={styles.queuedAction}>{tr("删除")}</Text>
                 </Pressable>
               ) : (
                 <View style={styles.queuedActions}>
                   <Pressable hitSlop={8} onPress={() => onRetryOffline(message.queueId)}>
-                    <Text style={styles.queuedAction}>重试</Text>
+                    <Text style={styles.queuedAction}>{tr("重试")}</Text>
                   </Pressable>
                   <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
-                    <Text style={styles.queuedAction}>移除</Text>
+                    <Text style={styles.queuedAction}>{tr("移除")}</Text>
                   </Pressable>
                 </View>
               )
             ) : (
               <View style={styles.queuedActions}>
                 <Pressable hitSlop={8} onPress={() => onEditQueued(message.queueId, message.text)}>
-                  <Text style={styles.queuedAction}>编辑</Text>
+                  <Text style={styles.queuedAction}>{tr("编辑")}</Text>
                 </Pressable>
                 {steering ? null : (
                   <Pressable hitSlop={8} onPress={() => onSteerQueued(message.queueId)}>
-                    <Text style={styles.queuedAction}>插话发送</Text>
+                    <Text style={styles.queuedAction}>{tr("插话发送")}</Text>
                   </Pressable>
                 )}
                 <Pressable hitSlop={8} onPress={() => onRemoveQueued(message.queueId)}>
-                  <Text style={styles.queuedAction}>撤回</Text>
+                  <Text style={styles.queuedAction}>{tr("撤回")}</Text>
                 </Pressable>
               </View>
             )}
@@ -3283,7 +3291,7 @@ function MessageRow({
             <Pressable
               onLongPress={() => onLongPress(message)}
               delayLongPress={320}
-              accessibilityHint="长按打开消息操作"
+              accessibilityHint={tr("长按打开消息操作")}
             >
               {message.text ? (
                 <MarkdownView
@@ -3313,7 +3321,7 @@ function MessageRow({
         onLongPress={() => onLongPress(message)}
         delayLongPress={320}
         style={[styles.bubble, styles.bubbleUser]}
-        accessibilityHint="长按打开消息操作"
+        accessibilityHint={tr("长按打开消息操作")}
       >
         {'images' in message && message.images?.length ? (
           <MessageImages refs={message.images} cache={attachmentCache} onNeed={onNeedAttachment} />

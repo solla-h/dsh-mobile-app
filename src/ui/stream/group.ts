@@ -1,6 +1,7 @@
 import type { ChatMessage } from '../../protocol/chat';
 import { toolFailed } from '../tool-format';
 import type { ToolEntry } from './ToolGroup';
+import { tr } from '../../i18n';
 
 /** 活动胶囊里的一步：思考消息或一批工具调用（不会嵌套 activity）。 */
 export type ActivityStep =
@@ -43,16 +44,16 @@ export function activitySummary(steps: ActivityStep[]): { label: string; failed:
     }
   }
   const parts: string[] = [];
-  if (thoughts > 0) parts.push(`思考 ${thoughts} 段`);
+  if (thoughts > 0) parts.push(tr("思考 {0} 段", [thoughts]));
   if (toolCount > 0) {
     parts.push(
       names.length <= 2
-        ? `调用 ${names.join('、')}`
-        : `调用 ${names.slice(0, 2).join('、')} 等 ${toolCount} 步`,
+        ? tr("调用 {0}", [names.join('、')])
+        : tr("调用 {0} 等 {1} 步", [names.slice(0, 2).join('、'), toolCount]),
     );
   }
-  if (failed > 0) parts.push(`${failed} 次失败`);
-  return { label: parts.join(' · ') || '思考与工具调用', failed };
+  if (failed > 0) parts.push(tr("{0} 次失败", [failed]));
+  return { label: parts.join(' · ') || tr("思考与工具调用"), failed };
 }
 
 /** 带正文的 assistant（正式回答）——空 text 的 assistant 只是 reasoning 载体。 */

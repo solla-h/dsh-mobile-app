@@ -2,6 +2,7 @@
 
 import { presentedFilesOf, type PresentedFile } from './files';
 import type { ImageAttachmentRef } from './types';
+import { tr } from '../i18n';
 
 export interface QueuedMessage {
   id: string;
@@ -21,7 +22,7 @@ export function mapQueue(items: unknown): QueuedMessage[] {
       return {
         id: typeof raw.id === 'string' ? raw.id : '',
         // 纯图片的排队消息也要显示出来，否则它会在队列里「消失」。
-        text: text || (hasImage ? '［图片］' : ''),
+        text: text || (hasImage ? tr("［图片］") : ''),
         placement: typeof raw.placement === 'string' ? raw.placement : undefined,
       };
     })
@@ -211,9 +212,9 @@ function failureBrief(failure: Record<string, any> | null | undefined, max = 80)
 }
 
 function retryText(mark: RetryMark): string {
-  const head = `模型请求失败${mark.why ? `（${mark.why}）` : ''}`;
-  const tail = mark.max ? `（上限 ${mark.max} 次）` : '';
-  return mark.count > 1 ? `${head}，已重试 ${mark.count} 次${tail}` : `${head}，正在重试${tail}`;
+  const head = tr("模型请求失败{0}", [mark.why ? `（${mark.why}）` : '']);
+  const tail = mark.max ? tr("（上限 {0} 次）", [mark.max]) : '';
+  return mark.count > 1 ? tr("{0}，已重试 {1} 次{2}", [head, mark.count, tail]) : tr("{0}，正在重试{1}", [head, tail]);
 }
 
 /**
@@ -384,18 +385,18 @@ export function outcomeOf(reason: string, detail?: string): { text: string; fail
     case 'stop':
     case 'completed':
     case 'done':
-      return { text: '本轮正常结束', failed: false };
+      return { text: tr("本轮正常结束"), failed: false };
     case 'aborted':
     case 'cancelled':
     case 'canceled':
-      return { text: `本轮已取消${suffix}`, failed: true };
+      return { text: tr("本轮已取消{0}", [suffix]), failed: true };
     case 'interrupted':
-      return { text: `本轮被中断${suffix}`, failed: true };
+      return { text: tr("本轮被中断{0}", [suffix]), failed: true };
     case 'error':
-      return { text: `本轮出错${suffix}`, failed: true };
+      return { text: tr("本轮出错{0}", [suffix]), failed: true };
     default:
       // 未知 reason 保留原样，但不当成失败——没见过的值不该把界面染红。
-      return { text: `本轮结束（${reason}）`, failed: false };
+      return { text: tr("本轮结束（{0}）", [reason]), failed: false };
   }
 }
 
@@ -493,7 +494,7 @@ export function mapHistory(events: HistoryEvent[]): ChatMessage[] {
             out.push({
               id: `h${event.seq}`,
               kind: 'notice',
-              text: summary ? `模型切换：${summary}` : '模型已切换',
+              text: summary ? tr("模型切换：{0}", [summary]) : tr("模型已切换"),
               time: event.time,
               seq: event.seq,
             });
@@ -665,13 +666,13 @@ export function mapHistory(events: HistoryEvent[]): ChatMessage[] {
         const items = positiveInt(data.shadowedItemCount) ?? (Array.isArray(data.shadowedSeqs) ? data.shadowedSeqs.length : undefined);
         const tokens = positiveInt(data.shadowedTokenCount);
         const parts = [
-          items ? `${items} 项` : undefined,
+          items ? tr("{0} 项", [items]) : undefined,
           tokens ? `${formatTokens(tokens)} token` : undefined,
         ].filter(Boolean);
         out.push({
           id: `h${event.seq}`,
           kind: 'notice',
-          text: parts.length ? `上下文已压缩：折叠 ${parts.join(' / ')}` : '上下文已压缩',
+          text: parts.length ? tr("上下文已压缩：折叠 {0}", [parts.join(' / ')]) : tr("上下文已压缩"),
           tone: 'warn',
           // 摘要正文 history 里是全文（conversation 视图不裁），折叠放展开区。
           ...(nonEmpty(data.summary) ? { detail: nonEmpty(data.summary)! } : {}),
@@ -686,7 +687,7 @@ export function mapHistory(events: HistoryEvent[]): ChatMessage[] {
         out.push({
           id: `h${event.seq}`,
           kind: 'notice',
-          text: `上下文压缩失败：${error}`,
+          text: tr("上下文压缩失败：{0}", [error]),
           tone: 'warn',
           time: event.time,
           seq: event.seq,
@@ -730,7 +731,7 @@ export function mapHistory(events: HistoryEvent[]): ChatMessage[] {
           kind: 'approval',
           decision,
           // asked 里没有 displayReason，也没有工具参数，能显示的就这两样。
-          target: [asked?.toolName, asked?.reason].filter(Boolean).join(' · ') || '工具调用',
+          target: [asked?.toolName, asked?.reason].filter(Boolean).join(' · ') || tr("工具调用"),
           ...(asked?.callId ? { callId: asked.callId } : {}),
           // 时间取 decided：问句是什么时候问的不重要，拍板时刻才是账本上要对齐的那个。
           time: event.time,
@@ -812,7 +813,7 @@ export function applyRealtime(
           const summary = (source as { summary?: string }).summary;
           return [
             ...messages,
-            { id: `r${seq}`, kind: 'notice', text: summary ? `模型切换：${summary}` : '模型已切换', time, seq },
+            { id: `r${seq}`, kind: 'notice', text: summary ? tr("模型切换：{0}", [summary]) : tr("模型已切换"), time, seq },
           ];
         }
         // 实时投影只把 source 拍成 kind 字符串，摘要拿不到细节，只能显示 kind；
@@ -921,13 +922,13 @@ export function applyRealtime(
     case 'compaction/summary': {
       const items = positiveInt(event.shadowedItemCount) ?? (Array.isArray(event.shadowedSeqs) ? event.shadowedSeqs.length : undefined);
       const tokens = positiveInt(event.shadowedTokenCount);
-      const parts = [items ? `${items} 项` : undefined, tokens ? `${formatTokens(tokens)} token` : undefined].filter(Boolean);
+      const parts = [items ? tr("{0} 项", [items]) : undefined, tokens ? `${formatTokens(tokens)} token` : undefined].filter(Boolean);
       return [
         ...messages,
         {
           id: `r${seq}`,
           kind: 'notice',
-          text: parts.length ? `上下文已压缩：折叠 ${parts.join(' / ')}` : '上下文已压缩',
+          text: parts.length ? tr("上下文已压缩：折叠 {0}", [parts.join(' / ')]) : tr("上下文已压缩"),
           tone: 'warn',
           time,
           seq,
@@ -939,7 +940,7 @@ export function applyRealtime(
       if (!error) return messages;
       return [
         ...messages,
-        { id: `r${seq}`, kind: 'notice', text: `上下文压缩失败：${error}`, tone: 'warn', time, seq },
+        { id: `r${seq}`, kind: 'notice', text: tr("上下文压缩失败：{0}", [error]), tone: 'warn', time, seq },
       ];
     }
     case 'llm/retry': {

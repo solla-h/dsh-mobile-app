@@ -6,6 +6,7 @@ import { tapFeedback } from '../haptics';
 import { useTheme, useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { PluginManager } from './usePluginManager';
+import { tr } from '../../i18n';
 
 /**
  * 添加插件安装流：registries → inspect → 用户确认 → install → 进度/日志 → 结果。
@@ -104,25 +105,25 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
           const note = describeApplication(result);
           if ((result.pendingBuilds ?? []).length > 0) {
             Alert.alert(
-              '需要批准构建脚本',
-              '这些包要在安装时执行构建脚本：\n' + (result.pendingBuilds ?? []).join('\n'),
+              tr("需要批准构建脚本"),
+              tr("这些包要在安装时执行构建脚本：\n") + (result.pendingBuilds ?? []).join('\n'),
               [
-                { text: '取消', style: 'cancel' },
+                { text: tr("取消"), style: 'cancel' },
                 {
-                  text: '批准并重装',
+                  text: tr("批准并重装"),
                   onPress: () => doInstallRef.current(result.pendingBuilds ?? []),
                 },
               ],
               { cancelable: false },
             );
           } else {
-            setNotice(note ?? '安装完成');
+            setNotice(note ?? tr("安装完成"));
             void manager.refresh();
           }
         })
         .catch((err: unknown) => {
           setBusy(false);
-          setNotice('安装失败：' + (err instanceof Error ? err.message : String(err)));
+          setNotice(tr("安装失败：") + (err instanceof Error ? err.message : String(err)));
         });
     },
     [manager, spec, registryChoice],
@@ -134,19 +135,19 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
   const doCancel = useCallback(() => {
     const installId = installIdRef.current;
     if (!installId) {
-      Alert.alert('无法取消', '还没有拿到安装 ID。');
+      Alert.alert(tr("无法取消"), tr("还没有拿到安装 ID。"));
       return;
     }
     manager
       .cancelInstall(installId)
-      .then(() => setNotice('已发出取消信号'))
+      .then(() => setNotice(tr("已发出取消信号")))
       .catch((err: unknown) =>
-        setNotice('取消失败：' + (err instanceof Error ? err.message : String(err))),
+        setNotice(tr("取消失败：") + (err instanceof Error ? err.message : String(err))),
       );
   }, [manager]);
 
   const registryOptions: { key: string; label: string; value: string | null | undefined }[] = [
-    { key: 'host', label: '跟随宿主配置', value: undefined },
+    { key: 'host', label: tr("跟随宿主配置"), value: undefined },
   ];
   if (registries?.registry) {
     registryOptions.push({ key: 'current', label: registries.registry, value: registries.registry });
@@ -161,7 +162,8 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
         <Pressable style={styles.sheet} onPress={() => undefined}>
           <View style={styles.titleRow}>
             <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-              添加插件
+              
+              {tr("添加插件")}
             </Text>
             {effectiveStep === 'installing' ? null : (
               <Pressable hitSlop={10} onPress={onClose}>
@@ -170,7 +172,8 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
             )}
           </View>
           <Text style={styles.hint}>
-            安装的是已有插件包（包名 / 本地路径 / Git / tarball），不是创建源码工程。
+            
+            {tr("安装的是已有插件包（包名 / 本地路径 / Git / tarball），不是创建源码工程。")}
           </Text>
 
           {step === 'input' || step === 'inspect' ? (
@@ -179,7 +182,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                 style={styles.input}
                 value={spec}
                 onChangeText={setSpec}
-                placeholder="例如 @scope/dsh-plugin-xxx 或本地绝对路径"
+                placeholder={tr("例如 @scope/dsh-plugin-xxx 或本地绝对路径")}
                 placeholderTextColor={t.text.muted}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -188,7 +191,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
 
               {registryOptions.length > 1 ? (
                 <View style={styles.registryWrap}>
-                  <Text style={styles.registryLabel}>来源</Text>
+                  <Text style={styles.registryLabel}>{tr("来源")}</Text>
                   <View style={styles.enumRow}>
                     {registryOptions.map((option) => {
                       const selected = registryChoice === option.value;
@@ -221,7 +224,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                         : styles.inspectRefused,
                     ]}
                   >
-                    {inspectResult.status === 'accepted' ? '检查通过' : '检查拒绝'}
+                    {inspectResult.status === 'accepted' ? tr("检查通过") : tr("检查拒绝")}
                   </Text>
                   {inspectResult.detail ? (
                     <Text style={styles.inspectDetail}>{inspectResult.detail}</Text>
@@ -233,7 +236,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
 
               <View style={styles.footer}>
                 <Pressable style={[styles.button, styles.buttonNeutral]} onPress={onClose}>
-                  <Text style={styles.buttonText}>关闭</Text>
+                  <Text style={styles.buttonText}>{tr("关闭")}</Text>
                 </Pressable>
                 {step === 'input' ? (
                   <Pressable
@@ -242,7 +245,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                     onPress={doInspect}
                   >
                     <Text style={[styles.buttonText, styles.buttonTextPrimary]}>
-                      {busy ? '检查中…' : '检查'}
+                      {busy ? tr("检查中…") : tr("检查")}
                     </Text>
                   </Pressable>
                 ) : (
@@ -251,7 +254,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                       style={[styles.button, styles.buttonNeutral]}
                       onPress={() => setStep('input')}
                     >
-                      <Text style={styles.buttonText}>返回</Text>
+                      <Text style={styles.buttonText}>{tr("返回")}</Text>
                     </Pressable>
                     <Pressable
                       style={[
@@ -265,7 +268,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                         doInstall();
                       }}
                     >
-                      <Text style={[styles.buttonText, styles.buttonTextPrimary]}>安装</Text>
+                      <Text style={[styles.buttonText, styles.buttonTextPrimary]}>{tr("安装")}</Text>
                     </Pressable>
                   </>
                 )}
@@ -278,13 +281,13 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                   <View style={styles.progressDot} />
                   <Text style={styles.progressPhase}>
                     {progress?.attempt?.total
-                      ? `阶段 ${progress.phase} · 第 ${progress.attempt.index ?? 1}/${progress.attempt.total} 个来源`
-                      : `阶段 ${progress?.phase ?? 'installing'}`}
+                      ? tr("阶段 {0} · 第 {1}/{2} 个来源", [progress.phase, progress.attempt.index ?? 1, progress.attempt.total])
+                      : tr("阶段 {0}", [progress?.phase ?? 'installing'])}
                   </Text>
                 </View>
                 {notice ? <Text style={styles.notice}>{notice}</Text> : null}
                 <Pressable hitSlop={6} onPress={() => setLogsOpen((v) => !v)}>
-                  <Text style={styles.logsToggle}>{logsOpen ? '收起日志' : '展开日志'}</Text>
+                  <Text style={styles.logsToggle}>{logsOpen ? tr("收起日志") : tr("展开日志")}</Text>
                 </Pressable>
                 {logsOpen ? (
                   <ScrollView style={styles.logs} nestedScrollEnabled>
@@ -296,7 +299,7 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                       </Text>
                     ))}
                     {(progress?.logs ?? []).length === 0 ? (
-                      <Text style={styles.logLine}>等待输出…</Text>
+                      <Text style={styles.logLine}>{tr("等待输出…")}</Text>
                     ) : null}
                   </ScrollView>
                 ) : null}
@@ -305,22 +308,22 @@ export function InstallFlow({ manager, writable, onClose }: Props) {
                 {effectiveStep === 'installing' ? (
                   <>
                     <Pressable style={[styles.button, styles.buttonDanger]} onPress={doCancel}>
-                      <Text style={[styles.buttonText, styles.buttonTextDanger]}>取消安装</Text>
+                      <Text style={[styles.buttonText, styles.buttonTextDanger]}>{tr("取消安装")}</Text>
                     </Pressable>
                     <Pressable style={[styles.button, styles.buttonNeutral]} onPress={onClose}>
-                      <Text style={styles.buttonText}>后台等待</Text>
+                      <Text style={styles.buttonText}>{tr("后台等待")}</Text>
                     </Pressable>
                   </>
                 ) : (
                   <>
                     <Pressable style={[styles.button, styles.buttonNeutral]} onPress={onClose}>
-                      <Text style={styles.buttonText}>完成</Text>
+                      <Text style={styles.buttonText}>{tr("完成")}</Text>
                     </Pressable>
                     <Pressable
                       style={[styles.button, styles.buttonPrimary]}
                       onPress={() => setStep('input')}
                     >
-                      <Text style={[styles.buttonText, styles.buttonTextPrimary]}>再装一个</Text>
+                      <Text style={[styles.buttonText, styles.buttonTextPrimary]}>{tr("再装一个")}</Text>
                     </Pressable>
                   </>
                 )}

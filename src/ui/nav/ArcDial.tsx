@@ -16,6 +16,7 @@ import type { SessionItem } from '../../protocol/types';
 import { MOTION, TYPE } from '../../theme/tokens';
 import { tapFeedback, tickFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
+import { tr } from '../../i18n';
 
 interface Props {
   sessions: SessionItem[];
@@ -276,17 +277,17 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
           {...responder.panHandlers}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel="会话转盘"
-          accessibilityHint="上滑或下滑切换会话；读屏用户可上/下调一档"
+          accessibilityLabel={tr("会话转盘")}
+          accessibilityHint={tr("上滑或下滑切换会话；读屏用户可上/下调一档")}
           accessibilityValue={{
             min: 1,
             max: list.length,
             now: selectedIndex + 1,
-            text: `${titleOf(accessibilityItem)}${accessibilityBlocked ? '，等待审批' : ''}，第 ${selectedIndex + 1} 个，共 ${list.length} 个`,
+            text: tr("{0}{1}，第 {2} 个，共 {3} 个", [titleOf(accessibilityItem), accessibilityBlocked ? tr("，等待审批") : '', selectedIndex + 1, list.length]),
           }}
           accessibilityActions={[
-            { name: 'increment', label: '下一个会话' },
-            { name: 'decrement', label: '上一个会话' },
+            { name: 'increment', label: tr("下一个会话") },
+            { name: 'decrement', label: tr("上一个会话") },
           ]}
           onAccessibilityAction={(event) => {
             const { actionName } = event.nativeEvent;
@@ -314,7 +315,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
             style={styles.backdrop}
             onPress={() => setOpen(false)}
             accessibilityRole="button"
-            accessibilityLabel="收起会话转盘"
+            accessibilityLabel={tr("收起会话转盘")}
           />
 
           {/* 展开状态下的拖拽层：手指上下滑即可切会话 */}
@@ -333,7 +334,8 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
           >
             <View style={styles.previewHeader}>
               <Text style={[styles.previewKicker, { color: t.text.muted }]}>
-                THUMB ARC DIAL · {codeOf(index)}/{String(list.length).padStart(2, '0')}
+                
+                {tr("会话转盘 ·")} {codeOf(index)}/{String(list.length).padStart(2, '0')}
               </Text>
               <View
                 style={[
@@ -359,10 +361,10 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                   ]}
                 >
                   {previewBlocked
-                    ? '待审批 GATE'
+                    ? tr("待审批")
                     : previewItem?.running
-                      ? '运行中 RUN'
-                      : '已就绪 IDLE'}
+                      ? tr("运行中")
+                      : tr("空闲")}
                 </Text>
               </View>
             </View>
@@ -451,8 +453,8 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                   }}
                   style={styles.nodeRow}
                   accessibilityRole="button"
-                  accessibilityLabel={`${titleOf(item)}，${repoOf(item)}${isCurrent ? '，当前会话' : ''}${isBlocked ? '，等待审批' : ''}${item.running ? '，运行中' : ''}`}
-                  accessibilityHint="切换到这个会话"
+                  accessibilityLabel={`${titleOf(item)}，${repoOf(item)}${isCurrent ? tr("，当前会话") : ''}${isBlocked ? tr("，等待审批") : ''}${item.running ? tr("，运行中") : ''}`}
+                  accessibilityHint={tr("切换到这个会话")}
                   accessibilityState={{ selected: isCurrent }}
                 >
                   <View
@@ -523,7 +525,7 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
                         maxFontSizeMultiplier={1.3}
                       >
                         {repoOf(item)}
-                        {isCurrent ? ' · 当前' : ''}
+                        {isCurrent ? tr(" · 当前") : ''}
                       </Text>
                     </View>
                   </View>
@@ -574,13 +576,14 @@ export function ArcDial({ sessions, activeId, blockedIds = [], onSelect, onOpenC
               },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="收起会话转盘"
+            accessibilityLabel={tr("收起会话转盘")}
           >
             <Text
               style={[styles.closeHandleText, { color: t.text.secondary }]}
               maxFontSizeMultiplier={1.3}
             >
-              收起
+              
+              {tr("收起")}
             </Text>
           </Pressable>
         </View>
@@ -600,13 +603,13 @@ function codeOf(index: number): string {
 }
 
 function titleOf(item: SessionItem | undefined): string {
-  return item?.projections?.values.title?.trim() || '未命名会话';
+  return item?.projections?.values.title?.trim() || tr("未命名会话");
 }
 
 function repoOf(item: SessionItem | undefined): string {
   const cwd = item?.cwd ?? '';
   const parts = cwd.split(/[\\/]/).filter(Boolean);
-  return parts.slice(-2).join('/') || '默认工作区';
+  return parts.slice(-2).join('/') || tr("默认工作区");
 }
 
 function clamp(value: number, min: number, max: number): number {

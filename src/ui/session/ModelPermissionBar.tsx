@@ -15,6 +15,7 @@ import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import { ActionSheet, type SheetAction } from '../ActionSheet';
 import type { GatewayClient } from '../../transport/gateway-client';
+import { tr } from '../../i18n';
 
 /**
  * 输入框上方的运行时配置条：模型胶囊 + 权限胶囊。
@@ -127,7 +128,7 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
   /** 当前思考强度的可读名；没有指定时显示「默认」——胶囊上始终能看到强度。 */
   const effortLabel = (() => {
     if (!current) return null;
-    if (!current.reasoningEffort) return '默认';
+    if (!current.reasoningEffort) return tr("默认");
     const entry = models?.groups
       .flatMap((group) => group.models)
       .find((model) => model.id === current.model);
@@ -158,7 +159,7 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
         id: JSON.stringify([group.id, model.id]),
         label:
           (current?.provider === group.id && current?.model === model.id ? '✓ ' : '') + model.name,
-        hint: model.efforts.length > 0 ? '可选思考等级' : undefined,
+        hint: model.efforts.length > 0 ? tr("可选思考等级") : undefined,
       });
     }
   }
@@ -185,10 +186,10 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
           ...sheet.efforts.map((effort) => ({
             id: effort.id,
             label: (current?.reasoningEffort === effort.id ? '✓ ' : '') + effort.name,
-            hint: current?.reasoningEffort === effort.id ? '当前' : undefined,
+            hint: current?.reasoningEffort === effort.id ? tr("当前") : undefined,
           })),
-          { id: '__default__', label: '默认等级', hint: '不指定，交给模型自己决定' },
-          { id: '__back__', label: '← 返回模型列表' },
+          { id: '__default__', label: tr("默认等级"), hint: tr("不指定，交给模型自己决定") },
+          { id: '__back__', label: tr("← 返回模型列表") },
         ]
       : [];
 
@@ -227,26 +228,26 @@ export function ModelPermissionBar({ client, sessionId }: Props) {
           </Text>
         </Pressable>
       ) : null}
-      {busy ? <Text style={styles.busy}>切换中…</Text> : null}
+      {busy ? <Text style={styles.busy}>{tr("切换中…")}</Text> : null}
 
       <ActionSheet
         visible={sheet !== null}
         title={
           sheet?.kind === 'model'
-            ? '切换模型'
+            ? tr("切换模型")
             : sheet?.kind === 'effort'
-              ? '思考等级'
-              : '权限预设'
+              ? tr("思考等级")
+              : tr("权限预设")
         }
         subtitle={
           sheet?.kind === 'model'
             ? models?.routable === false
-              ? '当前模型目录不可路由'
+              ? tr("当前模型目录不可路由")
               : undefined
             : sheet?.kind === 'effort'
-              ? sheet.modelName + '（返回可换模型）'
+              ? sheet.modelName + tr("（返回可换模型）")
               : permission?.defaultPreset
-                ? '宿主默认：' + permission.defaultPreset
+                ? tr("宿主默认：") + permission.defaultPreset
                 : undefined
         }
         actions={

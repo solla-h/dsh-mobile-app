@@ -12,6 +12,7 @@ import {
 import { mapPresetList, presetName, type PresetList } from '../../protocol/presets';
 import { tapFeedback } from '../haptics';
 import { FONT_SCALES, useFontScale, type FontScaleId } from '../fontScale';
+import { tr, languageOptions, useLanguage, type Language } from '../../i18n';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { GatewayClient } from '../../transport/gateway-client';
@@ -35,8 +36,9 @@ export function HostInfoSheet({ control, onClose }: Props) {
   const [defaults, setDefaults] = useState<DefaultsInfo | null>(null);
   const [presets, setPresets] = useState<PresetList | null>(null);
   /** 内联选择模式：Android 上 Modal 套 Modal 不显示，选择列表就在本抽屉内切换。 */
-  const [picking, setPicking] = useState<null | 'preset' | 'permission' | 'font'>(null);
+  const [picking, setPicking] = useState<null | 'preset' | 'permission' | 'font' | 'language'>(null);
   const { id: fontId, setId: setFontId } = useFontScale();
+  const { language, setLanguage } = useLanguage();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -62,16 +64,16 @@ export function HostInfoSheet({ control, onClose }: Props) {
         if (!result) return;
         if (result.applied) {
           tapFeedback();
-          setNotice('已保存');
+          setNotice(tr("已保存"));
           reload();
         } else {
-          setNotice('保存失败');
+          setNotice(tr("保存失败"));
         }
       } else if (kind === 'error') {
         setBusy(false);
         const frameRecord = frame as { requestType?: string; message?: string };
         if (frameRecord.requestType === 'set-default') {
-          setNotice(frameRecord.message ?? '保存失败');
+          setNotice(frameRecord.message ?? tr("保存失败"));
         }
       }
     });
@@ -106,7 +108,8 @@ export function HostInfoSheet({ control, onClose }: Props) {
         <Pressable style={styles.sheet} onPress={() => undefined}>
           <View style={styles.titleRow}>
             <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-              宿主与全局默认
+              
+              {tr("宿主与全局默认")}
             </Text>
             <Pressable hitSlop={10} onPress={onClose}>
               <Text style={styles.close}>×</Text>
@@ -114,33 +117,65 @@ export function HostInfoSheet({ control, onClose }: Props) {
           </View>
 
           <ScrollView bounces={false}>
-            <Text style={styles.section}>宿主</Text>
+            {/* 语言与字号一样走行内展开，且放在宿主信息之前：离线时也要能改本地设置。 */}
+            <Text style={styles.section}>{tr("界面")}</Text>
+            {picking === 'language' ? (
+              <View style={styles.fontPicker}>
+                {languageOptions().map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={styles.fontRow}
+                    onPress={() => {
+                      tapFeedback();
+                      setLanguage(option.id as Language);
+                      setPicking(null);
+                    }}
+                  >
+                    <Text style={styles.fontLabel}>
+                      {(language === option.id ? '✓ ' : '') + option.label}
+                    </Text>
+                    <Text style={styles.fontHint}>{option.hint}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+            <TouchableOpacity style={styles.row} onPress={() => setPicking('language')}>
+              <View style={styles.rowBody}>
+                <Text style={styles.rowLabel}>{tr("语言")}</Text>
+                <Text style={styles.rowValue}>
+                  {languageOptions().find((option) => option.id === language)?.label ?? tr("中文")}
+                </Text>
+              </View>
+              <Text style={styles.rowAction}>{tr("修改")}</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.section}>{tr("宿主")}</Text>
             {host === null ? (
-              <Text style={styles.empty}>读取中…</Text>
+              <Text style={styles.empty}>{tr("读取中…")}</Text>
             ) : (
               <>
-                <Fact label="版本" value={host.version} />
-                <Fact label="工作目录" value={host.cwd} mono />
+                <Fact label={tr("版本")} value={host.version} />
+                <Fact label={tr("工作目录")} value={host.cwd} mono />
                 <Fact
-                  label="默认模型"
+                  label={tr("默认模型")}
                   value={[host.provider, host.model].filter(Boolean).join(' · ') || undefined}
                 />
                 <Fact
-                  label="挂载会话"
+                  label={tr("挂载会话")}
                   value={host.attachedSessions !== undefined ? String(host.attachedSessions) : undefined}
                 />
                 <Fact
-                  label="可打开路径"
-                  value={host.canOpenPath === undefined ? undefined : host.canOpenPath ? '是' : '否'}
+                  label={tr("可打开路径")}
+                  value={host.canOpenPath === undefined ? undefined : host.canOpenPath ? tr("是") : tr("否")}
                 />
               </>
             )}
 
             {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-            <Text style={styles.section}>全局默认（新会话生效）</Text>
+            <Text style={styles.section}>{tr("全局默认（新会话生效）")}</Text>
             {defaults === null ? (
-              <Text style={styles.empty}>读取中…</Text>
+              <Text style={styles.empty}>{tr("读取中…")}</Text>
             ) : (
               <>
                 {/* onPress 不用 onPressIn：手指一落下就触发的话，
@@ -151,13 +186,13 @@ export function HostInfoSheet({ control, onClose }: Props) {
                   onPress={() => setPicking('preset')}
                 >
                   <View style={styles.rowBody}>
-                    <Text style={styles.rowLabel}>默认 Agent 预设</Text>
+                    <Text style={styles.rowLabel}>{tr("默认 Agent 预设")}</Text>
                     <Text style={styles.rowValue}>
                       {presets ? presetName(presets.presets, defaults.agentPresetDefault) : '—'}
                     </Text>
                   </View>
                   <Text style={styles.rowAction}>
-                    {defaults.modeSelectionEnabled ? (busy ? '保存中…' : '修改') : '已禁用'}
+                    {defaults.modeSelectionEnabled ? (busy ? tr("保存中…") : tr("修改")) : tr("已禁用")}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -165,14 +200,14 @@ export function HostInfoSheet({ control, onClose }: Props) {
                   onPress={() => setPicking('permission')}
                 >
                   <View style={styles.rowBody}>
-                    <Text style={styles.rowLabel}>默认权限</Text>
+                    <Text style={styles.rowLabel}>{tr("默认权限")}</Text>
                     <Text style={styles.rowValue}>
                       {defaults.permissionDefaultOptions.find(
                         (option) => option.value === defaults.permissionDefault,
                       )?.name ?? defaults.permissionDefault ?? '—'}
                     </Text>
                   </View>
-                  <Text style={styles.rowAction}>{busy ? '保存中…' : '修改'}</Text>
+                  <Text style={styles.rowAction}>{busy ? tr("保存中…") : tr("修改")}</Text>
                 </TouchableOpacity>
                 {picking === 'font' ? (
                   <View style={styles.fontPicker}>
@@ -199,12 +234,12 @@ export function HostInfoSheet({ control, onClose }: Props) {
                   onPress={() => setPicking('font')}
                 >
                   <View style={styles.rowBody}>
-                    <Text style={styles.rowLabel}>全局字号</Text>
+                    <Text style={styles.rowLabel}>{tr("全局字号")}</Text>
                     <Text style={styles.rowValue}>
-                      {FONT_SCALES.find((item) => item.id === fontId)?.label ?? '标准'}
+                      {FONT_SCALES.find((item) => item.id === fontId)?.label ?? tr("标准")}
                     </Text>
                   </View>
-                  <Text style={styles.rowAction}>修改</Text>
+                  <Text style={styles.rowAction}>{tr("修改")}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -217,10 +252,10 @@ export function HostInfoSheet({ control, onClose }: Props) {
             <View style={styles.pickerWrap}>
               <View style={styles.pickerHead}>
                 <Text style={styles.pickerTitle}>
-                  {picking === 'preset' ? '默认 Agent 预设' : '默认权限'}
+                  {picking === 'preset' ? tr("默认 Agent 预设") : tr("默认权限")}
                 </Text>
                 <Pressable hitSlop={10} onPress={() => setPicking(null)}>
-                  <Text style={styles.pickerBack}>返回</Text>
+                  <Text style={styles.pickerBack}>{tr("返回")}</Text>
                 </Pressable>
               </View>
               <ScrollView style={styles.pickerList} bounces={false}>
@@ -249,7 +284,8 @@ export function HostInfoSheet({ control, onClose }: Props) {
           ) : null}
 
           <Text style={styles.footnote}>
-            修改只影响主机侧新建会话的默认值；当前会话的模型/权限在会话页底部切换。
+            
+            {tr("修改只影响主机侧新建会话的默认值；当前会话的模型/权限在会话页底部切换。")}
           </Text>
         </Pressable>
       </Pressable>

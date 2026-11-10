@@ -18,15 +18,16 @@ import type { Palette } from '../../theme/tokens';
 import { outbox } from '../../transport/outbox';
 import { useTheme, useThemedStyles } from '../theme';
 import type { HomeRow } from './rows';
+import { tr } from '../../i18n';
 
 /** 列表上的相对时间：比绝对时间戳好读，也不用为「耗时」去拉 session-stats。 */
 function ago(at: number): string {
   if (!at) return '';
   const diff = Date.now() - at;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' 分钟前';
-  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' 小时前';
-  return Math.floor(diff / 86_400_000) + ' 天前';
+  if (diff < 60_000) return tr("刚刚");
+  if (diff < 3_600_000) return Math.floor(diff / 60_000) + tr(" 分钟前");
+  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + tr(" 小时前");
+  return Math.floor(diff / 86_400_000) + tr(" 天前");
 }
 
 interface Props {
@@ -91,13 +92,13 @@ export function AllSessionsView({
         style={styles.metaRow}
         onPress={onOpenHost}
         accessibilityRole="button"
-        accessibilityHint="打开宿主信息"
+        accessibilityHint={tr("打开宿主信息")}
       >
-        <Text style={styles.metaLabel}>设备</Text>
-        <Text style={styles.metaValue}>{deviceName ?? '未知'}</Text>
-        <Text style={styles.metaLabel}>协议</Text>
+        <Text style={styles.metaLabel}>{tr("设备")}</Text>
+        <Text style={styles.metaValue}>{deviceName ?? tr("未知")}</Text>
+        <Text style={styles.metaLabel}>{tr("协议")}</Text>
         <Text style={styles.metaValue}>v{protocol ?? '?'}</Text>
-        <Text style={styles.metaAction}>宿主 ›</Text>
+        <Text style={styles.metaAction}>{tr("宿主 ›")}</Text>
       </Pressable>
       {sessionCount > 3 ? (
         <View style={styles.searchWrap}>
@@ -105,12 +106,12 @@ export function AllSessionsView({
             style={styles.searchInput}
             value={search}
             onChangeText={onChangeSearch}
-            placeholder="搜索标题或目录"
+            placeholder={tr("搜索标题或目录")}
             placeholderTextColor={t.text.muted}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
-            accessibilityLabel="搜索会话"
+            accessibilityLabel={tr("搜索会话")}
           />
           {search ? (
             <Pressable
@@ -118,7 +119,7 @@ export function AllSessionsView({
               onPress={() => onChangeSearch('')}
               style={styles.searchClear}
               accessibilityRole="button"
-              accessibilityLabel="清空搜索"
+              accessibilityLabel={tr("清空搜索")}
             >
               <Text style={styles.searchClearText} allowFontScaling={false}>
                 ×
@@ -129,26 +130,28 @@ export function AllSessionsView({
       ) : null}
       <View style={styles.dirHead}>
         <Text style={styles.dirTitle} maxFontSizeMultiplier={1.3}>
-          全部工作区与会话目录
+          
+          {tr("全部工作区与会话目录")}
         </Text>
-        <Text style={styles.dirCount}>{visibleCount} 个</Text>
+        <Text style={styles.dirCount}>{visibleCount}  {tr("个")}</Text>
         <Pressable
           style={[styles.newButton, !connected && styles.newButtonOff]}
           onPress={onCreate}
           disabled={creating || !connected}
           accessibilityRole="button"
-          accessibilityLabel="新建会话"
+          accessibilityLabel={tr("新建会话")}
           accessibilityState={{ disabled: creating || !connected }}
         >
           {creating ? (
             <ActivityIndicator size="small" color={t.text.secondary} />
           ) : (
-            <Text style={[styles.newButtonText, !connected && styles.newButtonTextOff]}>+ 新建</Text>
+            <Text style={[styles.newButtonText, !connected && styles.newButtonTextOff]}>{tr("+ 新建")}</Text>
           )}
         </Pressable>
       </View>
       <Text style={styles.dirSub} maxFontSizeMultiplier={1.3}>
-        按工作区分组 · 无框排版 · 长按一行有更多操作
+        
+        {tr("按工作区分组 · 无框排版 · 长按一行有更多操作")}
       </Text>
       <FlatList
         data={rows}
@@ -158,7 +161,7 @@ export function AllSessionsView({
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <Text style={styles.empty}>
-            {!connected ? '连接断开，正在重连…' : search ? '没有匹配的会话' : '还没有会话'}
+            {!connected ? tr("连接断开，正在重连…") : search ? tr("没有匹配的会话") : tr("还没有会话")}
           </Text>
         }
         ListFooterComponent={
@@ -170,7 +173,7 @@ export function AllSessionsView({
               accessibilityState={{ expanded: showArchived }}
             >
               <Text style={styles.archiveToggleText}>
-                {showArchived ? '隐藏已归档' : `已归档 ${archivedCount} 个 · 显示`}
+                {showArchived ? tr("隐藏已归档") : tr("已归档 {0} 个 · 显示", [archivedCount])}
               </Text>
             </Pressable>
           ) : undefined
@@ -182,8 +185,8 @@ export function AllSessionsView({
                 style={styles.groupHead}
                 onPress={() => onToggleGroup(row.id)}
                 accessibilityRole="button"
-                accessibilityLabel={`${row.title}，${row.count} 个会话`}
-                accessibilityHint={row.collapsed ? '展开分组' : '折叠分组'}
+                accessibilityLabel={tr("{0}，{1} 个会话", [row.title, row.count])}
+                accessibilityHint={row.collapsed ? tr("展开分组") : tr("折叠分组")}
                 accessibilityState={{ expanded: !row.collapsed }}
               >
                 <Text style={styles.groupCaret} allowFontScaling={false}>
@@ -208,15 +211,15 @@ export function AllSessionsView({
               onLongPress={() => onOpenSessionMenu(item)}
               delayLongPress={320}
               accessibilityRole="button"
-              accessibilityHint="长按打开更多操作"
-              accessibilityActions={[{ name: 'more', label: '更多操作' }]}
+              accessibilityHint={tr("长按打开更多操作")}
+              accessibilityActions={[{ name: 'more', label: tr("更多操作") }]}
               onAccessibilityAction={(event) => {
                 if (event.nativeEvent.actionName === 'more') onOpenSessionMenu(item);
               }}
             >
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle} numberOfLines={1}>
-                  {item.projections?.values.title ?? '未命名会话'}
+                  {item.projections?.values.title ?? tr("未命名会话")}
                 </Text>
                 {item.running ? <View style={styles.runningDot} /> : null}
               </View>
@@ -238,9 +241,9 @@ export function AllSessionsView({
                 return (
                   <View style={styles.tagRow}>
                     {pendingCount > 0 ? (
-                      <Text style={styles.tagWarn}>待发送 {pendingCount}</Text>
+                      <Text style={styles.tagWarn}>{tr("待发送")} {pendingCount}</Text>
                     ) : null}
-                    {hasDraft ? <Text style={styles.tag}>草稿</Text> : null}
+                    {hasDraft ? <Text style={styles.tag}>{tr("草稿")}</Text> : null}
                   </View>
                 );
               })()}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme, useThemedStyles } from './theme';
 import { LIVE_CAMERA_FG as LIVE_FG, LIVE_CAMERA_SCRIM as LIVE_SCRIM, type Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 interface Props {
   onScanned: (payload: string) => void;
@@ -26,7 +27,7 @@ export function ScanScreen({ onScanned, onCancel }: Props) {
     if (handledRef.current) return;
     handledRef.current = true;
     if (!data || data.length < 20) {
-      setError('这不是配对二维码');
+      setError(tr("这不是配对二维码"));
       setTimeout(() => {
         handledRef.current = false;
         setError(null);
@@ -47,25 +48,26 @@ export function ScanScreen({ onScanned, onCancel }: Props) {
   if (!permission.granted) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>需要相机权限</Text>
+        <Text style={styles.title}>{tr("需要相机权限")}</Text>
         <Text style={styles.hint}>
-          扫码配对要用摄像头读取终端里的二维码。不给权限也可以退回手动粘贴。
+          
+          {tr("扫码配对要用摄像头读取终端里的二维码。不给权限也可以退回手动粘贴。")}
         </Text>
         <Pressable
           style={styles.primary}
           onPress={() => requestPermission().catch(() => undefined)}
           accessibilityRole="button"
-          accessibilityLabel="授予相机权限"
+          accessibilityLabel={tr("授予相机权限")}
         >
-          <Text style={styles.primaryText}>授予权限</Text>
+          <Text style={styles.primaryText}>{tr("授予权限")}</Text>
         </Pressable>
         <Pressable
           style={styles.secondary}
           onPress={onCancel}
           accessibilityRole="button"
-          accessibilityLabel="返回手动粘贴配对串"
+          accessibilityLabel={tr("返回手动粘贴配对串")}
         >
-          <Text style={styles.secondaryText}>返回</Text>
+          <Text style={styles.secondaryText}>{tr("返回")}</Text>
         </Pressable>
       </View>
     );
@@ -87,9 +89,9 @@ export function ScanScreen({ onScanned, onCancel }: Props) {
             hitSlop={12}
             style={styles.close}
             accessibilityRole="button"
-            accessibilityLabel="关闭扫码"
+            accessibilityLabel={tr("关闭扫码")}
           >
-            <Text style={styles.closeText}>关闭</Text>
+            <Text style={styles.closeText}>{tr("关闭")}</Text>
           </Pressable>
         </View>
         <View style={styles.frameWrap} pointerEvents="none">
@@ -100,11 +102,12 @@ export function ScanScreen({ onScanned, onCancel }: Props) {
             <View style={[styles.corner, styles.cornerBR]} />
           </View>
           <Text style={styles.frameHint} accessibilityLiveRegion="polite">
-            对准终端里的二维码{error ? `\n${error}` : ''}
+            
+            {tr("对准终端里的二维码")}{error ? `\n${error}` : ''}
           </Text>
         </View>
         <View style={styles.footerWrap}>
-          <Text style={styles.footer}>在服务器上运行 dsh-pair，扫描它打印的二维码</Text>
+          <Text style={styles.footer}>{tr("在服务器上运行 dsh-pair，扫描它打印的二维码")}</Text>
         </View>
       </View>
     </View>

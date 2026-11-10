@@ -3,6 +3,7 @@ import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-nativ
 import { MOTION, TYPE } from '../../theme/tokens';
 import { chargeStartFeedback, successFeedback, tickFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
+import { tr } from '../../i18n';
 
 interface Props {
   /** 待批复的目标，比如 src/mcp/pool.rs */
@@ -125,7 +126,7 @@ export function ApprovalDock({
           style={[styles.gate, { backgroundColor: t.bg.surface, borderColor: t.border.default }]}
           onPress={onExpand}
           accessibilityRole="button"
-          accessibilityLabel="放大查看审批详情"
+          accessibilityLabel={tr("放大查看审批详情")}
         >
           <View
             style={[
@@ -134,12 +135,12 @@ export function ApprovalDock({
             ]}
           />
           <Text style={[styles.gateText, { color: t.text.primary }]} numberOfLines={1}>
-            {highRisk ? '高危命令: ' : '待批复: '}
+            {highRisk ? tr("高危命令: ") : tr("待审批: ")}
             {target}
             {additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}
-            {queueCount && queueCount > 1 ? ` · 还有 ${queueCount - 1} 条` : ''}
+            {queueCount && queueCount > 1 ? tr(" · 还有 {0} 条", [queueCount - 1]) : ''}
           </Text>
-          <Text style={[styles.gateMore, { color: t.text.secondary }]}>点开放大 ↗</Text>
+          <Text style={[styles.gateMore, { color: t.text.secondary }]}>{tr("点开放大 ↗")}</Text>
         </Pressable>
         <Pressable
           style={[
@@ -159,7 +160,7 @@ export function ApprovalDock({
               { color: trusted ? t.action.primaryText : t.text.secondary },
             ]}
           >
-            {trusted ? '✓ 信任目录' : '信任目录'}
+            {trusted ? tr("✓ 信任目录") : tr("信任目录")}
           </Text>
         </Pressable>
       </View>
@@ -174,7 +175,8 @@ export function ApprovalDock({
       ) : null}
       {blocked ? (
         <Text style={[styles.commandWarn, { color: t.semantic.dangerText }]} numberOfLines={2}>
-          命令详情不可用，请到 Web UI 确认后再批准
+          
+          {tr("命令详情不可用，请到 Web UI 确认后再决定")}
         </Text>
       ) : null}
       {detail ? (
@@ -198,7 +200,7 @@ export function ApprovalDock({
           onPress={onReject}
           disabled={busy}
         >
-          <Text style={[styles.rejectText, { color: t.text.primary }]}>× 拦截</Text>
+          <Text style={[styles.rejectText, { color: t.text.primary }]}>{tr("× 拒绝")}</Text>
         </Pressable>
 
         {highRisk ? (
@@ -208,7 +210,7 @@ export function ApprovalDock({
             onPressOut={cancelHold}
             disabled={busy || blocked}
             accessibilityRole="button"
-            accessibilityLabel="长按半秒放行高危命令"
+            accessibilityLabel={tr("长按半秒允许一次高危命令")}
           >
             <Animated.View
               style={[
@@ -218,12 +220,12 @@ export function ApprovalDock({
             />
             <Text style={[styles.approveText, { color: t.action.primaryText }]}>
               {blocked
-                ? '命令不可见 · 请展开'
+                ? tr("命令不可见 · 请展开")
                 : busy
-                  ? '处理中…'
+                  ? tr("处理中…")
                   : pct > 0
-                    ? `长按确认中 ${pct}%`
-                    : `长按 0.5s 放行${riskLabels?.length ? ' · ' + riskLabels[0] : '高危命令'}`}
+                    ? tr("长按确认中 {0}%", [pct])
+                    : tr("长按 0.5s 允许一次{0}", [riskLabels?.length ? ' · ' + riskLabels[0] : tr("高危命令")])}
             </Text>
           </Pressable>
         ) : (
@@ -238,10 +240,10 @@ export function ApprovalDock({
           >
             <Text style={[styles.approveText, { color: t.action.primaryText }]}>
               {blocked
-                ? '命令不可见 · 请展开'
+                ? tr("命令不可见 · 请展开")
                 : busy
-                  ? '处理中…'
-                  : `✓ 快速批准${additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''}`}
+                  ? tr("处理中…")
+                  : tr("✓ 允许一次{0}", [additions !== undefined ? ` (+${additions}/-${deletions ?? 0})` : ''])}
             </Text>
           </Pressable>
         )}

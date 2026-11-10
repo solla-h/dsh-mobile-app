@@ -11,6 +11,7 @@
  */
 import type { HistoryEventFrame, ClientFrame, PairingPayload, ServerFrame, SessionItem } from '../../protocol/types';
 import type { ConnectOptions, ConnectionState } from '../../transport/gateway-client';
+import { writeJson } from '../../storage/persisted-state';
 
 export interface TransportScript {
   /** connect() 之后同步执行：脚本在这里推 paired / hello / error 等开场帧。 */
@@ -181,6 +182,11 @@ export function controlClient(): FakeGatewayClient {
   const found = FakeGatewayClient.instances.find((entry) => entry.options?.channel === 'control');
   if (!found) throw new Error('找不到 control 连接（App 还没 connect？）');
   return found;
+}
+
+/** 显式声明界面语言偏好，避免既有中文断言依赖 CI 的系统 locale。 */
+export async function setAppLanguage(language: 'zh' | 'en'): Promise<void> {
+  await writeJson('app-settings', { language });
 }
 
 export function resetHarness(): void {

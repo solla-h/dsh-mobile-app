@@ -6,6 +6,7 @@ import { useTheme, useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { PluginManager } from './usePluginManager';
 import type { VersionExemption } from '../../protocol/plugins';
+import { tr } from '../../i18n';
 
 /**
  * 版本豁免：高级诊断页。
@@ -48,11 +49,11 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
     const packageVersion = pkg.trim();
     const runtimeVersion = runtime.trim();
     if (!packageVersion || !runtimeVersion) {
-      Alert.alert('缺少参数', '包版本与运行时版本都要填。');
+      Alert.alert(tr("缺少参数"), tr("包版本与运行时版本都要填。"));
       return;
     }
     if (!acceptRisk) {
-      Alert.alert('请先确认', '版本豁免会绕过兼容性检查，确认你了解风险后再勾选。');
+      Alert.alert(tr("请先确认"), tr("版本豁免会绕过兼容性检查，确认你了解风险后再勾选。"));
       return;
     }
     setBusy(true);
@@ -67,7 +68,7 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
       })
       .catch((err: unknown) => {
         setBusy(false);
-        Alert.alert('设置失败', err instanceof Error ? err.message : String(err));
+        Alert.alert(tr("设置失败"), err instanceof Error ? err.message : String(err));
       });
   };
 
@@ -82,7 +83,7 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
       })
       .catch((err: unknown) => {
         setBusy(false);
-        Alert.alert('撤销失败', err instanceof Error ? err.message : String(err));
+        Alert.alert(tr("撤销失败"), err instanceof Error ? err.message : String(err));
       });
   };
 
@@ -92,20 +93,22 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
         <Pressable style={styles.sheet} onPress={() => undefined}>
           <View style={styles.titleRow}>
             <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-              版本豁免
+              
+              {tr("版本豁免")}
             </Text>
             <Pressable hitSlop={10} onPress={onClose}>
               <Text style={styles.close}>×</Text>
             </Pressable>
           </View>
           <Text style={styles.hint}>
-            高风险设置：让与当前 DSH 版本不兼容的插件包强行启用。只在明确知道后果时使用。
+            
+            {tr("高风险设置：让与当前 DSH 版本不兼容的插件包强行启用。只在明确知道后果时使用。")}
           </Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <ScrollView bounces={false} style={styles.list}>
             {items !== null && items.length === 0 ? (
-              <Text style={styles.empty}>当前没有豁免记录。</Text>
+              <Text style={styles.empty}>{tr("当前没有豁免记录。")}</Text>
             ) : null}
             {(items ?? []).map((item, index) => (
               <View key={index} style={styles.itemRow}>
@@ -114,27 +117,28 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
                     {item.packageVersion ?? '?'}
                   </Text>
                   <Text style={styles.itemMeta}>
-                    运行时 {item.runtimeVersion ?? '?'} · {item.acceptRisk ? '已接受风险' : '未接受风险'}
+                    
+                    {tr("运行时")} {item.runtimeVersion ?? '?'} · {item.acceptRisk ? tr("已接受风险") : tr("未接受风险")}
                   </Text>
                 </View>
                 <Text style={[styles.itemState, item.enabled ? styles.itemOn : styles.itemOff]}>
-                  {item.enabled ? '生效中' : '已停用'}
+                  {item.enabled ? tr("生效中") : tr("已停用")}
                 </Text>
                 {item.enabled ? (
                   <Pressable hitSlop={6} disabled={busy} onPress={() => revoke(item)}>
-                    <Text style={styles.revoke}>撤销</Text>
+                    <Text style={styles.revoke}>{tr("撤销")}</Text>
                   </Pressable>
                 ) : null}
               </View>
             ))}
           </ScrollView>
 
-          <Text style={styles.section}>新增豁免</Text>
+          <Text style={styles.section}>{tr("新增豁免")}</Text>
           <TextInput
             style={styles.input}
             value={pkg}
             onChangeText={setPkg}
-            placeholder="包版本，例如 dsh-plugin-speech@0.1.7-alpha.1"
+            placeholder={tr("包版本，例如 dsh-plugin-speech@0.1.7-alpha.1")}
             placeholderTextColor={t.text.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -143,7 +147,7 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
             style={[styles.input, styles.inputGap]}
             value={runtime}
             onChangeText={setRuntime}
-            placeholder="运行时版本，例如 0.2.1-rc.3"
+            placeholder={tr("运行时版本，例如 0.2.1-rc.3")}
             placeholderTextColor={t.text.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -159,12 +163,12 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
               thumbColor={styles.switchThumb.backgroundColor}
               ios_backgroundColor={styles.switchOff.backgroundColor}
             />
-            <Text style={styles.riskText}>我了解并接受版本不兼容的风险</Text>
+            <Text style={styles.riskText}>{tr("我了解并接受版本不兼容的风险")}</Text>
           </View>
 
           <View style={styles.footer}>
             <Pressable style={[styles.button, styles.buttonNeutral]} onPress={onClose}>
-              <Text style={styles.buttonText}>关闭</Text>
+              <Text style={styles.buttonText}>{tr("关闭")}</Text>
             </Pressable>
             <Pressable
               style={[styles.button, styles.buttonPrimary, (busy || !acceptRisk) && styles.buttonDisabled]}
@@ -172,7 +176,7 @@ export function ExemptionsSheet({ manager, onClose }: Props) {
               onPress={submit}
             >
               <Text style={[styles.buttonText, styles.buttonTextPrimary]}>
-                {busy ? '提交中…' : '设置豁免'}
+                {busy ? tr("提交中…") : tr("设置豁免")}
               </Text>
             </Pressable>
           </View>

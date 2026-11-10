@@ -1,4 +1,5 @@
 import compatibility from '../../compatibility.json';
+import { tr } from '../i18n';
 
 /**
  * 版本绑定：App 发布时验证过的 gateway / DSH / 协议组合。
@@ -22,7 +23,7 @@ export function checkGatewayCompatibility(hello: { protocol?: number }): Gateway
   return {
     protocolMismatch,
     message: protocolMismatch
-      ? `网关协议 v${hello.protocol} 未验证；App 验证的是 v${SUPPORTED_PROTOCOL_VERSION}。`
+      ? tr("网关协议 v{0} 未验证；App 验证的是 v{1}。", [hello.protocol, SUPPORTED_PROTOCOL_VERSION])
       : null,
   };
 }
