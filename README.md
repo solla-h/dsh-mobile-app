@@ -134,6 +134,7 @@ node scripts/setup-gateway.mjs pair --open
 | [发布手册](docs/RELEASING.md) | APK 构建、签名、下载校验与失败处理 |
 | [开发与验证](docs/DEVELOPMENT.md) / [设计原则](docs/DESIGN.md) | 代码职责、测试旅程、无障碍与交互约定 |
 | [发布验证状态](docs/OPEN-SOURCE-READINESS.md) | 自动化与真机证据、已知边界、暂缓范围 |
+| [路线图与候选池](docs/ROADMAP.md) | 未完成、做了一半与已决策不做的能力，以及各自的触发条件 |
 | [官网](https://fatwhale.app) / [网站仓库](https://github.com/solla-h/dsh-mobile-site) | 产品介绍、下载与安装入口；网站独立开发、部署与更新 |
 | [地址簿设计](docs/rendezvous-design.md) | `rendezvous-v1` 的加密与恢复机制 |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | 贡献、漏洞报告、变更记录与仓库约定 |

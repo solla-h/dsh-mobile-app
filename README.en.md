@@ -150,6 +150,7 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 | [Release runbook](docs/RELEASING.md) | APK build, signing, download verification, failure handling |
 | [Development and validation](docs/DEVELOPMENT.md) / [Design principles (Chinese)](docs/DESIGN.md) | Code responsibilities, test journeys, accessibility and interaction conventions |
 | [Release validation status (Chinese)](docs/OPEN-SOURCE-READINESS.md) | Automated and device evidence, known limits and deferred scope |
+| [Roadmap and candidate pool (Chinese)](docs/ROADMAP.md) | Unfinished, half-done and deliberately-not-done capabilities with their reconsider conditions |
 | [Website](https://fatwhale.app/en/) / [Website repository](https://github.com/solla-h/dsh-mobile-site) | Product overview, downloads and setup entry points; independent website development and deployment |
 | [Rendezvous design (Chinese)](docs/rendezvous-design.md) | Encryption and recovery for `rendezvous-v1` |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | Contributions, vulnerability reports, change log, repository conventions |
