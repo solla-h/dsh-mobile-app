@@ -46,7 +46,18 @@ A phone does not need a shrunken desktop page. It needs three actions:
 
 Captured during the [passing Android emulator journey](https://github.com/solla-h/dsh-mobile-app/actions/workflows/android-journey.yml)
 using a local fake gateway and synthetic conversations. No real account or pairing credentials are shown.
-The app interface is currently primarily Chinese.
+The screenshots show the Chinese interface; the app also ships a full English interface (see **Language** below).
+
+## Language
+
+The app ships a Chinese and an English interface. Open the host info sheet from the home screen (the device /
+protocol row on the **All sessions** tab), then go to **Appearance → Language** and choose 中文 or **English**.
+The sheet works even while offline.
+
+With no explicit preference, the app follows the system locale — a non-Chinese locale falls back to English.
+The choice is stored in `app-settings` alongside the font-scale setting, so the two coexist. Gateway data such
+as session titles, history text, and tool names stays untranslated; only the app's own interface strings are
+localized. Dictionary and terminology details live in `docs/i18n/README.md`.
 
 ## Quick start
 
@@ -149,6 +160,7 @@ See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troub
 | [Gateway maintenance](docs/GATEWAY-MAINTENANCE.md) | Maintained fork, upstream synchronization, version selection, joint verification and Agent constraints |
 | [Release runbook](docs/RELEASING.md) | APK build, signing, download verification, failure handling |
 | [Development and validation](docs/DEVELOPMENT.md) / [Design principles (Chinese)](docs/DESIGN.md) | Code responsibilities, test journeys, accessibility and interaction conventions |
+| [i18n and terminology (Chinese)](docs/i18n/README.md) | Dictionary shape, official term table, version basis, and test evidence for the zh/en UI |
 | [Release validation status (Chinese)](docs/OPEN-SOURCE-READINESS.md) | Automated and device evidence, known limits and deferred scope |
 | [Roadmap and candidate pool (Chinese)](docs/ROADMAP.md) | Unfinished, half-done and deliberately-not-done capabilities with their reconsider conditions |
 | [Website](https://fatwhale.app/en/) / [Website repository](https://github.com/solla-h/dsh-mobile-site) | Product overview, downloads and setup entry points; independent website development and deployment |
