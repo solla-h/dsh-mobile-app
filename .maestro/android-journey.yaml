@@ -38,11 +38,14 @@ appId: app.dshmobile.client
     id: pairing-connect
 # Home tabs mean `paired` + `hello` arrived and the gateway was saved.
 - extendedWaitUntil:
-    visible: 全部会话
+    visible:
+      id: home-tab-all
     timeout: 30000
 - takeScreenshot: 02-paired-home
-# "All sessions" list from the fake gateway.
-- tapOn: 全部会话
+# "All sessions" list from the fake gateway. Assert by testID, not by label:
+# the interface language follows the device locale (zh/en) since #10.
+- tapOn:
+    id: home-tab-all
 - extendedWaitUntil:
     visible:
       id: session-row-fake-session-1
@@ -78,11 +81,13 @@ appId: app.dshmobile.client
 - takeScreenshot: 06-back-to-list
 - launchApp
 - extendedWaitUntil:
-    visible: 全部会话
+    visible:
+      id: home-tab-all
     timeout: 30000
 - assertNotVisible:
     id: pairing-manual-toggle
-- tapOn: 全部会话
+- tapOn:
+    id: home-tab-all
 - extendedWaitUntil:
     visible:
       id: session-row-fake-session-1

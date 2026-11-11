@@ -29,6 +29,7 @@ export function BottomTabBar({ tabs, active, onChange }: Props) {
         return (
           <Pressable
             key={tab.key}
+            testID={`home-tab-${tab.key}`}
             style={styles.cell}
             onPress={() => onChange(tab.key)}
             accessibilityRole="tab"
