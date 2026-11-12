@@ -13,6 +13,8 @@ describe('classifyClose', () => {
     const revoked = classifyClose(4003, 'device revoked');
     expect(revoked.stop).toBe(true);
     expect(revoked.reconnect).toBe(false);
+    // 必须回配对页：界面据此隐藏「点这里重连」，不再去 includes 中文文案。
+    expect(revoked.kind).toBe('reauth');
     expect(revoked.message).toContain('撤销');
 
     const enabled = classifyClose(4003, 'authentication enabled');
@@ -22,8 +24,12 @@ describe('classifyClose', () => {
 
   it('stops on 4004 and reconnects on transport closes', () => {
     expect(classifyClose(4004).stop).toBe(true);
+    // 网关主动关停 = 干净的「已断开」，不是「连接异常」。
+    expect(classifyClose(4004).kind).toBe('shutdown');
     expect(classifyClose(1006).reconnect).toBe(true);
     expect(classifyClose(1001).reconnect).toBe(true);
+    expect(classifyClose(1006).kind).toBe('transient');
+    expect(classifyClose(undefined).kind).toBe('transient');
     expect(classifyClose(1011, 'session follower failed').message).toBe(
       'session follower failed',
     );

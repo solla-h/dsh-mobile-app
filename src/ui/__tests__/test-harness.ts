@@ -11,6 +11,7 @@
  */
 import type { HistoryEventFrame, ClientFrame, PairingPayload, ServerFrame, SessionItem } from '../../protocol/types';
 import type { ConnectOptions, ConnectionState } from '../../transport/gateway-client';
+import type { CloseDecision } from '../../transport/connection-policy';
 import { writeJson } from '../../storage/persisted-state';
 
 export interface TransportScript {
@@ -76,7 +77,11 @@ export function audioMock() {
 }
 
 type FrameListener = (frame: ServerFrame) => void;
-type StateListener = (state: ConnectionState, detail?: string) => void;
+type StateListener = (
+  state: ConnectionState,
+  detail?: string,
+  kind?: CloseDecision['kind'],
+) => void;
 
 /**
  * 带帧监听/状态监听两条接口的假客户端，语义对齐真 GatewayClient：
@@ -164,9 +169,9 @@ export class FakeGatewayClient {
     for (const listener of Array.from(this.frameListeners)) listener(frame);
   }
 
-  emitState(state: ConnectionState, detail?: string): void {
+  emitState(state: ConnectionState, detail?: string, kind?: CloseDecision['kind']): void {
     this.currentState = state;
-    for (const listener of Array.from(this.stateListeners)) listener(state, detail);
+    for (const listener of Array.from(this.stateListeners)) listener(state, detail, kind);
   }
 }
 

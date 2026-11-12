@@ -150,6 +150,34 @@ describe('英文界面完整旅程', () => {
     });
   }, 20000);
 
+  /**
+   * 4003 = 凭据不可恢复。这条路径以前靠 detail.includes('重新配对') 判断，
+   * 英文界面下永远匹配不上，于是给用户一个只会再被拒一次的「重连」。
+   * 现在 close 原因带结构化 kind，界面必须回到「点顶部网关名」。
+   */
+  it('设备授权撤销后不再提供重连，而是指向顶部的重新配对入口', async () => {
+    setTransportScript(scriptGateway({ sessions: [] }));
+    await render(<App />);
+    expect(await screen.findByText('Scan to pair')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('pairing-manual-toggle'));
+    await fireEvent.changeText(await screen.findByTestId('pairing-payload'), pairingPayloadText());
+    await fireEvent.press(screen.getByTestId('pairing-connect'));
+    expect(await screen.findByText('Connected')).toBeTruthy();
+
+    // 网关推送 4003：状态必须落到 error，且带 reauth 语义。
+    await act(async () => {
+      conversationClient().emitState('error', 'Device authorization was revoked. Please pair again.', 'reauth');
+    });
+
+    const hint = await screen.findByText(/Device authorization was revoked/);
+    expect(hint).toBeTruthy();
+    // 英文界面下必须真的出现「点顶部网关名」，而不是「点这里重连」。
+    expect(screen.getByText(/Tap the gateway name at the top/)).toBeTruthy();
+    expect(screen.queryByText(/Tap here to reconnect/)).toBeNull();
+    // 整行不再是 button：点了也没有用，别给它 button 角色。
+    expect(screen.queryByRole('button', { name: /Device authorization was revoked/ })).toBeNull();
+  }, 20000);
+
   it('没有显式偏好时按系统语言回退英文', async () => {
     await writeJson('app-settings', {});
     const spy = jest.spyOn(Intl, 'DateTimeFormat');

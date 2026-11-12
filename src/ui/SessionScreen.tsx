@@ -26,7 +26,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
-import { currentLanguage, tr } from '../i18n';
+import { currentLanguage, tr, useLanguageVersion } from '../i18n';
 import {
   applyRealtime,
   mergeSnapshot,
@@ -274,6 +274,8 @@ export function SessionScreen({
 }: Props) {
   const t = useTheme();
   const styles = useThemedStyles(makeStyles);
+  /** 包着 tr() 文案的 useMemo 的依赖；切语言后必须重算。 */
+  const lang = useLanguageVersion();
   const canDownloadFiles = capabilities.includes('file-downloads');
   const canPickPreset = capabilities.includes('session-agent-preset');
   // 进会话先摆 L1 缓存（模块级，跨重挂载存活）：首帧就有内容、不进 spinner；
@@ -1624,7 +1626,8 @@ export function SessionScreen({
         hint: [preset.description, preset.broken ? tr("当前不可用") : null].filter(Boolean).join(' · ') || undefined,
         disabled: preset.broken || presetLocked || !presetList.modeSelectionEnabled,
       })),
-    [presetId, presetList, presetLocked],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tr() 读模块级语言，插件看不到这条依赖；去掉它文案会停在切换前的语言。
+    [lang, presetId, presetList, presetLocked],
   );
 
   const infoActions = useMemo<SheetAction[]>(() => {
@@ -1635,7 +1638,10 @@ export function SessionScreen({
     }
     list.push({ id: 'archive', label: tr("归档这个会话"), destructive: true });
     return list;
-  }, [session]);
+  },
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tr() 读模块级语言，插件看不到这条依赖；去掉它文案会停在切换前的语言。
+  [lang, session],
+);
 
   const runInfoAction = useCallback(
     (id: string) => {
@@ -2001,7 +2007,10 @@ export function SessionScreen({
       actions.push({ id: 'edit', label: tr("重新编辑"), hint: tr("把内容放回输入框") });
     }
     return actions;
-  }, [actionMessage]);
+  },
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tr() 读模块级语言，插件看不到这条依赖；去掉它文案会停在切换前的语言。
+  [actionMessage, lang],
+);
 
   const runMessageAction = useCallback(
     (id: string) => {
@@ -2286,7 +2295,8 @@ export function SessionScreen({
     if (slashQuery === null || /\s/.test(slashQuery)) return [];
     return filterCommands(commandGroups, slashQuery);
   }, [commandGroups, slashQuery]);
-  const statsLine = useMemo(() => describeStats(stats), [stats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- describeStats 内部调 tr()，同上。
+  const statsLine = useMemo(() => describeStats(stats), [lang, stats]);
 
   /**
    * 跳到某一轮：rows 里找到第一条 seq >= 目标的事件就滚过去。

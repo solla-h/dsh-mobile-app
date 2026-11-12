@@ -12,6 +12,7 @@ import {
   backoffDelay,
   classifyClose,
   classifyPairingFailure,
+  type CloseDecision,
   type PairingFailureInput,
   type PairingPreflight,
 } from './connection-policy';
@@ -38,7 +39,16 @@ export interface ConnectOptions {
 }
 
 type FrameListener = (frame: ServerFrame) => void;
-type StateListener = (state: ConnectionState, detail?: string) => void;
+/**
+ * 第三个参数是关闭原因的机器可读分类（只有 close/pairing 失败时给）。
+ * 界面据此决定「是重连还是必须回配对页」，不要去匹配 detail 文案——
+ * detail 会被翻译成界面语言。
+ */
+type StateListener = (
+  state: ConnectionState,
+  detail?: string,
+  kind?: CloseDecision['kind'],
+) => void;
 
 /**
  * dsh-mobile-v1 的 WebSocket 客户端。
@@ -298,7 +308,7 @@ export class GatewayClient {
       if (decision.stop) {
         this.stopped = true;
         this.clearTimers();
-        this.emitState(decision.message === '网关已关闭' ? 'closed' : 'error', decision.message);
+        this.emitState(decision.kind === 'shutdown' ? 'closed' : 'error', decision.message, decision.kind);
         return;
       }
       this.emitState('error', decision.message);
@@ -344,7 +354,8 @@ export class GatewayClient {
         return;
       }
       this.stopped = true;
-      this.emitState('error', decision.message);
+      // 配对失败同样意味着旧 token 不可用，需要重新扫码/粘贴配对串。
+      this.emitState('error', decision.message, 'reauth');
       return;
     }
     this.maybeRefreshUrl();
@@ -594,12 +605,12 @@ export class GatewayClient {
     }
   }
 
-  private emitState(state: ConnectionState, detail?: string): void {
+  private emitState(state: ConnectionState, detail?: string, kind?: CloseDecision['kind']): void {
     this.lastState = state;
     // OBS-1：状态监听同样逐个隔离——某个页面的 setState 异常不该掐断其余订阅者。
     this.stateListeners.forEach((listener) => {
       try {
-        listener(state, detail);
+        listener(state, detail, kind);
       } catch (error) {
         console.warn('[gateway] state listener failed', state, error);
       }

@@ -29,6 +29,14 @@ export interface CloseDecision {
   stop: boolean;
   /** 关闭后是否应该走重连阶梯 */
   reconnect: boolean;
+  /**
+   * 结构化分类。上层靠它决定 UI 姿态，不要改回去匹配 message 文案：
+   * 文案会随界面语言翻译，控制流不能跟着变。
+   * - shutdown：网关自己关掉了，连接本身是干净的，界面显示「已断开」
+   * - reauth：凭据不可恢复，必须回配对页
+   * - transient：网络抖动，会自动重连
+   */
+  kind: 'shutdown' | 'reauth' | 'transient';
   message: string;
 }
 
@@ -116,12 +124,18 @@ export function classifyPairingFailure(input: PairingFailureInput): PairingFailu
  */
 export function classifyClose(code?: number, reason?: string): CloseDecision {
   if (code === 4004) {
-    return { stop: true, reconnect: false, message: tr("网关已关闭") };
+    return {
+      stop: true,
+      reconnect: false,
+      kind: 'shutdown',
+      message: tr("网关已关闭"),
+    };
   }
   if (code === 4003) {
     return {
       stop: true,
       reconnect: false,
+      kind: 'reauth',
       message:
         reason === 'device revoked'
           ? tr("设备授权已被撤销，请重新配对")
@@ -129,11 +143,17 @@ export function classifyClose(code?: number, reason?: string): CloseDecision {
     };
   }
   if (code === 1006 || code === 1001) {
-    return { stop: false, reconnect: true, message: tr("连接中断，正在重连") };
+    return {
+      stop: false,
+      reconnect: true,
+      kind: 'transient',
+      message: tr("连接中断，正在重连"),
+    };
   }
   return {
     stop: false,
     reconnect: true,
+    kind: 'transient',
     message: reason || tr("连接关闭（{0}）", [code ?? tr("未知")]),
   };
 }

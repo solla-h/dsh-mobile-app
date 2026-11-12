@@ -138,3 +138,44 @@ it('移除文件时即使 open 回包晚到也会取消，且迟到的错误不�
     expect(states).toHaveBeenLastCalledWith('kept', { status: 'waiting' });
   } finally { uploader.dispose(); }
 });
+
+/**
+ * 断线时上传必须留在 waiting，重连后 setConnected(true) 才会自动续传。
+ * 旧实现拿本地化文案（message === '连接已断开'）判断，英文界面下恒为 false，
+ * 于是落成 error —— 英文用户重连后不会自动续传，只能逐个手点「重试」。
+ */
+it('发送失败按断线处理（留在 waiting），与界面语言无关', async () => {
+  const states = jest.fn();
+  const uploader = new FileUploader('s1', () => false, states);
+  try {
+    await uploader.upload('local', localFile(async () => 'digest'));
+    await flush();
+    expect(states).toHaveBeenLastCalledWith('local', { status: 'waiting' });
+    // 真的能自动续传：重连后必须再发一次 open。
+    const sent: ClientFrame[] = [];
+    const resumed = new FileUploader('s1', (frame) => {
+      sent.push(frame);
+      if (frame.type === 'file-upload-open') {
+        queueMicrotask(() => {
+          resumed.handleFrame({ kind: 'file-upload-opened', requestId: frame.requestId, uploadId: 'u1' });
+        });
+      } else if (frame.type === 'file-upload-chunk') {
+        queueMicrotask(() => {
+          resumed.handleFrame({ kind: 'file-upload-chunk-accepted', requestId: frame.requestId, nextOffset: 3 });
+        });
+      } else if (frame.type === 'file-upload-finish') {
+        queueMicrotask(() => {
+          resumed.handleFrame({ kind: 'file-upload-completed', requestId: frame.requestId, receiptId: 'r1' });
+        });
+      }
+      return true;
+    }, states, false);
+    try {
+      await resumed.upload('local', localFile(async () => 'digest'));
+      expect(sent).toHaveLength(0);
+      resumed.setConnected(true);
+      await flush();
+      expect(sent.filter((frame) => frame.type === 'file-upload-open')).toHaveLength(1);
+    } finally { resumed.dispose(); }
+  } finally { uploader.dispose(); }
+});

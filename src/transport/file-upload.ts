@@ -31,6 +31,13 @@ interface Waiter {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * 写入失败 = 连接已经没了，而不是这次上传本身有问题。
+ * 上层据此把上传留在 waiting（重连后自动续传）；
+ * 用类型判断而不是比较 message 文案——文案会按界面语言翻译。
+ */
+class DisconnectedError extends Error {}
+
 /** 单个文件的服务端上限是 512 MiB，但手机上整份读成 base64 太吃内存，自己收一收。 */
 const LOCAL_MAX_BYTES = 24 * 1024 * 1024;
 
@@ -181,7 +188,7 @@ export class FileUploader {
       if (!this.send(frame)) {
         this.waiters.delete(key);
         clearTimeout(timer);
-        reject(new Error(tr("连接已断开")));
+        reject(new DisconnectedError(tr("连接已断开")));
       }
     });
   }
@@ -280,7 +287,7 @@ export class FileUploader {
       if (!active()) return;
       if (uploadId) this.send({ type: 'file-upload-cancel', requestId: randomUUID(), uploadId });
       const message = error instanceof Error ? error.message : tr("上传失败");
-      update(message === '连接已断开' ? { status: 'waiting' } : { status: 'error', message });
+      update(error instanceof DisconnectedError ? { status: 'waiting' } : { status: 'error', message });
     }
   }
 

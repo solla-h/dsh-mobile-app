@@ -46,7 +46,7 @@ import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
 import { HostInfoSheet } from './src/ui/home/HostInfoSheet';
 import { FontScaleProvider } from './src/ui/fontScale';
-import { tr, LanguageProvider } from './src/i18n';
+import { tr, LanguageProvider, useLanguageVersion } from './src/i18n';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
 import {
@@ -62,6 +62,7 @@ import {
   type SavedGateway,
 } from './src/storage/gateway-store';
 import { GatewayClient, type ConnectionState } from './src/transport/gateway-client';
+import type { CloseDecision } from './src/transport/connection-policy';
 import { draftSessionIds } from './src/storage/drafts';
 import { readJson, removeJson, writeJson } from './src/storage/persisted-state';
 import { outbox } from './src/transport/outbox';
@@ -115,6 +116,12 @@ export default function App() {
 function AppBody() {
   const t = useTheme();
   const styles = useThemedStyles(makeAppStyles);
+  /**
+   * 语言版本号：给下面那些「结果里包着 tr() 文案」的 useMemo 当依赖。
+   * 不放进 deps 的话，运行时切语言后它们会一直返回旧语言的字符串
+   * （useThemedStyles 只保证组件重渲染，Memo 仍然命中缓存）。
+   */
+  const lang = useLanguageVersion();
   const client = useMemo(() => new GatewayClient(), []);
   /**
    * 第二条连接，只跑 control 通道：它不订阅任何会话，
@@ -123,6 +130,11 @@ function AppBody() {
   const control = useMemo(() => new GatewayClient(), []);
   const [state, setState] = useState<ConnectionState>('idle');
   const [detail, setDetail] = useState<string | null>(null);
+  /**
+   * detail 的结构化原因。判断「能不能点这里重连」必须看它，
+   * 不能去 detail 里 includes 某句中文——英文界面下永远匹配不上。
+   */
+  const [detailKind, setDetailKind] = useState<CloseDecision['kind'] | undefined>(undefined);
   const [hello, setHello] = useState<HelloFrame | null>(null);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [pairingText, setPairingText] = useState('');
@@ -281,6 +293,11 @@ function AppBody() {
   );
 
   const connected = state === 'ready' && hello?.authenticated === true;
+  /**
+   * 凭据已经不可恢复（4003 / 配对失败）：这时「点这里重连」只会再被拒一次，
+   * 真正的出路是回配对页。用结构化 kind 判断，不匹配本地化文案。
+   */
+  const repairRequired = detailKind === 'reauth';
   const gatewayCompat = hello ? checkGatewayCompatibility(hello) : null;
 
   /** 聚焦网格的输入：只看待办 / 正在跑，最多 4 条，摘要来自大纲缓存。 */
@@ -315,7 +332,7 @@ function AppBody() {
         showArchived,
         archivedIds: archived,
       }),
-    [archived, collapsedGroups, searchedSessions, showArchived, workspaceFrame],
+    [archived, collapsedGroups, lang, searchedSessions, showArchived, workspaceFrame],
   );
 
   const pendingCount = useMemo(
@@ -1074,9 +1091,10 @@ function AppBody() {
   );
 
   useEffect(() => {
-    const offState = client.onState((next, message) => {
+    const offState = client.onState((next, message, kind) => {
       setState(next);
       setDetail(message ?? null);
+      setDetailKind(kind);
       if (next === 'ready') {
         setError(null);
         // 断线期间写下的消息在重连后补发，顺序按写入先后；只发当前网关的，
@@ -1283,13 +1301,13 @@ function AppBody() {
       { id: 'default', label: tr("默认目录"), hint: tr("用网关自己的默认工作目录") },
       { id: 'create-mobile', label: tr("新建 mobile 工作区"), hint: tr("在宿主 home 下建 mobile 目录并注册") },
     ];
-  }, [workspaceFrame]);
+  }, [lang, workspaceFrame]);
 
   const workspaceLabel = useMemo(() => {
     if (!currentWorkspaceId) return tr("默认目录");
     const found = workspaceFrame?.items.find((item) => item.workspaceId === currentWorkspaceId);
     return found?.title ?? tr("默认目录");
-  }, [currentWorkspaceId, workspaceFrame]);
+  }, [currentWorkspaceId, lang, workspaceFrame]);
 
   /** 拉一层目录；不带 path 就是宿主 home。 */
   const openDirectory = useCallback(
@@ -1337,7 +1355,8 @@ function AppBody() {
       { id: 'default', label: tr("新建会话"), hint: tr("用网关的默认工作目录") },
       { id: 'pick', label: tr("选择目录…"), hint: tr("指定一个项目目录再开始") },
     ],
-    [],
+    // tr() 结果随语言变化；空依赖会让这两条文案停在打开 App 时的语言。
+    [lang],
   );
 
   const runCreateAction = useCallback(
@@ -1380,7 +1399,7 @@ function AppBody() {
       });
     }
     return list;
-  }, [connected, gateways, rendezvousConflicts, saved]);
+  }, [connected, gateways, lang, rendezvousConflicts, saved]);
 
   const handleReconnect = useCallback(() => {
     if (saved) connectWith(saved);
@@ -1495,7 +1514,7 @@ function AppBody() {
         ? { id: 'unarchive', label: tr("取消归档") }
         : { id: 'archive', label: tr("归档"), hint: tr("从列表里收起来，随时可以再显示") },
     ];
-  }, [archived, menuSession]);
+  }, [archived, lang, menuSession]);
 
   const runSessionAction = useCallback(
     (id: string) => {
@@ -1610,16 +1629,16 @@ function AppBody() {
 
         {detail && !connected ? (
           <Pressable
-            onPress={saved && !detail.includes(tr("重新配对")) ? handleReconnect : undefined}
+            onPress={saved && !repairRequired ? handleReconnect : undefined}
             hitSlop={6}
-            accessibilityRole={saved && !detail.includes(tr("重新配对")) ? 'button' : 'text'}
+            accessibilityRole={saved && !repairRequired ? 'button' : 'text'}
             accessibilityHint={
-              saved && !detail.includes(tr("重新配对")) ? tr("点按重新连接网关") : undefined
+              saved && !repairRequired ? tr("点按重新连接网关") : undefined
             }
           >
             <Text style={styles.hint}>
               {detail}
-              {detail.includes(tr("重新配对"))
+              {repairRequired
                 ? tr(" · 点顶部网关名")
                 : saved
                   ? tr(" · 点这里重连")
