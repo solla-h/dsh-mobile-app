@@ -12,6 +12,7 @@ import { tapFeedback } from '../haptics';
 import { useTheme, useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { PluginManager } from './usePluginManager';
+import { tr } from '../../i18n';
 
 /**
  * 配置编辑器：按 namespace.schema 渲染表单。
@@ -65,8 +66,8 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
   // 编辑期间远端改了这个节：提示重读，避免用旧 revision 保存被 CAS 拒掉。
   useEffect(() => {
     if (manager.settingsChanged && manager.settingsChanged.ns === ns) {
-      Alert.alert('远端已更新', '这个配置节刚在别处被修改，已为你重新读取。', [
-        { text: '好', onPress: () => void load() },
+      Alert.alert(tr("远端已更新"), tr("这个配置节刚在别处被修改，已为你重新读取。"), [
+        { text: tr("好"), onPress: () => void load() },
       ]);
       manager.clearSettingsChanged();
     }
@@ -107,7 +108,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
 
   const save = () => {
     if (!namespace || namespace.revision === undefined) {
-      Alert.alert('无法保存', '配置节缺少 revision，无法安全写入。');
+      Alert.alert(tr("无法保存"), tr("配置节缺少 revision，无法安全写入。"));
       return;
     }
     const ops: PluginOp[] = [];
@@ -127,7 +128,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
         case 'number': {
           const num = Number(raw);
           if (Number.isNaN(num)) {
-            Alert.alert('格式错误', `${field.label} 不是数字`);
+            Alert.alert(tr("格式错误"), tr("{0} 不是数字", [field.label]));
             return;
           }
           value = num;
@@ -137,7 +138,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
           try {
             value = raw.trim() === '' ? {} : JSON.parse(raw);
           } catch {
-            Alert.alert('格式错误', `${field.label} 不是合法 JSON`);
+            Alert.alert(tr("格式错误"), tr("{0} 不是合法 JSON", [field.label]));
             return;
           }
           break;
@@ -161,11 +162,11 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
         setSaving(false);
         const message = err instanceof Error ? err.message : String(err);
         if (/revision|conflict|冲突/i.test(message)) {
-          Alert.alert('版本冲突', '配置在别处被修改过，将重新读取最新值。', [
-            { text: '重读', onPress: () => void load() },
+          Alert.alert(tr("版本冲突"), tr("配置在别处被修改过，将重新读取最新值。"), [
+            { text: tr("重读"), onPress: () => void load() },
           ]);
         } else {
-          Alert.alert('保存失败', message);
+          Alert.alert(tr("保存失败"), message);
         }
       });
   };
@@ -176,7 +177,8 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
         <Pressable style={styles.sheet} onPress={() => undefined}>
           <View style={styles.titleRow}>
             <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-              配置 · {ns}
+              
+              {tr("配置 ·")} {ns}
             </Text>
             <Pressable hitSlop={10} onPress={onClose}>
               <Text style={styles.close}>×</Text>
@@ -184,21 +186,21 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
           </View>
 
           {namespace && namespace.revision !== undefined ? (
-            <Text style={styles.revision}>revision {namespace.revision} · 乐观锁保存</Text>
+            <Text style={styles.revision}>revision {namespace.revision}  {tr("· 乐观锁保存")}</Text>
           ) : null}
-          {conflict ? <Text style={styles.conflict}>检测到远端修改，建议关闭后重读再保存。</Text> : null}
+          {conflict ? <Text style={styles.conflict}>{tr("检测到远端修改，建议关闭后重读再保存。")}</Text> : null}
 
           {loading ? (
-            <Text style={styles.loading}>读取中…</Text>
+            <Text style={styles.loading}>{tr("读取中…")}</Text>
           ) : error ? (
             <>
               <Text style={styles.errorText}>{error}</Text>
               <Pressable style={styles.retry} onPress={() => void load()}>
-                <Text style={styles.retryText}>重试</Text>
+                <Text style={styles.retryText}>{tr("重试")}</Text>
               </Pressable>
             </>
           ) : namespace === null || namespace.error ? (
-            <Text style={styles.errorText}>{namespace?.error ?? '配置节不存在'}</Text>
+            <Text style={styles.errorText}>{namespace?.error ?? tr("配置节不存在")}</Text>
           ) : (
             <ScrollView bounces={false} style={styles.formScroll}>
               {fields.map((field) => {
@@ -275,14 +277,14 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
                       </Text>
                       {secret ? (
                         secretSet && !state.cleared ? (
-                          <Text style={styles.secretBadge}>已设置</Text>
+                          <Text style={styles.secretBadge}>{tr("已设置")}</Text>
                         ) : (
-                          <Text style={styles.secretOff}>未设置</Text>
+                          <Text style={styles.secretOff}>{tr("未设置")}</Text>
                         )
                       ) : null}
                       {secret && secretSet && namespace.writable ? (
                         <Pressable hitSlop={6} onPress={() => clearField(field)}>
-                          <Text style={styles.secretClear}>清除</Text>
+                          <Text style={styles.secretClear}>{tr("清除")}</Text>
                         </Pressable>
                       ) : null}
                     </View>
@@ -297,7 +299,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
                         value={displayValue(field)}
                         onChangeText={(text) => setField(field, text)}
                         editable={!namespace.writable ? false : !secret}
-                        placeholder={secret ? '（不回传明文）' : undefined}
+                        placeholder={secret ? tr("（不回传明文）") : undefined}
                         placeholderTextColor={t.text.muted}
                         autoCapitalize="none"
                         autoCorrect={false}
@@ -305,7 +307,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
                       />
                     )}
                     {secret ? null : state.changed ? (
-                      <Text style={styles.changedHint}>已修改 · 保存时提交</Text>
+                      <Text style={styles.changedHint}>{tr("已修改 · 保存时提交")}</Text>
                     ) : null}
                   </View>
                 );
@@ -315,7 +317,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
 
           <View style={styles.footer}>
             <Pressable style={[styles.button, styles.buttonNeutral]} onPress={onClose}>
-              <Text style={styles.buttonText}>取消</Text>
+              <Text style={styles.buttonText}>{tr("取消")}</Text>
             </Pressable>
             <Pressable
               style={[styles.button, styles.buttonPrimary, (!namespace?.writable || saving) && styles.buttonDisabled]}
@@ -323,7 +325,7 @@ export function SettingsEditor({ manager, ns, onClose }: Props) {
               onPress={save}
             >
               <Text style={[styles.buttonText, styles.buttonTextPrimary]}>
-                {saving ? '保存中…' : '保存'}
+                {saving ? tr("保存中…") : tr("保存")}
               </Text>
             </Pressable>
           </View>

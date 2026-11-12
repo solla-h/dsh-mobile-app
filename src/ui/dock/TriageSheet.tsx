@@ -2,6 +2,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { TYPE } from '../../theme/tokens';
 import { MONO, useTheme } from '../theme';
 import { DiffView, type QuoteLine } from '../stream/DiffView';
+import { tr } from '../../i18n';
 
 interface Props {
   visible: boolean;
@@ -84,7 +85,7 @@ export function TriageSheet({
                       },
                     ]}
                   >
-                    {highRisk ? 'HIGH RISK GATE · 方案 B 展开态' : 'FOCUS TRIAGE SHEET · 方案 B 展开态'}
+                    {tr("审批详情")}
                   </Text>
                 </View>
               </View>
@@ -97,21 +98,21 @@ export function TriageSheet({
               onPress={onClose}
               style={[styles.closeBtn, { backgroundColor: t.bg.surface, borderColor: t.border.default }]}
             >
-              <Text style={[styles.close, { color: t.text.secondary }]}>收起回底栏 ⌄</Text>
+              <Text style={[styles.close, { color: t.text.secondary }]}>{tr("收起回底栏 ⌄")}</Text>
             </Pressable>
           </View>
 
           <ScrollView style={styles.body} contentContainerStyle={styles.bodyInner}>
-            <Section index="01" title="为什么改 (R1 推理结论)" palette={t}>
+            <Section index="01" title={tr("为什么改 (R1 推理结论)")} palette={t}>
               <View style={[styles.cardBox, { backgroundColor: t.bg.subtle, borderColor: t.border.subtle }]}>
                 <Text style={[styles.reason, { color: t.text.primary }]}>
-                  {reason?.trim() || '定位到当前模块需要应用此变更以推进后续验证流程。'}
+                  {reason?.trim() || tr("定位到当前模块需要应用此变更以推进后续验证流程。")}
                 </Text>
               </View>
             </Section>
 
             {diff ? (
-              <Section index="02" title="改哪里 (点击任意代码行可引用微调)" palette={t}>
+              <Section index="02" title={tr("改哪里 (点击任意代码行可引用微调)")} palette={t}>
                 <DiffView
                   source={diff}
                   file={target}
@@ -124,7 +125,7 @@ export function TriageSheet({
               </Section>
             ) : null}
 
-            <Section index="03" title="后续动作 (批准后自动执行)" palette={t}>
+            <Section index="03" title={tr("后续动作（允许后自动执行）")} palette={t}>
               <View style={[styles.cardBox, { backgroundColor: t.bg.subtle, borderColor: t.border.subtle }]}>
                 <Text
                   style={[
@@ -135,8 +136,8 @@ export function TriageSheet({
                   {nextCommand?.trim()
                     ? nextCommand
                     : commandBlocked
-                      ? '命令详情不可用。请到 Web UI 确认这条命令后再批准。'
-                      : '应用该变更并继续执行当前会话中的后续工具队列'}
+                      ? tr("命令详情不可用。请到 Web UI 确认这条命令后再决定。")
+                      : tr("应用该变更并继续执行当前会话中的后续工具队列")}
                 </Text>
               </View>
             </Section>
@@ -153,10 +154,10 @@ export function TriageSheet({
                 ]}
               >
                 <Text style={[styles.trustLabel, { color: t.text.primary }]} numberOfLines={1}>
-                  {'本会话内自动放行同类目录 (' + dir + '/*)'}
+                  {tr("本会话内自动允许同类目录 (") + dir + '/*)'}
                 </Text>
                 <Text style={[styles.trustCheck, { color: t.text.primary }]}>
-                  {trusted ? '✓ 已开启' : '开启'}
+                  {trusted ? tr("✓ 已开启") : tr("开启")}
                 </Text>
               </Pressable>
             ) : null}
@@ -178,7 +179,7 @@ export function TriageSheet({
               onPress={onReject}
               disabled={busy}
             >
-              <Text style={[styles.bigText, { color: t.text.primary }]}>× 拒绝并回滚</Text>
+              <Text style={[styles.bigText, { color: t.text.primary }]}>{tr("× 拒绝")}</Text>
             </Pressable>
             <Pressable
               style={[styles.big, styles.approve, { backgroundColor: t.action.primaryBg }]}
@@ -186,7 +187,7 @@ export function TriageSheet({
               disabled={busy || commandBlocked}
             >
               <Text style={[styles.bigText, { color: t.action.primaryText }]}>
-                {commandBlocked ? '命令不可见 · 无法批准' : busy ? '处理中…' : '✓ 批准并继续队列'}
+                {commandBlocked ? tr("命令不可见 · 无法决定") : busy ? tr("处理中…") : tr("✓ 允许一次")}
               </Text>
             </Pressable>
           </View>

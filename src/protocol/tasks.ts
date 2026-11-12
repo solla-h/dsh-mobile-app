@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * 任务列表（todos）与当前目标（goal）两个 session projection。
  * 契约见 PROTOCOL.md「任务列表与目标」。
@@ -83,14 +84,14 @@ export function goalRef(goal: GoalInfo): GoalRef {
 export function describePhase(phase?: string): string {
   switch (phase) {
     case 'active':
-      return '进行中';
+      return tr("进行中");
     case 'paused':
-      return '已暂停';
+      return tr("已暂停");
     case 'blocked':
-      return '受阻';
+      return tr("受阻");
     case 'done':
     case 'completed':
-      return '已完成';
+      return tr("已完成");
     default:
       return phase ?? '';
   }

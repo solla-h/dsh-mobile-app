@@ -19,6 +19,7 @@ import {
   conversationClient,
   resetHarness,
   sessionFixture,
+  setAppLanguage,
   setTransportScript,
   TEST_GATEWAY_ID,
   TEST_SESSION_ID,
@@ -42,6 +43,7 @@ const SAVED_GATEWAY = {
 
 beforeEach(async () => {
   resetHarness();
+  await setAppLanguage('zh');
   // 真实 storage 逻辑：配对记录进 SecureStore、会话列表进 dsh-state 缓存文件。
   await upsertGateway(SAVED_GATEWAY);
   await writeJson(`sessions-${TEST_GATEWAY_ID}`, [sessionFixture()]);

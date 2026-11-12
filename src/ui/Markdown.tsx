@@ -16,6 +16,7 @@ import MarkdownIt from 'markdown-it';
 
 import { hrefToPath, isLocalFileHref } from '../protocol/files';
 import { DiffView, type QuoteLine } from './stream/DiffView';
+import { tr } from '../i18n';
 
 /**
  * 只依赖 markdown-it 的 token 流，自己映射到 RN 组件。
@@ -420,7 +421,7 @@ function renderInline(
       case 'image':
         nodes.push(
           <Text key={keyBase + '-img' + index++} style={styles.link}>
-            {'[图片] ' + (token.content || '')}
+            {tr("[图片] ") + (token.content || '')}
           </Text>,
         );
         break;
@@ -583,14 +584,14 @@ function CodeBlock({
   return (
     <View style={styles.codeBlock}>
       <View style={styles.codeHeader}>
-        <Text style={styles.codeLang}>{lang || 'code'} · 点按行可引用</Text>
+        <Text style={styles.codeLang}>{lang || 'code'}  {tr("· 点按行可引用")}</Text>
         <View style={styles.codeActions}>
           <Pressable hitSlop={8} onPress={() => setWrap((v) => !v)}>
-            <Text style={styles.copy}>{wrap ? '自动折行' : '横向滚动'}</Text>
+            <Text style={styles.copy}>{wrap ? tr("自动折行") : tr("横向滚动")}</Text>
           </Pressable>
           {onQuote ? (
             <Pressable hitSlop={8} onPress={() => onQuote(lang, code)}>
-              <Text style={styles.copy}>整块引用</Text>
+              <Text style={styles.copy}>{tr("整块引用")}</Text>
             </Pressable>
           ) : null}
           <Pressable
@@ -601,7 +602,7 @@ function CodeBlock({
               setTimeout(() => setCopied(false), 1500);
             }}
           >
-            <Text style={styles.copy}>{copied ? '已复制' : '复制'}</Text>
+            <Text style={styles.copy}>{copied ? tr("已复制") : tr("复制")}</Text>
           </Pressable>
         </View>
       </View>

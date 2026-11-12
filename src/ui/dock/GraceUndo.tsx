@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MOTION, TYPE } from '../../theme/tokens';
 import { MONO, useTheme } from '../theme';
+import { tr } from '../../i18n';
 
 interface Props {
   /** 已经落地的动作，比如「已批准」「已拦截」 */
@@ -12,7 +13,7 @@ interface Props {
 
 /**
  * 4.5 秒静默悔棋胶囊：
- * 拍板后不弹确认框，浮现一枚静默胶囊「已批准 · [撤回拍板 (4.5s)]」。
+ * 拍板后不弹确认框，浮现一枚静默胶囊「已批准 · [撤回决定 (4.5s)]」。
  * 倒计时归零才真正把决定发给网关，撤回就是取消这次发送。
  * 它只是延迟发送，不是文件系统快照；不要承诺可以回滚已经执行的命令。
  */
@@ -60,7 +61,8 @@ export function GraceUndo({ label, onUndo, onExpire }: Props) {
           }}
         >
           <Text style={[styles.action, { color: t.action.primaryText }]}>
-            撤回拍板 ({(left / 1000).toFixed(1)}s)
+            
+            {tr("撤回决定 (")}{(left / 1000).toFixed(1)}s)
           </Text>
         </Pressable>
       </View>

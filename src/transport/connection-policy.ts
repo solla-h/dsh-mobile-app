@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * 连接状态机的纯策略：常量、退避和关闭码分类。
  *
@@ -28,6 +29,14 @@ export interface CloseDecision {
   stop: boolean;
   /** 关闭后是否应该走重连阶梯 */
   reconnect: boolean;
+  /**
+   * 结构化分类。上层靠它决定 UI 姿态，不要改回去匹配 message 文案：
+   * 文案会随界面语言翻译，控制流不能跟着变。
+   * - shutdown：网关自己关掉了，连接本身是干净的，界面显示「已断开」
+   * - reauth：凭据不可恢复，必须回配对页
+   * - transient：网络抖动，会自动重连
+   */
+  kind: 'shutdown' | 'reauth' | 'transient';
   message: string;
 }
 
@@ -63,14 +72,14 @@ export interface PairingFailureDecision {
 export function classifyPairingFailure(input: PairingFailureInput): PairingFailureDecision {
   if (input.closeCode === 4004) {
     return {
-      message: '网关已关闭，请先在服务器上启用移动网关',
+      message: tr("网关已关闭，请先在服务器上启用移动网关"),
       retryable: false,
       regenerate: false,
     };
   }
   if (input.closeCode === 4003) {
     return {
-      message: '网关要求重新鉴权，请重新配对：在服务器上重新生成配对码',
+      message: tr("网关要求重新鉴权，请重新配对：在服务器上重新生成配对码"),
       retryable: false,
       regenerate: true,
     };
@@ -78,7 +87,7 @@ export function classifyPairingFailure(input: PairingFailureInput): PairingFailu
   if (input.opened) {
     return {
       message:
-        '连接已建立但配对未完成：配对码可能已被使用或过期。请在服务器上重新生成配对码后重新配对。',
+        tr("连接已建立但配对未完成：配对码可能已被使用或过期。请在服务器上重新生成配对码后重新配对。"),
       retryable: false,
       regenerate: true,
     };
@@ -86,7 +95,7 @@ export function classifyPairingFailure(input: PairingFailureInput): PairingFailu
   if (input.preflight === 'failed') {
     return {
       message:
-        '连不上网关：手机网络或代理阻断了连接。请关闭 VPN/代理后重试；仍失败请检查 Wi-Fi/蜂窝网络。',
+        tr("连不上网关：手机网络或代理阻断了连接。请关闭 VPN/代理后重试；仍失败请检查 Wi-Fi/蜂窝网络。"),
       retryable: true,
       regenerate: false,
     };
@@ -94,14 +103,14 @@ export function classifyPairingFailure(input: PairingFailureInput): PairingFailu
   if (input.preflight === 'timeout' || input.timedOut) {
     return {
       message:
-        '连接网关超时：请检查手机网络/VPN/代理后重试；配对码可能仍在有效期内。',
+        tr("连接网关超时：请检查手机网络/VPN/代理后重试；配对码可能仍在有效期内。"),
       retryable: true,
       regenerate: false,
     };
   }
   return {
     message:
-      '网关拒绝或未能完成连接：配对码可能已失效，也可能是代理拦截了 WebSocket。请先关闭代理重试；仍失败就在服务器上重新生成配对码。',
+      tr("网关拒绝或未能完成连接：配对码可能已失效，也可能是代理拦截了 WebSocket。请先关闭代理重试；仍失败就在服务器上重新生成配对码。"),
     retryable: true,
     regenerate: false,
   };
@@ -115,24 +124,36 @@ export function classifyPairingFailure(input: PairingFailureInput): PairingFailu
  */
 export function classifyClose(code?: number, reason?: string): CloseDecision {
   if (code === 4004) {
-    return { stop: true, reconnect: false, message: '网关已关闭' };
+    return {
+      stop: true,
+      reconnect: false,
+      kind: 'shutdown',
+      message: tr("网关已关闭"),
+    };
   }
   if (code === 4003) {
     return {
       stop: true,
       reconnect: false,
+      kind: 'reauth',
       message:
         reason === 'device revoked'
-          ? '设备授权已被撤销，请重新配对'
-          : '网关重新启用了鉴权，请重新配对',
+          ? tr("设备授权已被撤销，请重新配对")
+          : tr("网关重新启用了鉴权，请重新配对"),
     };
   }
   if (code === 1006 || code === 1001) {
-    return { stop: false, reconnect: true, message: '连接中断，正在重连' };
+    return {
+      stop: false,
+      reconnect: true,
+      kind: 'transient',
+      message: tr("连接中断，正在重连"),
+    };
   }
   return {
     stop: false,
     reconnect: true,
-    message: reason || `连接关闭（${code ?? '未知'}）`,
+    kind: 'transient',
+    message: reason || tr("连接关闭（{0}）", [code ?? tr("未知")]),
   };
 }

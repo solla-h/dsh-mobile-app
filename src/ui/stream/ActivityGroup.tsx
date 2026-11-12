@@ -6,6 +6,7 @@ import { useTheme } from '../theme';
 import { ThinkPill } from './ThinkPill';
 import { ToolGroup } from './ToolGroup';
 import { activitySummary, type ActivityStep } from './group';
+import { tr } from '../../i18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -60,7 +61,7 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
         onPress={toggle}
         hitSlop={4}
         accessibilityRole="button"
-        accessibilityLabel={open ? '收起思考与工具调用' : '展开思考与工具调用'}
+        accessibilityLabel={open ? tr("收起思考与工具调用") : tr("展开思考与工具调用")}
       >
         <Text style={[styles.sparkle, { color: t.text.muted }]}>✦</Text>
         {failed > 0 ? (
@@ -70,7 +71,7 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
           {label}
         </Text>
         <View style={styles.tail}>
-          <Text style={[styles.meta, { color: t.text.muted }]}>{open ? '收起' : '展开'}</Text>
+          <Text style={[styles.meta, { color: t.text.muted }]}>{open ? tr("收起") : tr("展开")}</Text>
           <Text style={[styles.chevron, { color: t.text.muted }]}>{open ? '⌃' : '⌄'}</Text>
         </View>
       </Pressable>

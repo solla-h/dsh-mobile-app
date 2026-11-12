@@ -22,6 +22,7 @@ import {
   type VersionExemption,
 } from '../../protocol/plugins';
 import type { GatewayClient } from '../../transport/gateway-client';
+import { tr } from '../../i18n';
 
 /**
  * 插件管理的请求-响应关联与推送处理。
@@ -106,7 +107,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
           reject,
           timer: setTimeout(() => {
             pendingRef.current.delete(requestId);
-            reject(new Error(type + ' 超时'));
+            reject(new Error(type + tr(" 超时")));
           }, timeoutMs),
         };
         pendingRef.current.set(requestId, entry);
@@ -114,7 +115,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
         if (!sent) {
           clearTimeout(entry.timer);
           pendingRef.current.delete(requestId);
-          reject(new Error('网关未连接'));
+          reject(new Error(tr("网关未连接")));
         }
       }),
     [control],
@@ -126,7 +127,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
     try {
       const frame = await request('plugin-catalog');
       const mapped = mapCatalog(frame);
-      if (!mapped) throw new Error('目录响应格式异常');
+      if (!mapped) throw new Error(tr("目录响应格式异常"));
       setCatalog(mapped);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -214,7 +215,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
   const wrapResult = useCallback(
     (frame: ResponseFrame): ChangeResult => {
       const mapped = mapChangeResult({ result: resultOf(frame) });
-      if (!mapped) throw new Error('响应缺少 result');
+      if (!mapped) throw new Error(tr("响应缺少 result"));
       return mapped;
     },
     [],
@@ -240,7 +241,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
   const registries = useCallback(async () => {
     const frame = await request('plugin-registries');
     const mapped = mapRegistries(frame);
-    if (!mapped) throw new Error('registry 响应格式异常');
+    if (!mapped) throw new Error(tr("registry 响应格式异常"));
     return mapped;
   }, [request]);
 
@@ -249,7 +250,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
       const params = registry === undefined ? { spec } : { spec, registry };
       const frame = await request('plugin-inspect', params, WRITE_TIMEOUT_MS);
       const mapped = mapInspection(frame);
-      if (!mapped) throw new Error('检查响应格式异常');
+      if (!mapped) throw new Error(tr("检查响应格式异常"));
       return mapped;
     },
     [request],
@@ -295,7 +296,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
     async (ns?: string) => {
       const frame = ns === undefined ? await request('plugin-settings') : await request('plugin-settings', { ns });
       const mapped = mapSettings(frame, ns);
-      if (!mapped) throw new Error('配置响应格式异常');
+      if (!mapped) throw new Error(tr("配置响应格式异常"));
       return mapped.namespaces;
     },
     [request],
@@ -309,7 +310,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
         WRITE_TIMEOUT_MS,
       );
       const mapped = mapSettings(frame, ns);
-      if (!mapped || mapped.namespaces.length === 0) throw new Error('保存响应格式异常');
+      if (!mapped || mapped.namespaces.length === 0) throw new Error(tr("保存响应格式异常"));
       setSettingsChanged(null);
       return mapped.namespaces;
     },
@@ -319,7 +320,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
   const exemptions = useCallback(async () => {
     const frame = await request('plugin-version-exemptions');
     const mapped = mapExemptions(frame);
-    if (!mapped) throw new Error('豁免响应格式异常');
+    if (!mapped) throw new Error(tr("豁免响应格式异常"));
     return mapped.exemptions;
   }, [request]);
 

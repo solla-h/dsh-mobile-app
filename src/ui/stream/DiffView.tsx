@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { TYPE } from '../../theme/tokens';
 import { tapFeedback } from '../haptics';
 import { MONO, useTheme } from '../theme';
+import { tr } from '../../i18n';
 
 export type DiffKind = 'add' | 'del' | 'ctx' | 'hunk' | 'meta';
 
@@ -89,7 +90,7 @@ export function DiffView({ source, file, limit = 120, onQuote }: Props) {
     <View style={[styles.card, { backgroundColor: t.bg.surface, borderColor: t.border.default }]}>
       <View style={[styles.head, { borderBottomColor: t.border.subtle }]}>
         <Text style={[styles.file, { color: t.text.primary }]} numberOfLines={1}>
-          {name ?? '补丁预览'}
+          {name ?? tr("补丁预览")}
         </Text>
         {additions > 0 || deletions > 0 ? (
           <Text style={[styles.stats, { color: t.text.muted }]}>
@@ -98,14 +99,15 @@ export function DiffView({ source, file, limit = 120, onQuote }: Props) {
         ) : null}
         <Pressable hitSlop={8} onPress={() => setWrap((value) => !value)}>
           <Text style={[styles.toggle, { color: t.text.secondary }]}>
-            {wrap ? '自动折行' : '横向滚动'}
+            {wrap ? tr("自动折行") : tr("横向滚动")}
           </Text>
         </Pressable>
       </View>
       {onQuote ? (
         <View style={[styles.hintRow, { borderBottomColor: t.border.subtle }]}>
           <Text style={[styles.hintText, { color: t.text.muted }]}>
-            点按任意代码行可直接引用到输入框追问
+            
+            {tr("点按任意代码行可直接引用到输入框追问")}
           </Text>
         </View>
       ) : null}
@@ -157,7 +159,7 @@ export function DiffView({ source, file, limit = 120, onQuote }: Props) {
           onPress={() => setExpanded((value) => !value)}
         >
           <Text style={[styles.toggle, { color: t.text.secondary }]}>
-            {expanded ? '收起' : `展开剩余 ${lines.length - limit} 行`}
+            {expanded ? tr("收起") : tr("展开剩余 {0} 行", [lines.length - limit])}
           </Text>
         </Pressable>
       ) : null}

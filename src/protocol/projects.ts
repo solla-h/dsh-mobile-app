@@ -14,6 +14,7 @@
  */
 
 import type { SessionItem, WorkspacesFrame } from './types';
+import { tr } from '../i18n';
 
 export interface ProjectSession {
   sessionId: string;
@@ -114,7 +115,7 @@ export function deriveProjects(
     if (members.length === 0) continue;
     workspaceGroups.push({
       id: `workspace:${workspace.workspaceId}`,
-      title: workspace.title?.trim() || basename(workspace.path ?? '') || '未命名工作区',
+      title: workspace.title?.trim() || basename(workspace.path ?? '') || tr("未命名工作区"),
       source: 'workspace',
       path: workspace.path,
       updatedAt: newest(members),

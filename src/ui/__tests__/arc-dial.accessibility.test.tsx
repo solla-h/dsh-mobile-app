@@ -7,6 +7,8 @@ jest.mock('../haptics', () => ({ tapFeedback: jest.fn(), tickFeedback: jest.fn()
 
 afterEach(() => jest.restoreAllMocks());
 
+// 这个旅程要在 RNTL 里反复挂载 ArcDial 并走完整套 PanResponder 回调，
+// 单独跑约 3s；并行跑全套 suite 时偶发超过 Jest 默认的 5s 超时。
 it('resets a cancelled dial preview when an accessibility action stays at the first session', async () => {
   const centerY = Dimensions.get('window').height * 0.48;
   const gesture: PanResponderGestureState = {
@@ -48,4 +50,4 @@ it('resets a cancelled dial preview when an accessibility action stays at the fi
   await act(() => captured.strip!.onPanResponderMove!(event, moved));
   await act(() => captured.strip!.onPanResponderRelease!(event, moved));
   expect(selected).not.toHaveBeenCalled();
-});
+}, 15000);

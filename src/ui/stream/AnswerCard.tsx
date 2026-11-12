@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { TYPE } from '../../theme/tokens';
 import { MONO, useTheme } from '../theme';
+import { tr } from '../../i18n';
 
 interface Props {
   children: ReactNode;
@@ -28,7 +29,8 @@ export function AnswerCard({ children, failed, showHeader = true }: Props) {
       {showHeader ? (
         <View style={[styles.header, { borderBottomColor: t.border.subtle }]}>
           <Text style={[styles.kicker, { color: t.text.secondary }]}>
-            DEEPSEEK 正式回答 · FORMAL RESPONSE
+            
+            {tr("DEEPSEEK 正式回答 · FORMAL RESPONSE")}
           </Text>
           <View
             style={[
@@ -36,7 +38,7 @@ export function AnswerCard({ children, failed, showHeader = true }: Props) {
               { backgroundColor: t.bg.subtle, borderColor: t.border.subtle },
             ]}
           >
-            <Text style={[styles.badgeText, { color: t.text.muted }]}>主视窗聚焦</Text>
+            <Text style={[styles.badgeText, { color: t.text.muted }]}>{tr("主视窗聚焦")}</Text>
           </View>
         </View>
       ) : null}

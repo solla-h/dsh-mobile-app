@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /** 会话的 agent 预设（模式）。只有空白会话能改，开跑之后就锁死。 */
 
 export interface AgentPreset {
@@ -35,7 +36,7 @@ export function mapPresetList(raw: unknown): PresetList {
 }
 
 export function presetName(presets: AgentPreset[], id: string | null | undefined): string {
-  if (!id) return '默认模式';
+  if (!id) return tr("默认模式");
   const found = presets.find((item) => item.id === id);
   return found?.name || found?.id || id;
 }

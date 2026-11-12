@@ -207,6 +207,17 @@ Two cautions:
 - Installing a plugin may require approving native builds for that specific package. Read the package names
   before approving; do not approve builds you do not recognize.
 
+### 3.5 Language
+
+The app ships a Chinese and an English interface. Open the host info sheet from the home screen — the device /
+protocol row on the **All sessions** tab — then go to **Appearance → Language** and choose 中文 or **English**.
+The sheet is reachable even while offline.
+
+With no explicit preference, the app follows the system locale: a non-Chinese locale falls back to English. The
+preference is saved in `app-settings` alongside the font-scale setting, so both coexist. Only the app's own
+interface strings are localized; gateway data such as session titles, history text, and tool names stays
+untranslated.
+
 ## 4. Working in a session
 
 ### 4.1 Streaming and trajectory
@@ -279,7 +290,7 @@ conversation and count toward the Focus badge.
 An approval card shows what is being requested: the command or tool, the target file, a diff when available,
 the reason, and a risk label. Read the actual command, not just the summary.
 
-- **Allow** / **Deny** sends your decision to the gateway.
+- **Allow once** / **Reject** sends your decision to the gateway.
 - High-risk approvals replace the quick allow button with a **hold for about half a second** button. The fill
   and vibration confirm the hold.
 - After you decide, a small undo pill appears for a few seconds. The decision is sent when the countdown ends;

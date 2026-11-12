@@ -17,6 +17,7 @@ import {
   pairingPayloadText,
   resetHarness,
   scriptGateway,
+  setAppLanguage,
   sessionFixture,
   setTransportScript,
   TEST_SESSION_ID,
@@ -30,8 +31,9 @@ jest.mock('../../transport/gateway-client', () => ({
 }));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 
-beforeEach(() => {
+beforeEach(async () => {
   resetHarness();
+  await setAppLanguage('zh');
 });
 
 describe('配对 → 全部会话 → 发送', () => {

@@ -4,6 +4,7 @@ import { randomUUID } from 'expo-crypto';
 import { useCallback, useMemo } from 'react';
 
 import { clampWav } from '../../protocol/speech';
+import { tr } from '../../i18n';
 
 /**
  * 按住说话用的录音器。
@@ -36,7 +37,7 @@ export function useVoiceCapture(): VoiceCapture {
 
   const start = useCallback(async () => {
     const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) throw new Error('没有麦克风权限');
+    if (!permission.granted) throw new Error(tr("没有麦克风权限"));
     await stream.start();
     try {
       // 必须在 start() 之后才能开文件录制。
@@ -61,7 +62,7 @@ export function useVoiceCapture(): VoiceCapture {
     // 服务端按 16k 解读就是三倍速，转写结果一定是乱的。
     if (result.sampleRate !== 16000 || result.channels !== 1 || result.encoding !== 'int16') {
       throw new Error(
-        `录音格式不对：${result.sampleRate}Hz / ${result.channels} 声道 / ${result.encoding}`,
+        tr("录音格式不对：{0}Hz / {1} 声道 / {2}", [result.sampleRate, result.channels, result.encoding]),
       );
     }
     let duration = result.duration;

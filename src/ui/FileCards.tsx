@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { baseName, fileKindLabel, type PresentedFile } from '../protocol/files';
 import { useTheme, useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 export interface FileUiState {
   status: 'resolving' | 'downloading' | 'ready' | 'error';
@@ -63,15 +64,15 @@ export function FileCards({
                   <ActivityIndicator size="small" color={t.text.muted} />
                   <Text style={styles.trailingText}>
                     {status === 'resolving'
-                      ? '解析中'
+                      ? tr("解析中")
                       : state?.progress !== undefined
                         ? Math.round(state.progress * 100) + '%'
-                        : '下载中'}
+                        : tr("下载中")}
                   </Text>
                 </>
               ) : (
                 <Text style={[styles.trailingText, status === 'error' ? styles.retry : null]}>
-                  {status === 'ready' ? '打开' : status === 'error' ? '重试' : '下载'}
+                  {status === 'ready' ? tr("打开") : status === 'error' ? tr("重试") : tr("下载")}
                 </Text>
               )}
             </View>

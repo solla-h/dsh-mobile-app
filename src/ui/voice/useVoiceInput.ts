@@ -12,6 +12,7 @@ import {
 import type { GatewayClient } from '../../transport/gateway-client';
 import { tickFeedback } from '../haptics';
 import { useVoiceCapture, type VoiceClip } from './useVoiceCapture';
+import { tr } from '../../i18n';
 
 /**
  * 按住说话的整条状态机：首页语音球（App + PetStage）与会话页麦克风共用这一份，
@@ -143,14 +144,14 @@ export function useVoiceInput({ client, catalog, onNotice, onTranscript }: Optio
           // 真被卡顿拖过头时由 stop 就地截断，别让整段录音白丢。
           clip = await capture.stop(recordLimitSeconds(apiRef.current.catalog));
         } catch (failure) {
-          apiRef.current.onNotice(failure instanceof Error ? failure.message : '读不到这段录音');
+          apiRef.current.onNotice(failure instanceof Error ? failure.message : tr("读不到这段录音"));
           return;
         }
         if (!clip) return;
         // 收尾这段窗口里被取消了（上滑、切页）：这一段整段作废。
         if (utterance !== utteranceRef.current) return;
         if (clip.duration < MIN_CLIP_SECONDS) {
-          apiRef.current.onNotice('太短啦，按住多说一会儿');
+          apiRef.current.onNotice(tr("太短啦，按住多说一会儿"));
           return;
         }
 
@@ -167,7 +168,7 @@ export function useVoiceInput({ client, catalog, onNotice, onTranscript }: Optio
           audioBase64: clip.base64,
         });
         if (!sent) {
-          settle('连接已断开，录音没发出去');
+          settle(tr("连接已断开，录音没发出去"));
         }
       } finally {
         finishingRef.current = false;
@@ -201,7 +202,7 @@ export function useVoiceInput({ client, catalog, onNotice, onTranscript }: Optio
         await capture.start();
       } catch (failure) {
         pressedRef.current = false;
-        apiRef.current.onNotice(failure instanceof Error ? failure.message : '没法开始录音');
+        apiRef.current.onNotice(failure instanceof Error ? failure.message : tr("没法开始录音"));
         return;
       }
       if (!pressedRef.current) {
@@ -262,7 +263,7 @@ export function useVoiceInput({ client, catalog, onNotice, onTranscript }: Optio
   const cancelTranscription = useCallback(() => {
     if (!requestIdRef.current) return;
     abortUtterance();
-    apiRef.current.onNotice('已取消转写');
+    apiRef.current.onNotice(tr("已取消转写"));
   }, [abortUtterance]);
 
   const handleTranscript = useCallback(
@@ -273,7 +274,7 @@ export function useVoiceInput({ client, catalog, onNotice, onTranscript }: Optio
       settle();
       const text = transcriptText(frame) ?? '';
       if (!text) {
-        apiRef.current.onNotice('没听清，再说一次试试');
+        apiRef.current.onNotice(tr("没听清，再说一次试试"));
         return;
       }
       apiRef.current.onTranscript(text, reason);
@@ -314,7 +315,7 @@ export function useVoiceInput({ client, catalog, onNotice, onTranscript }: Optio
     () =>
       client.onState((state) => {
         if (state !== 'ready' && transcribingRef.current) {
-          settle('连接断了，转写没完成，重连后再试');
+          settle(tr("连接断了，转写没完成，重连后再试"));
         }
       }),
     [client, settle],

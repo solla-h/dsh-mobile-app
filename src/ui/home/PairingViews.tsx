@@ -11,6 +11,7 @@ import {
 import type { Palette } from '../../theme/tokens';
 import { useTheme, useThemedStyles } from '../theme';
 import { makeModalStyles } from './appStyles';
+import { tr } from '../../i18n';
 
 interface PairingCardProps {
   pairingText: string;
@@ -37,14 +38,15 @@ export function PairingCard({
 
   return (
     <View style={styles.pairCard}>
-      <Text style={styles.sectionTitle}>配对</Text>
+      <Text style={styles.sectionTitle}>{tr("配对")}</Text>
       <Text style={styles.pairHint}>
-        在服务器上运行 dsh-pair，扫描它打印的二维码。配对码 5 分钟内有效。
+        
+        {tr("在服务器上运行 dsh-pair，扫描它打印的二维码。配对码 5 分钟内有效。")}
       </Text>
       <Pressable
         testID="pairing-scan"
         accessibilityRole="button"
-        accessibilityLabel="扫码配对"
+        accessibilityLabel={tr("扫码配对")}
         style={[styles.primaryButton, busy && styles.buttonDisabled]}
         disabled={busy}
         onPress={onScan}
@@ -53,28 +55,28 @@ export function PairingCard({
         {busy ? (
           <ActivityIndicator color={t.bg.canvas} />
         ) : (
-          <Text style={styles.primaryText}>扫码配对</Text>
+          <Text style={styles.primaryText}>{tr("扫码配对")}</Text>
         )}
       </Pressable>
 
       <Pressable
         testID="pairing-manual-toggle"
         accessibilityRole="button"
-        accessibilityLabel={manual ? '收起手动输入' : '手动粘贴配对串'}
+        accessibilityLabel={manual ? tr("收起手动输入") : tr("手动粘贴配对串")}
         style={styles.linkButton}
         onPress={onToggleManual}
       >
-        <Text style={styles.linkText}>{manual ? '收起手动输入' : '手动粘贴配对串'}</Text>
+        <Text style={styles.linkText}>{manual ? tr("收起手动输入") : tr("手动粘贴配对串")}</Text>
       </Pressable>
 
       {manual ? (
         <View>
           <TextInput
             testID="pairing-payload"
-            accessibilityLabel="配对内容"
+            accessibilityLabel={tr("配对内容")}
             style={styles.input}
             multiline
-            placeholder="粘贴配对内容（Base64URL）"
+            placeholder={tr("粘贴配对内容（Base64URL）")}
             placeholderTextColor={t.text.muted}
             value={pairingText}
             onChangeText={onChangePairingText}
@@ -84,13 +86,13 @@ export function PairingCard({
           <Pressable
             testID="pairing-connect"
             accessibilityRole="button"
-            accessibilityLabel="配对并连接"
+            accessibilityLabel={tr("配对并连接")}
             style={[styles.primaryButton, !pairingText.trim() && styles.buttonDisabled]}
             disabled={!pairingText.trim() || busy}
             onPress={onPair}
             accessibilityState={{ disabled: !pairingText.trim() || busy }}
           >
-            <Text style={styles.primaryText}>配对并连接</Text>
+            <Text style={styles.primaryText}>{tr("配对并连接")}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -132,15 +134,16 @@ export function AddGatewayModal({
       <Pressable style={styles.modalBackdrop} onPress={onClose} accessible={false}>
         <Pressable style={styles.modalCard} onPress={() => undefined} accessibilityViewIsModal>
           <Text style={styles.modalTitle} accessibilityRole="header">
-            添加网关
+            
+            {tr("添加网关")}
           </Text>
-          <Text style={styles.modalHint}>在服务器上运行 dsh-pair，扫码或粘贴它输出的配对串。</Text>
+          <Text style={styles.modalHint}>{tr("在服务器上运行 dsh-pair，扫码或粘贴它输出的配对串。")}</Text>
           <TextInput
             testID="add-gateway-payload"
-            accessibilityLabel="配对内容"
+            accessibilityLabel={tr("配对内容")}
             style={[styles.modalInput, styles.modalInputTall]}
             multiline
-            placeholder="粘贴配对内容（Base64URL）"
+            placeholder={tr("粘贴配对内容（Base64URL）")}
             placeholderTextColor={t.text.muted}
             value={pairingText}
             onChangeText={onChangePairingText}
@@ -151,16 +154,16 @@ export function AddGatewayModal({
             <Pressable
               testID="add-gateway-scan"
               accessibilityRole="button"
-              accessibilityLabel="扫码添加网关"
+              accessibilityLabel={tr("扫码添加网关")}
               style={styles.modalAction}
               onPress={onScan}
             >
-              <Text style={styles.modalActionText}>扫码</Text>
+              <Text style={styles.modalActionText}>{tr("扫码")}</Text>
             </Pressable>
             <Pressable
               testID="add-gateway-connect"
               accessibilityRole="button"
-              accessibilityLabel="配对并连接"
+              accessibilityLabel={tr("配对并连接")}
               style={styles.modalAction}
               disabled={!pairingText.trim() || busy}
               onPress={onPair}
@@ -172,7 +175,8 @@ export function AddGatewayModal({
                   !pairingText.trim() || busy ? styles.modalDisabled : null,
                 ]}
               >
-                配对并连接
+                
+                {tr("配对并连接")}
               </Text>
             </Pressable>
           </View>

@@ -3,6 +3,7 @@ import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native
 import type { TurnOutlineItem } from '../protocol/outline';
 import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 interface Props {
   visible: boolean;
@@ -20,13 +21,13 @@ export function OutlineSheet({ visible, items, onPick, onClose }: Props) {
         <Pressable style={styles.sheet} onPress={() => undefined}>
           <View style={styles.grabber} />
           <View style={styles.head}>
-            <Text style={styles.title}>轮次 · {items.length}</Text>
+            <Text style={styles.title}>{tr("轮次 ·")} {items.length}</Text>
             <Pressable hitSlop={10} style={styles.close} onPress={onClose}>
-              <Text style={styles.closeText}>关闭</Text>
+              <Text style={styles.closeText}>{tr("关闭")}</Text>
             </Pressable>
           </View>
           {items.length === 0 ? (
-            <Text style={styles.empty}>这个会话还没有轮次大纲</Text>
+            <Text style={styles.empty}>{tr("这个会话还没有轮次大纲")}</Text>
           ) : (
             <FlatList
               data={items}
@@ -39,7 +40,7 @@ export function OutlineSheet({ visible, items, onPick, onClose }: Props) {
                   </View>
                   <View style={styles.rowBody}>
                     <Text style={styles.prompt} numberOfLines={2}>
-                      {item.prompt || '（无提示词）'}
+                      {item.prompt || tr("（无提示词）")}
                     </Text>
                     {item.response ? (
                       <Text style={styles.response} numberOfLines={2}>

@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, 
 import type { DirectoryListing } from '../protocol/directories';
 import { useTheme, useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 /**
  * 目录选择器：给「新建会话」指定一个项目目录。
@@ -39,17 +40,18 @@ export function DirectoryPicker({
           <View style={styles.header}>
             <View style={styles.headerText}>
               <Text style={styles.title} accessibilityRole="header">
-                选择目录
+                
+                {tr("选择目录")}
               </Text>
-              <Text style={styles.subtitle}>新会话会在选中的目录里启动</Text>
+              <Text style={styles.subtitle}>{tr("新会话会在选中的目录里启动")}</Text>
             </View>
             <Pressable
               hitSlop={10}
               onPress={onClose}
               accessibilityRole="button"
-              accessibilityLabel="取消选择目录"
+              accessibilityLabel={tr("取消选择目录")}
             >
-              <Text style={styles.close}>取消</Text>
+              <Text style={styles.close}>{tr("取消")}</Text>
             </Pressable>
           </View>
 
@@ -74,7 +76,7 @@ export function DirectoryPicker({
                       onPress={() => onOpen(crumb.path)}
                       disabled={current}
                       accessibilityRole="button"
-                      accessibilityLabel={`进入 ${crumb.name}`}
+                      accessibilityLabel={tr("进入 {0}", [crumb.name])}
                       accessibilityState={{ selected: current, disabled: current }}
                     >
                       <Text
@@ -105,9 +107,9 @@ export function DirectoryPicker({
                 onPress={onRetry}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel="重试读取目录"
+                accessibilityLabel={tr("重试读取目录")}
               >
-                <Text style={styles.retryText}>重试</Text>
+                <Text style={styles.retryText}>{tr("重试")}</Text>
               </Pressable>
             </View>
           ) : (
@@ -116,13 +118,13 @@ export function DirectoryPicker({
               data={listing?.entries ?? []}
               keyExtractor={(item) => item.path}
               keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={<Text style={styles.empty}>这个目录里没有子文件夹</Text>}
+              ListEmptyComponent={<Text style={styles.empty}>{tr("这个目录里没有子文件夹")}</Text>}
               renderItem={({ item }) => (
                 <Pressable
                   style={styles.row}
                   onPress={() => onOpen(item.path)}
                   accessibilityRole="button"
-                  accessibilityLabel={`进入目录 ${item.name}`}
+                  accessibilityLabel={tr("进入目录 {0}", [item.name])}
                 >
                   <Text style={[styles.rowName, item.hidden && styles.rowHidden]} numberOfLines={1}>
                     {item.name}
@@ -135,20 +137,20 @@ export function DirectoryPicker({
 
           <View style={styles.footer}>
             <Text style={styles.path} numberOfLines={1} ellipsizeMode="head">
-              {listing?.path ?? '正在读取…'}
+              {listing?.path ?? tr("正在读取…")}
             </Text>
             <Pressable
               style={[styles.confirm, (!listing || loading || Boolean(error)) && styles.confirmOff]}
               disabled={!listing || loading || Boolean(error)}
               onPress={onConfirm}
               accessibilityRole="button"
-              accessibilityLabel="在这里新建会话"
+              accessibilityLabel={tr("在这里新建会话")}
               accessibilityState={{ disabled: !listing || loading || Boolean(error) }}
             >
               {loading && listing ? (
                 <ActivityIndicator size="small" color={t.bg.canvas} />
               ) : (
-                <Text style={styles.confirmText}>在这里新建会话</Text>
+                <Text style={styles.confirmText}>{tr("在这里新建会话")}</Text>
               )}
             </Pressable>
           </View>

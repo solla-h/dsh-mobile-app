@@ -12,9 +12,11 @@ import {
   backoffDelay,
   classifyClose,
   classifyPairingFailure,
+  type CloseDecision,
   type PairingFailureInput,
   type PairingPreflight,
 } from './connection-policy';
+import { tr } from '../i18n';
 
 export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'closed' | 'error';
 
@@ -37,7 +39,16 @@ export interface ConnectOptions {
 }
 
 type FrameListener = (frame: ServerFrame) => void;
-type StateListener = (state: ConnectionState, detail?: string) => void;
+/**
+ * 第三个参数是关闭原因的机器可读分类（只有 close/pairing 失败时给）。
+ * 界面据此决定「是重连还是必须回配对页」，不要去匹配 detail 文案——
+ * detail 会被翻译成界面语言。
+ */
+type StateListener = (
+  state: ConnectionState,
+  detail?: string,
+  kind?: CloseDecision['kind'],
+) => void;
 
 /**
  * dsh-mobile-v1 的 WebSocket 客户端。
@@ -208,7 +219,7 @@ export class GatewayClient {
         timedOut: false,
         preflight: this.pairingPreflight,
       };
-      this.emitState('error', error instanceof Error ? error.message : '无法建立连接');
+      this.emitState('error', error instanceof Error ? error.message : tr("无法建立连接"));
       this.scheduleReconnect();
       return;
     }
@@ -270,7 +281,7 @@ export class GatewayClient {
 
     socket.onerror = () => {
       if (this.socket !== socket) return;
-      this.emitState('error', '连接出错');
+      this.emitState('error', tr("连接出错"));
     };
 
     socket.onclose = (event: { code?: number; reason?: string }) => {
@@ -297,7 +308,7 @@ export class GatewayClient {
       if (decision.stop) {
         this.stopped = true;
         this.clearTimers();
-        this.emitState(decision.message === '网关已关闭' ? 'closed' : 'error', decision.message);
+        this.emitState(decision.kind === 'shutdown' ? 'closed' : 'error', decision.message, decision.kind);
         return;
       }
       this.emitState('error', decision.message);
@@ -316,7 +327,7 @@ export class GatewayClient {
         timedOut: true,
         preflight: this.pairingPreflight,
       };
-      this.dropSocket('连接超时，正在重连');
+      this.dropSocket(tr("连接超时，正在重连"));
       this.scheduleReconnect();
     }, HANDSHAKE_TIMEOUT_MS);
   }
@@ -334,7 +345,7 @@ export class GatewayClient {
       // （手机代理抖动很常见）；已打开但没完成 hello 才认定码可能失效。
       if (decision.retryable && this.attempt < 1) {
         this.attempt += 1;
-        this.emitState('error', `${decision.message}（正在重试一次）`);
+        this.emitState('error', tr("{0}（正在重试一次）", [decision.message]));
         if (this.reconnectTimer) return;
         this.reconnectTimer = setTimeout(() => {
           this.reconnectTimer = null;
@@ -343,7 +354,8 @@ export class GatewayClient {
         return;
       }
       this.stopped = true;
-      this.emitState('error', decision.message);
+      // 配对失败同样意味着旧 token 不可用，需要重新扫码/粘贴配对串。
+      this.emitState('error', decision.message, 'reauth');
       return;
     }
     this.maybeRefreshUrl();
@@ -396,7 +408,7 @@ export class GatewayClient {
       // 手机切网/进电梯时 TCP 常常半开：socket 还是 OPEN，但再也收不到东西。
       // 网关每 ping 都会回 pong，超过两轮没有任何帧就判定假死，主动断开重连。
       if (this.lastFrameAt && Date.now() - this.lastFrameAt > HEARTBEAT_MS * 2) {
-        this.dropSocket('连接无响应，正在重连');
+        this.dropSocket(tr("连接无响应，正在重连"));
         this.scheduleReconnect();
         return;
       }
@@ -420,12 +432,12 @@ export class GatewayClient {
     if (socket.readyState === 0) {
       // 正在握手：有截止定时器就让它跑完，别在回前台时把它掐掉。
       if (this.handshakeTimer) return;
-      this.dropSocket('连接已断开，正在重连');
+      this.dropSocket(tr("连接已断开，正在重连"));
       this.scheduleReconnect();
       return;
     }
     if (socket.readyState !== 1) {
-      this.dropSocket('连接已断开，正在重连');
+      this.dropSocket(tr("连接已断开，正在重连"));
       this.scheduleReconnect();
       return;
     }
@@ -443,7 +455,7 @@ export class GatewayClient {
         if (this.lastState === 'error') this.emitState('ready');
         return;
       }
-      this.dropSocket('连接无响应，正在重连');
+      this.dropSocket(tr("连接无响应，正在重连"));
       this.scheduleReconnect();
     }, PROBE_TIMEOUT_MS);
   }
@@ -474,7 +486,7 @@ export class GatewayClient {
             this.probe();
             return;
           }
-          if (first || wasOnline) this.emitState('error', '设备已离线，等待网络恢复');
+          if (first || wasOnline) this.emitState('error', tr("设备已离线，等待网络恢复"));
           return;
         }
         // 第一次 online 回调只建立基线；之后任何 online 事件都当成一次网络切换。
@@ -499,7 +511,7 @@ export class GatewayClient {
             this.probe();
             return;
           }
-          this.dropSocket('网络已恢复，正在重连');
+          this.dropSocket(tr("网络已恢复，正在重连"));
           this.scheduleReconnect();
         }, NETWORK_DEBOUNCE_MS);
       });
@@ -593,12 +605,12 @@ export class GatewayClient {
     }
   }
 
-  private emitState(state: ConnectionState, detail?: string): void {
+  private emitState(state: ConnectionState, detail?: string, kind?: CloseDecision['kind']): void {
     this.lastState = state;
     // OBS-1：状态监听同样逐个隔离——某个页面的 setState 异常不该掐断其余订阅者。
     this.stateListeners.forEach((listener) => {
       try {
-        listener(state, detail);
+        listener(state, detail, kind);
       } catch (error) {
         console.warn('[gateway] state listener failed', state, error);
       }

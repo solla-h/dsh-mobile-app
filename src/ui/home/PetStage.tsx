@@ -15,6 +15,7 @@ import { Image } from 'expo-image';
 import { formatClock } from '../../protocol/speech';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
+import { tr } from '../../i18n';
 
 /**
  * 首页底部的宠物舞台。
@@ -67,9 +68,15 @@ const CANCEL_DY = -60;
 const KICK_DX = 46;
 
 /** 不同部位被拍时的回应，按 dsh-pet 的语气，不带 emoji。 */
-const HEAD_LINES = ['别摸头啦，头发会乱', '唔…在听呢', '帽子要掉了'];
-const BODY_LINES = ['在呢在呢', '摸鱼中，别戳', '叫我干嘛'];
-const TAIL_LINES = ['痒！别碰尾巴', '再戳就生气了', '尾巴不能摸'];
+function headLines(): string[] {
+  return [tr("别摸头啦，头发会乱"), tr("唔…在听呢"), tr("帽子要掉了")];
+}
+function bodyLines(): string[] {
+  return [tr("在呢在呢"), tr("摸鱼中，别戳"), tr("叫我干嘛")];
+}
+function tailLines(): string[] {
+  return [tr("痒！别碰尾巴"), tr("再戳就生气了"), tr("尾巴不能摸")];
+}
 
 interface Props {
   /** 服务器语音是否就绪；没就绪时只播动画、不开麦 */
@@ -228,22 +235,25 @@ export function PetStage({
   const tapReaction = (zone: Zone) => {
     pickRef.current += 1;
     if (!voiceReady) {
-      showBubble('语音还没就绪，双击新建会话', 2400);
+      showBubble(tr("语音还没就绪，双击新建会话"), 2400);
       return;
     }
     if (zone === 'head') {
       reactWith('shy', 1500);
-      showBubble(HEAD_LINES[pickRef.current % HEAD_LINES.length], 2200);
+      const lines = headLines();
+      showBubble(lines[pickRef.current % lines.length], 2200);
       return;
     }
     if (zone === 'tail') {
       reactWith('angry', 1600);
       shake();
-      showBubble(TAIL_LINES[pickRef.current % TAIL_LINES.length], 2200);
+      const lines = tailLines();
+      showBubble(lines[pickRef.current % lines.length], 2200);
       return;
     }
     reactWith('happy', 1500);
-    showBubble(BODY_LINES[pickRef.current % BODY_LINES.length], 2200);
+    const lines = bodyLines();
+    showBubble(lines[pickRef.current % lines.length], 2200);
   };
 
   /** 撞到屏幕边：表情一惊、回弹一下，再冒一句。 */
@@ -252,7 +262,7 @@ export function PetStage({
     reactWith('startle', 1400);
     // 表情要过一会儿才换上去（换源 + 交叉淡入 + 素材本身的起手帧），
     // 气泡晚 260ms 再出，才像是「先被撞到、再哎哟」。
-    later(() => showBubble(dir > 0 ? '哎哟，到头了' : '这边也到头了', 1500), 260);
+    later(() => showBubble(dir > 0 ? tr("哎哟，到头了") : tr("这边也到头了"), 1500), 260);
     // 撞完只往回弹几 dp：她应该还是贴在屏幕边上，而不是退回老远
     Animated.sequence([
       Animated.timing(swim, { toValue: dir * (maxX - 8), duration: 100, useNativeDriver: true }),
@@ -287,7 +297,7 @@ export function PetStage({
     ]).start(() => {
       spin.setValue(0);
       // 同上：先让震惊脸出来，再冒「晕…」
-      later(() => showBubble('晕…', 1800), 260);
+      later(() => showBubble(tr("晕…"), 1800), 260);
       // 撞上去之后弹两下，不是硬停
       Animated.sequence([
         Animated.timing(swim, { toValue: dir * (maxX - 20), duration: 110, useNativeDriver: true }),
@@ -531,13 +541,13 @@ export function PetStage({
         if (gesture.dy >= CANCEL_DY) return;
         if (holdTimerRef.current) {
           cancelHold();
-          api.flash('不说啦？', 1200);
+          api.flash(tr("不说啦？"), 1200);
           return;
         }
         if (armedRef.current) {
           cancelHold();
           api.onVoiceCancel();
-          api.showBubble('不说啦？', 1400);
+          api.showBubble(tr("不说啦？"), 1400);
           api.reactWith('startle', 1200);
         }
       },
@@ -619,19 +629,19 @@ export function PetStage({
   const caption = hint
     ? hint
     : transcribing
-      ? '服务端识别中…'
+      ? tr("服务端识别中…")
       : recording
-        ? `我在听 ${formatClock(voiceElapsed)} / ${formatClock(voiceLimit)}`
+        ? tr("我在听 {0} / {1}", [formatClock(voiceElapsed), formatClock(voiceLimit)])
         : voiceReady
-          ? '按住和我说 · 双击新建会话'
-          : '双击新建会话 · 语音未启用';
+          ? tr("按住和我说 · 双击新建会话")
+          : tr("双击新建会话 · 语音未启用");
 
   return (
     <View
       style={styles.stage}
       accessible
       accessibilityRole="button"
-      accessibilityHint="按住说话，松手发送；上滑取消；双击新建会话；横向滑动可以把她踢走"
+      accessibilityHint={tr("按住说话，松手发送；上滑取消；双击新建会话；横向滑动可以把她踢走")}
     >
       {/* 手势挂在图上而不是舞台上：locationY 才会相对这张图，
           头/身/尾按 fishH 一算就准，不用去猜 stage 在窗口里的位置。 */}

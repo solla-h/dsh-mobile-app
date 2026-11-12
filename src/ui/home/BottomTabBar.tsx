@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
+import { tr } from '../../i18n';
 
 /**
  * 首页底部 Tab。只在没有选中会话时渲染——进了会话页，审批坞和输入框才是主角，
@@ -28,10 +29,11 @@ export function BottomTabBar({ tabs, active, onChange }: Props) {
         return (
           <Pressable
             key={tab.key}
+            testID={`home-tab-${tab.key}`}
             style={styles.cell}
             onPress={() => onChange(tab.key)}
             accessibilityRole="tab"
-            accessibilityLabel={tab.badge ? `${tab.label}，${tab.badge} 个待办` : tab.label}
+            accessibilityLabel={tab.badge ? tr("{0}，{1} 个待办", [tab.label, tab.badge]) : tab.label}
             accessibilityState={{ selected }}
           >
             <View style={styles.labelRow}>

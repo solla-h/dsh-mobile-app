@@ -10,6 +10,7 @@ import {
   helloFrame,
   resetHarness,
   scriptGateway,
+  setAppLanguage,
   sessionFixture,
   setTransportScript,
   TEST_GATEWAY_ID,
@@ -38,6 +39,7 @@ let uploadCount: number;
 
 beforeEach(async () => {
   resetHarness();
+  await setAppLanguage('zh');
   rejectUpload = false;
   uploadCount = 0;
   await upsertGateway({

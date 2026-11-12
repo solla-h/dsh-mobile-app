@@ -18,6 +18,7 @@ import { tapFeedback } from '../haptics';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { PluginManager } from './usePluginManager';
+import { tr } from '../../i18n';
 
 /**
  * 插件详情大卡片：居中悬浮的竖版卡（塔罗牌的形状，不是塔罗牌的皮），
@@ -359,14 +360,14 @@ function CardBody({
     if (item.kind !== 'bundle') return;
     const self = item.bundle.name === GATEWAY_PACKAGE;
     Alert.alert(
-      '卸载插件',
+      tr("卸载插件"),
       self
-        ? '这是移动网关自身，卸载后会立刻断开手机连接，只能从 DSH Web/CLI 恢复。确定继续？'
-        : '卸载 ' + (item.bundle.title ?? item.bundle.name) + '？卸载后需要重新安装才能恢复。',
+        ? tr("这是移动网关自身，卸载后会立刻断开手机连接，只能从 DSH Web/CLI 恢复。确定继续？")
+        : tr("卸载 ") + (item.bundle.title ?? item.bundle.name) + tr("？卸载后需要重新安装才能恢复。"),
       [
-        { text: '取消', style: 'cancel' },
+        { text: tr("取消"), style: 'cancel' },
         {
-          text: '卸载',
+          text: tr("卸载"),
           style: 'destructive',
           onPress: () => {
             void manager
@@ -374,11 +375,11 @@ function CardBody({
               .then(() => {
                 onClose();
                 if (self) {
-                  Alert.alert('已提交卸载', '连接可能已中断，重连后请确认最终状态。');
+                  Alert.alert(tr("已提交卸载"), tr("连接可能已中断，重连后请确认最终状态。"));
                 }
               })
               .catch((err: unknown) =>
-                Alert.alert('卸载失败', err instanceof Error ? err.message : String(err)),
+                Alert.alert(tr("卸载失败"), err instanceof Error ? err.message : String(err)),
               );
           },
         },
@@ -389,11 +390,11 @@ function CardBody({
 
   const statusLabel = (() => {
     if (item.kind === 'bundle') {
-      if (!item.bundle.installed) return '未安装';
-      return item.bundle.enabled ? '已启用' : '已停用';
+      if (!item.bundle.installed) return tr("未安装");
+      return item.bundle.enabled ? tr("已启用") : tr("已停用");
     }
-    if (item.kind === 'entry') return entryEnabled ? '已启用' : '已停用';
-    return writable ? '可配置' : '只读';
+    if (item.kind === 'entry') return entryEnabled ? tr("已启用") : tr("已停用");
+    return writable ? tr("可配置") : tr("只读");
   })();
 
   return (
@@ -414,7 +415,7 @@ function CardBody({
                     <Text style={styles.title} maxFontSizeMultiplier={1.3}>
                       {title}
                     </Text>
-                    {experimental ? <Text style={styles.tag}>实验</Text> : null}
+                    {experimental ? <Text style={styles.tag}>{tr("实验")}</Text> : null}
                   </View>
                   <Text style={styles.subtitle} numberOfLines={2}>
                     {subtitle}
@@ -432,7 +433,7 @@ function CardBody({
                 <Text style={styles.description} numberOfLines={6}>{item.entry.description}</Text>
               ) : null}
               {item.kind === 'official' ? (
-                <Text style={styles.description}>DSH 内置配置卡片，用下方「编辑配置」调整。</Text>
+                <Text style={styles.description}>{tr("DSH 内置配置卡片，用下方「编辑配置」调整。")}</Text>
               ) : null}
 
               {/* 状态行 + 同款开关 */}
@@ -441,15 +442,17 @@ function CardBody({
                   <Text style={styles.statusLabel}>{statusLabel}</Text>
                   {readOnlyReason ? (
                     <Text style={styles.statusMeta} numberOfLines={2}>
-                      只读：{readOnlyReason}
+                      
+                      {tr("只读：")}{readOnlyReason}
                     </Text>
                   ) : null}
                   {item.kind === 'bundle' && item.bundle.version ? (
-                    <Text style={styles.statusMeta}>版本 {item.bundle.version}</Text>
+                    <Text style={styles.statusMeta}>{tr("版本")} {item.bundle.version}</Text>
                   ) : null}
                   {errorText ? (
                     <Text style={styles.errorText} numberOfLines={3}>
-                      诊断：{errorText}
+                      
+                      {tr("诊断：")}{errorText}
                     </Text>
                   ) : null}
                 </View>
@@ -472,7 +475,7 @@ function CardBody({
                     />
                   ) : (
                     <Pressable style={styles.installPill} onPress={onClose}>
-                      <Text style={styles.installPillText}>去添加安装</Text>
+                      <Text style={styles.installPillText}>{tr("去添加安装")}</Text>
                     </Pressable>
                   )
                 ) : null}
@@ -481,7 +484,7 @@ function CardBody({
               {/* bundle 的包内条目开关 */}
               {item.kind === 'bundle' && item.entries.length > 0 ? (
                 <>
-                  <Text style={styles.section}>包内条目 · {item.entries.length}</Text>
+                  <Text style={styles.section}>{tr("包内条目 ·")} {item.entries.length}</Text>
                   <ScrollView style={styles.entryScroll} nestedScrollEnabled>
                   {item.entries.map((entry) => (
                     <View key={entry.entryId} style={styles.entryRow}>
@@ -520,7 +523,7 @@ function CardBody({
                     disabled={!writable}
                     onPress={() => onEditNamespace(item.item.namespaces[0] ?? '')}
                   >
-                    <Text style={styles.actionPillPrimaryText}>编辑配置</Text>
+                    <Text style={styles.actionPillPrimaryText}>{tr("编辑配置")}</Text>
                   </Pressable>
                 ) : item.kind === 'bundle' ? (
                   <>
@@ -529,7 +532,7 @@ function CardBody({
                         style={styles.actionPill}
                         onPress={() => onEditNamespace(item.bundle.name)}
                       >
-                        <Text style={styles.actionPillText}>查看配置节</Text>
+                        <Text style={styles.actionPillText}>{tr("查看配置节")}</Text>
                       </Pressable>
                     ) : null}
                     {removable ? (
@@ -537,7 +540,7 @@ function CardBody({
                         style={[styles.actionPill, styles.actionPillDanger]}
                         onPress={confirmRemove}
                       >
-                        <Text style={styles.actionPillDangerText}>卸载</Text>
+                        <Text style={styles.actionPillDangerText}>{tr("卸载")}</Text>
                       </Pressable>
                     ) : null}
                   </>

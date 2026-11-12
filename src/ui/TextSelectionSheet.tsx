@@ -4,6 +4,7 @@ import * as Clipboard from 'expo-clipboard';
 import { tapFeedback } from './haptics';
 import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 /**
  * 专门的文本选择页：消息正文默认长按是操作菜单（复制/分叉/删除），
@@ -38,14 +39,14 @@ export function TextSelectionSheet({ visible, title, text, onClose }: Props) {
               <Text style={styles.close}>×</Text>
             </Pressable>
           </View>
-          <Text style={styles.hint}>长按正文拖动选择手柄，可复制任意片段</Text>
+          <Text style={styles.hint}>{tr("长按正文拖动选择手柄，可复制任意片段")}</Text>
           <ScrollView style={styles.bodyBox} nestedScrollEnabled>
             <Text style={styles.body} selectable>
               {text}
             </Text>
           </ScrollView>
           <Pressable style={styles.copyAll} onPress={copyAll}>
-            <Text style={styles.copyAllText}>复制全文</Text>
+            <Text style={styles.copyAllText}>{tr("复制全文")}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

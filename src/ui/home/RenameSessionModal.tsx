@@ -2,6 +2,7 @@ import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 
 import { useTheme, useThemedStyles } from '../theme';
 import { makeModalStyles } from './appStyles';
+import { tr } from '../../i18n';
 
 interface Props {
   visible: boolean;
@@ -32,14 +33,14 @@ export function RenameSessionModal({
     >
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
-          <Text style={styles.modalTitle}>重命名会话</Text>
+          <Text style={styles.modalTitle}>{tr("重命名会话")}</Text>
           <TextInput
             testID="session-rename-input"
-            accessibilityLabel="会话名称"
+            accessibilityLabel={tr("会话名称")}
             style={styles.modalInput}
             value={value}
             onChangeText={onChangeValue}
-            placeholder="会话名称"
+            placeholder={tr("会话名称")}
             placeholderTextColor={t.text.muted}
             autoFocus
             maxLength={80}
@@ -50,20 +51,20 @@ export function RenameSessionModal({
             <Pressable
               testID="session-rename-cancel"
               accessibilityRole="button"
-              accessibilityLabel="取消"
+              accessibilityLabel={tr("取消")}
               style={styles.modalAction}
               onPress={onClose}
             >
-              <Text style={styles.modalActionText}>取消</Text>
+              <Text style={styles.modalActionText}>{tr("取消")}</Text>
             </Pressable>
             <Pressable
               testID="session-rename-save"
               accessibilityRole="button"
-              accessibilityLabel="保存"
+              accessibilityLabel={tr("保存")}
               style={styles.modalAction}
               onPress={onSubmit}
             >
-              <Text style={styles.modalPrimaryText}>保存</Text>
+              <Text style={styles.modalPrimaryText}>{tr("保存")}</Text>
             </Pressable>
           </View>
         </Pressable>

@@ -10,8 +10,10 @@ mobile gateway on a host, stop here and use [docs/AGENT-SETUP.md](docs/AGENT-SET
   Node.js 22.13+ and npm.
 - **No Expo Router.** `App.tsx` is a single state-driven navigator: unpaired → session list →
   session screen. Do not add routes, `_layout.tsx` files, or template navigation advice.
-- The app is an Android-first public alpha. iOS is deferred and unverified. App-wide i18n is
-  deferred; Chinese and English READMEs are maintained separately.
+- The app is an Android-first public alpha. iOS is deferred and unverified. The UI ships in Chinese and
+  English: `src/i18n/keys.ts` holds the Chinese key set and `src/i18n/en.ts` the English dictionary; with no
+  saved preference the app follows the system locale (non-Chinese → English). Chinese and English READMEs are
+  still maintained separately.
 - The server is the DSH Mobile maintained fork of the third-party plugin
   [`solla-h/dsh-plugin-mobile-gateway`](https://github.com/solla-h/dsh-plugin-mobile-gateway)
   (protocol `dsh-mobile-v1`). Its upstream is `Clarklevis1995/dsh-plugin-mobile-gateway`.
@@ -26,6 +28,29 @@ mobile gateway on a host, stop here and use [docs/AGENT-SETUP.md](docs/AGENT-SET
   React Native, read the versioned docs for the installed major:
   `https://docs.expo.dev/versions/v58.0.0/` and
   `https://reactnative.dev/docs/0.88/getting-started-without-a-framework`. Do not answer from memory.
+
+## Working agreement
+
+- **Align before non-trivial work.** Describe the approach and get confirmation before a
+  non-trivial edit, and keep the change inside that agreed scope. Do not add abstractions, flags or
+  config for a case that does not exist yet — reuse what is already here (see
+  **Engineering invariants**) or say why that does not fit.
+- **Verify through the user journey, and grade the evidence.** The path to walk, the actions to
+  enumerate (success, failure, cancel, leaving midway) and the three levels — source/test
+  confirmed, real-device observed, still a hypothesis — are in **Testing and evidence**. Never
+  write a real-device or "verified" claim that was not actually run.
+- **Finish with the full check set.** `npm test`, `npm run typecheck`, `npm run lint`; add
+  `npx expo-doctor` when dependencies or app config change. A docs-only change needs the
+  relative-link check instead of a device run (see **Commands**).
+- **Route new UI text through `tr()`** with the Chinese text as the key; regenerate dictionaries via
+  `node scripts/i18n-extract.mjs && node scripts/i18n-build-dict.mjs` — `satisfies` makes a missing
+  English key a typecheck error.
+- **This repository is public.** Never put host names, account IDs, worker or tunnel URLs, pairing
+  payloads, tokens, gateway or device identifiers, private session content, or screenshots
+  containing any of those into the tree — code, tests, fixtures, docs, release assets, commit
+  messages, or issue/PR text. Keep collaboration notes, status diaries and private host records
+  out of the repository; a capability or decision belongs in tracked documentation (for example
+  [docs/ROADMAP.md](docs/ROADMAP.md)) without the private context around it.
 
 ## Gateway coordination
 
@@ -48,6 +73,7 @@ App.tsx                   gateway pairing, session list, multi-gateway switch, g
 src/protocol/             pure functions: frames -> app models (unit-testable; no react-native imports)
 src/transport/            WebSocket client, file upload/download, offline outbox
 src/storage/              SecureStore / FileSystem persistence (gateways, drafts, state)
+src/i18n/                 zh/en dictionaries, tr(), LanguageProvider (Chinese text is the key)
 src/ui/                   screens and components
 src/theme/                color, type, and motion tokens
 app.json                  Expo config and config plugins (native dirs are generated)
@@ -190,8 +216,10 @@ Current install, compatibility, and user documents:
 Development references:
 
 - [Development and real-device notes](docs/DEVELOPMENT.md)
+- [i18n and terminology (Chinese)](docs/i18n/README.md) — dictionary shape, official term table, version basis, and test evidence
 - [Protocol coverage (Chinese)](docs/protocol-coverage.md) and [Rendezvous design (Chinese)](docs/rendezvous-design.md)
 - [Design principles (Chinese)](docs/DESIGN.md) and [release validation status (Chinese)](docs/OPEN-SOURCE-READINESS.md)
+- [Roadmap and candidate pool (Chinese)](docs/ROADMAP.md) — planned, half-done, and deliberately-not-done capabilities
 
 Public documentation records current contracts and reproducible procedures. Keep raw agent prompts,
 collaboration notes, status diaries, private host records, and obsolete design drafts outside this repository.

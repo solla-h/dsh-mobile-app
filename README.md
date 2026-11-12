@@ -39,7 +39,18 @@ Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在�
 | <img src="docs/images/session-list.png" width="280" alt="按工作区分组的会话列表，使用合成演示数据"> | <img src="docs/images/session-reply.png" width="280" alt="会话中发送消息并收到假网关回复，键盘保持打开"> |
 
 截图来自[已通过的 Android 模拟器旅程](https://github.com/solla-h/dsh-mobile-app/actions/workflows/android-journey.yml)，
-使用本地假网关与合成会话数据，不包含真实账号或配对凭据。App 界面目前以中文为主。
+使用本地假网关与合成会话数据，不包含真实账号或配对凭据。截图为中文界面；App 同时提供完整英文界面，
+见下文「界面语言」。
+
+## 界面语言
+
+App 提供中英文两套界面。在首页打开宿主信息面板（「全部会话」页顶部的设备 / 协议行），
+进入 **界面 → 语言**，选择 **中文** 或 **English**；离线时也能打开并修改。
+
+没有显式选择时，App 跟随系统语言：`zh*` 用中文，其余（含 `en-US` 与未知 locale）回退英文。
+语言偏好保存在 `app-settings`，与全局字号设置共存，互不覆盖。只有 App 自身的界面文案会被翻译，
+网关数据（会话标题、历史正文、工具名）按设计保持原文。词典、术语与版本口径见
+[i18n 说明](docs/i18n/README.md)。
 
 ## 快速开始
 
@@ -133,7 +144,9 @@ node scripts/setup-gateway.mjs pair --open
 | [网关维护与兼容](docs/GATEWAY-MAINTENANCE.md) | 配套 fork、上游同步、版本选择、联合验证与 Agent 约束 |
 | [发布手册](docs/RELEASING.md) | APK 构建、签名、下载校验与失败处理 |
 | [开发与验证](docs/DEVELOPMENT.md) / [设计原则](docs/DESIGN.md) | 代码职责、测试旅程、无障碍与交互约定 |
+| [i18n 与术语](docs/i18n/README.md) | 中英界面的字典形状、官方术语表、版本口径与测试证据 |
 | [发布验证状态](docs/OPEN-SOURCE-READINESS.md) | 自动化与真机证据、已知边界、暂缓范围 |
+| [路线图与候选池](docs/ROADMAP.md) | 未完成、做了一半与已决策不做的能力，以及各自的触发条件 |
 | [官网](https://fatwhale.app) / [网站仓库](https://github.com/solla-h/dsh-mobile-site) | 产品介绍、下载与安装入口；网站独立开发、部署与更新 |
 | [地址簿设计](docs/rendezvous-design.md) | `rendezvous-v1` 的加密与恢复机制 |
 | [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md) · [AGENTS](AGENTS.md) | 贡献、漏洞报告、变更记录与仓库约定 |

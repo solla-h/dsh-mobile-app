@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * 官方语音输入的目录与转写帧。
  *
@@ -121,20 +122,24 @@ export function transcriptText(raw: unknown): string | null {
  */
 export function speechBlockedNotice(catalog: SpeechCatalog | null): string | null {
   if (hasReadyProvider(catalog)) return null;
-  if (catalog && !catalog.available) return '网关没有可用的语音服务';
-  return '语音还在准备，稍等一下';
+  if (catalog && !catalog.available) return tr("网关没有可用的语音服务");
+  return tr("语音还在准备，稍等一下");
 }
 
 /** 转写失败帧 → 用户能看懂的一句话。未知错误码不往用户脸上抛。 */
-const TRANSCRIBE_NOTICES = new Map<string, string>([
-  ['speech/unavailable', '网关没有可用的语音服务'],
-  ['speech/invalid-audio', '这段录音太长或太大，短一点再试'],
-  ['speech/busy', '网关语音忙不过来，等一下再试'],
-  ['speech/timeout', '转写超时了，再试一次'],
-]);
-
 export function transcribeFailureNotice(code?: string): string {
-  return (code ? TRANSCRIBE_NOTICES.get(code) : undefined) ?? '转写失败，再试一次';
+  switch (code) {
+    case 'speech/unavailable':
+      return tr("网关没有可用的语音服务");
+    case 'speech/invalid-audio':
+      return tr("这段录音太长或太大，短一点再试");
+    case 'speech/busy':
+      return tr("网关语音忙不过来，等一下再试");
+    case 'speech/timeout':
+      return tr("转写超时了，再试一次");
+    default:
+      return tr("转写失败，再试一次");
+  }
 }
 
 /** 16kHz 单声道 PCM16 每秒 32000 字节，加上 44 字节头。 */

@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { base64DecodedBytes, baseName } from '../protocol/files';
 import type { ClientFrame, ServerFrame } from '../protocol/types';
 import type { FileUiState } from '../ui/FileCards';
+import { tr } from '../i18n';
 
 /**
  * 工作区文件下载：file-resolve → file-download-open → 逐块 read。
@@ -160,7 +161,7 @@ export class FileDownloader {
     const timer = setTimeout(() => {
       if (!this.resolving.has(requestId)) return;
       this.resolving.delete(requestId);
-      this.fail(path, '解析超时，请重试');
+      this.fail(path, tr("解析超时，请重试"));
     }, RESOLVE_TIMEOUT_MS);
     this.resolving.set(requestId, { path, timer });
     this.onState(path, { status: 'resolving' });
@@ -168,7 +169,7 @@ export class FileDownloader {
     if (!sent) {
       clearTimeout(timer);
       this.resolving.delete(requestId);
-      this.fail(path, '连接已断开，无法下载');
+      this.fail(path, tr("连接已断开，无法下载"));
     }
   }
 
@@ -203,7 +204,7 @@ export class FileDownloader {
     });
     if (!sent) {
       this.opening.delete(requestId);
-      this.fail(path, '连接已断开，无法下载');
+      this.fail(path, tr("连接已断开，无法下载"));
     }
   }
 
@@ -234,7 +235,7 @@ export class FileDownloader {
     } catch (failure) {
       // 服务端的并发名额是网关级的，本地起不来也要把 transfer 退掉。
       this.send({ type: 'file-download-cancel', transferId });
-      this.fail(path, failure instanceof Error ? failure.message : '无法创建临时文件');
+      this.fail(path, failure instanceof Error ? failure.message : tr("无法创建临时文件"));
     }
   }
 
@@ -271,7 +272,7 @@ export class FileDownloader {
       transfer.busy = false;
       this.transfers.delete(transfer.transferId);
       this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
-      this.fail(transfer.path, failure instanceof Error ? failure.message : '写入文件失败');
+      this.fail(transfer.path, failure instanceof Error ? failure.message : tr("写入文件失败"));
     }
   }
 
@@ -285,7 +286,7 @@ export class FileDownloader {
         if (this.disposed) return;
         if (String(digest).toLowerCase() !== expected.toLowerCase()) {
           this.removeFile(transfer.file);
-          this.fail(transfer.path, '文件校验失败，请重试');
+          this.fail(transfer.path, tr("文件校验失败，请重试"));
           return;
         }
       }
@@ -297,7 +298,7 @@ export class FileDownloader {
       this.onState(transfer.path, { status: 'ready', progress: 1 });
       await this.present(transfer.file, transfer.path, transfer.mediaType, transfer.name);
     } catch (failure) {
-      this.fail(transfer.path, failure instanceof Error ? failure.message : '校验失败');
+      this.fail(transfer.path, failure instanceof Error ? failure.message : tr("校验失败"));
     }
   }
 
@@ -315,7 +316,7 @@ export class FileDownloader {
     try {
       const available = await Sharing.isAvailableAsync();
       if (!available) {
-        this.fail(path, '系统里没有能打开这个文件的应用');
+        this.fail(path, tr("系统里没有能打开这个文件的应用"));
         return;
       }
       await Sharing.shareAsync(file.uri, {
@@ -323,7 +324,7 @@ export class FileDownloader {
         dialogTitle: name ?? baseName(path),
       });
     } catch (failure) {
-      this.fail(path, failure instanceof Error ? failure.message : '打开文件失败');
+      this.fail(path, failure instanceof Error ? failure.message : tr("打开文件失败"));
     }
   }
 
@@ -344,24 +345,24 @@ export class FileDownloader {
 function describeFailure(code?: string, message?: string): string {
   switch (code) {
     case 'file-not-found':
-      return '文件已不存在';
+      return tr("文件已不存在");
     case 'file-not-allowed':
-      return '文件不在会话工作目录内';
+      return tr("文件不在会话工作目录内");
     case 'file-not-regular':
-      return '这不是一个普通文件';
+      return tr("这不是一个普通文件");
     case 'file-too-large':
-      return '文件超过下载上限';
+      return tr("文件超过下载上限");
     case 'file-changed':
-      return '文件在下载前被修改了，请重试';
+      return tr("文件在下载前被修改了，请重试");
     case 'file-unreadable':
-      return '文件无法读取';
+      return tr("文件无法读取");
     case 'file-download-disabled':
-      return '网关已关闭文件下载';
+      return tr("网关已关闭文件下载");
     case 'file-transfer-limit':
-      return '同时下载的文件太多，稍后再试';
+      return tr("同时下载的文件太多，稍后再试");
     case 'bad-request':
-      return '路径无效';
+      return tr("路径无效");
     default:
-      return message ? message : '下载失败';
+      return message ? message : tr("下载失败");
   }
 }

@@ -3,11 +3,12 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View
 import type { CommandGroup, CommandItem, CommandOption } from '../protocol/commands';
 import { useTheme, useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 const KIND_BADGE: Record<string, string> = {
-  immediate: '执行',
-  input: '插入',
-  select: '选择',
+  get immediate() { return tr("执行"); },
+  get input() { return tr("插入"); },
+  get select() { return tr("选择"); },
 };
 
 /** 输入框上方弹出的 / 目录。分组和条目完全按服务端下发的顺序渲染。 */
@@ -42,7 +43,7 @@ export function CommandPalette({
                     </Text>
                   ) : null}
                 </View>
-                <Text style={styles.badge}>{KIND_BADGE[item.ui?.kind ?? ''] ?? '技能'}</Text>
+                <Text style={styles.badge}>{KIND_BADGE[item.ui?.kind ?? ''] ?? tr("技能")}</Text>
               </Pressable>
             ))}
           </View>
@@ -96,7 +97,7 @@ export function CommandOptionsSheet({
               ))}
             </ScrollView>
           ) : (
-            <Text style={styles.sheetEmpty}>没有可选项</Text>
+            <Text style={styles.sheetEmpty}>{tr("没有可选项")}</Text>
           )}
         </Pressable>
       </Pressable>

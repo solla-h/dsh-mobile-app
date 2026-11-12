@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { currentLanguage, tr } from '../../i18n';
 import {
   formatTokens,
   type ApprovalDecision,
@@ -53,15 +54,16 @@ interface Props {
 type Role = 'user' | 'assistant' | 'tool' | 'context' | 'system' | 'gate';
 
 /** 一行到位：canceled/unavailable 不是人的决定，别写成「你拒绝了」。 */
+/** getter 而不是常量：语言切换后每次取值都重新走 t()。 */
 const APPROVAL_LABELS: Record<ApprovalDecision, string> = {
-  approved: '已批准',
-  denied: '已拒绝',
-  canceled: '请求已撤回',
-  unavailable: '无人应答',
+  get approved() { return tr('已允许'); },
+  get denied() { return tr('已拒绝'); },
+  get canceled() { return tr('请求已撤回'); },
+  get unavailable() { return tr('无人应答'); },
 };
 
 function formatClock(time: number): string {
-  return new Date(time).toLocaleTimeString('zh-CN', {
+  return new Date(time).toLocaleTimeString(currentLanguage() === 'en' ? 'en-US' : 'zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -73,8 +75,8 @@ function formatDuration(ms: number): string {
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  if (minutes < 60) return rest ? `${minutes}分${rest}秒` : `${minutes}分`;
-  return `${Math.floor(minutes / 60)}小时${minutes % 60}分`;
+  if (minutes < 60) return rest ? tr("{0}分{1}秒", [minutes, rest]) : tr("{0}分", [minutes]);
+  return tr("{0}小时{1}分", [Math.floor(minutes / 60), minutes % 60]);
 }
 
 /** 取第一行非空内容——账本上一行就够，细节留给展开。 */
@@ -90,10 +92,10 @@ function firstLine(text: string | undefined): string | undefined {
 function usageText(usage: TokenUsage | undefined): string | undefined {
   if (!usage) return undefined;
   const parts = [
-    usage.inputTokens !== undefined ? `入 ${formatTokens(usage.inputTokens)}` : undefined,
-    usage.outputTokens !== undefined ? `出 ${formatTokens(usage.outputTokens)}` : undefined,
-    usage.cacheReadTokens ? `缓存命中 ${formatTokens(usage.cacheReadTokens)}` : undefined,
-    usage.reasoningTokens ? `思考 ${formatTokens(usage.reasoningTokens)}` : undefined,
+    usage.inputTokens !== undefined ? tr("入 {0}", [formatTokens(usage.inputTokens)]) : undefined,
+    usage.outputTokens !== undefined ? tr("出 {0}", [formatTokens(usage.outputTokens)]) : undefined,
+    usage.cacheReadTokens ? tr("缓存命中 {0}", [formatTokens(usage.cacheReadTokens)]) : undefined,
+    usage.reasoningTokens ? tr("思考 {0}", [formatTokens(usage.reasoningTokens)]) : undefined,
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : undefined;
 }
@@ -193,7 +195,7 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
           <View style={[styles.dividerLine, { backgroundColor: t.border.subtle }]} />
           <Text style={[styles.dividerText, { color: tone }]} numberOfLines={2}>
             {[
-              item.turn === undefined ? undefined : `第 ${item.turn} 轮`,
+              item.turn === undefined ? undefined : tr("第 {0} 轮", [item.turn]),
               item.text,
               started === undefined ? undefined : formatDuration(item.time - started),
             ]
@@ -223,17 +225,17 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
 
     if (item.kind === 'user' || item.kind === 'queued') {
       role = 'user';
-      who = '你';
+      who = tr("用户");
       const images = item.kind === 'user' ? (item.images?.length ?? 0) : (item.localUris?.length ?? 0);
       meta =
         [
-          images ? `图片 ×${images}` : undefined,
+          images ? tr("图片 ×{0}", [images]) : undefined,
           item.kind === 'queued'
             ? item.placement === 'steering'
-              ? '插话'
+              ? tr("插话")
               : item.pending
-                ? '发送中'
-                : '排队中'
+                ? tr("发送中")
+                : tr("排队中")
             : undefined,
         ]
           .filter(Boolean)
@@ -243,17 +245,17 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
     } else if (item.kind === 'assistant') {
       role = 'assistant';
       const answer = item.text.trim();
-      who = answer ? '助手' : '思考';
+      who = answer ? tr("助手") : tr("思考");
       const reasoningLength = item.reasoning?.trim().length ?? 0;
-      meta = reasoningLength ? `思考 ${reasoningLength} 字` : undefined;
+      meta = reasoningLength ? tr("思考 {0} 字", [reasoningLength]) : undefined;
       // 失败原因必须在收起状态就看得见：失败轮的 text 是空的，
       // 只放进展开区的话这一行就剩个标题，等于把错误藏了。
       const failureLine = item.failure
         ? item.failure === 'aborted'
-          ? '这一步被取消'
+          ? tr("这一步被取消")
           : item.failure === 'interrupted'
-            ? '这一步被中断'
-            : `这一步失败：${item.failure}`
+            ? tr("这一步被中断")
+            : tr("这一步失败：{0}", [item.failure])
         : undefined;
       if (failureLine) color = t.semantic.dangerText;
       body = [answer, failureLine].filter(Boolean).join('\n') || undefined;
@@ -264,32 +266,32 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
         usageText(item.usage),
         item.turn === undefined
           ? undefined
-          : `第 ${item.turn} 轮${item.step === undefined ? '' : ` 第 ${item.step} 步`}`,
+          : tr("第 {0} 轮{1}", [item.turn, item.step === undefined ? '' : tr(" 第 {0} 步", [item.step])]),
       ].filter(Boolean) as string[];
     } else if (item.kind === 'tool') {
       role = 'tool';
-      who = item.name || '工具';
+      who = item.name || tr("工具");
       const summary = describeTool(item.name, item.args);
       const failed = toolFailed(item.name, item.output, item.isError);
       const state =
         item.output === undefined
           ? running
-            ? `运行中 · 已 ${formatDuration(now - item.time)}`
-            : '没有输出'
+            ? tr("运行中 · 已 {0}", [formatDuration(now - item.time)])
+            : tr("没有输出")
           : failed
             ? item.errorCode
-              ? `失败 · ${item.errorCode}`
-              : '失败'
+              ? tr("失败 · {0}", [item.errorCode])
+              : tr("失败")
             : item.durationMs === undefined
               ? undefined
-              : `耗时 ${formatDuration(item.durationMs)}`;
+              : tr("耗时 {0}", [formatDuration(item.durationMs)]);
       meta = state;
       body = firstLine(toolCommand(item.name, item.args)) ?? summary ?? undefined;
       // 展开才是完整账目：完整参数 + 完整输出，各带一行小标题。
       detail =
         [
-          item.args?.trim() ? `参数\n${item.args.trim()}` : undefined,
-          item.output?.trim() ? `输出\n${item.output.trim()}` : undefined,
+          item.args?.trim() ? tr("参数\n{0}", [item.args.trim()]) : undefined,
+          item.output?.trim() ? tr("输出\n{0}", [item.output.trim()]) : undefined,
         ]
           .filter(Boolean)
           .join('\n\n') || undefined;
@@ -298,15 +300,15 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
       result = outputLine ? `→ ${outputLine}` : undefined;
       if (failed) color = t.semantic.dangerText;
       notes = [
-        item.durationMs === undefined ? undefined : `耗时 ${formatDuration(item.durationMs)}`,
+        item.durationMs === undefined ? undefined : tr("耗时 {0}", [formatDuration(item.durationMs)]),
         item.turn === undefined
           ? undefined
-          : `第 ${item.turn} 轮${item.step === undefined ? '' : ` 第 ${item.step} 步`}`,
-        item.outputTruncated ? '输出过长，网关从中间省略了一段（保留首尾各 8000 字）' : undefined,
+          : tr("第 {0} 轮{1}", [item.turn, item.step === undefined ? '' : tr(" 第 {0} 步", [item.step])]),
+        item.outputTruncated ? tr("输出过长，网关从中间省略了一段（保留首尾各 8000 字）") : undefined,
       ].filter(Boolean) as string[];
     } else if (item.kind === 'context') {
       role = 'context';
-      who = '上下文';
+      who = tr("上下文");
       meta = item.tag;
       body = item.text;
       detail = item.detail?.trim() || undefined;
@@ -316,14 +318,14 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
       role = 'gate';
       who = APPROVAL_LABELS[item.decision];
       // 只有本机回显知道是谁批的（seq 为空 = 还没进过历史）；审计记录读不到批的人。
-      meta = item.seq === undefined ? (item.via ?? '本机决定') : undefined;
+      meta = item.seq === undefined ? (item.via ?? tr("本机决定")) : undefined;
       body = item.target;
       clamp = 2;
       // 审批的说明文字可以是一整句（沙箱升权就是），收起两行放不下；点开看全文 + 来源说明。
       expandable = Boolean(body);
     } else if (item.kind === 'notice') {
       role = 'system';
-      who = '通知';
+      who = tr("通知");
       body = item.text;
       color = item.tone === 'warn' ? t.semantic.gateAmberText : undefined;
       // 压缩摘要是全文，收起时只占一行「上下文已压缩：…」。
@@ -332,8 +334,8 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
       clamp = 1;
     } else if (item.kind === 'files') {
       role = 'system';
-      who = '交付文件';
-      meta = item.files.length > 1 ? `${item.files.length} 个` : undefined;
+      who = tr("交付文件");
+      meta = item.files.length > 1 ? tr("{0} 个", [item.files.length]) : undefined;
       body = item.files.map((file) => file.path).join('\n');
       clamp = 0;
     }
@@ -346,7 +348,7 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
           disabled={!expandable}
           accessibilityRole={expandable ? 'button' : undefined}
           accessibilityLabel={
-            expandable ? (expanded ? '收起这一行的完整内容' : '展开这一行的完整内容') : undefined
+            expandable ? (expanded ? tr("收起这一行的完整内容") : tr("展开这一行的完整内容")) : undefined
           }
         >
           <View style={styles.head}>
@@ -385,8 +387,8 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
           {expanded && item.kind === 'approval' ? (
             <Text style={styles.detailNote}>
               {item.seq === undefined
-                ? '本机回显：重拉历史后由网关的审计记录接替这一行。'
-                : '审计记录只留工具名和说明文字，参数在对应的工具行上。'}
+                ? tr("本机回显：重拉历史后由网关的审计记录接替这一行。")
+                : tr("审计记录只留工具名和说明文字，参数在对应的工具行上。")}
             </Text>
           ) : null}
         </Pressable>
@@ -407,8 +409,8 @@ export function TrajectoryView({ messages, approvals, running }: Props) {
       ListFooterComponent={
         hasApprovals ? (
           <Text style={styles.footer}>
-            审批记录来自网关的审计事件（approval/asked + approval/decided）：
-            本机刚拍完板的那一条会先以回显出现，拉到历史后由审计记录接替。
+            
+            {tr("审批记录来自网关的审计事件（approval/asked + approval/decided）：\r\n            本机刚做完决定的那一条会先以回显出现，拉到历史后由审计记录接替。")}
           </Text>
         ) : undefined
       }

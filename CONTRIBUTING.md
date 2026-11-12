@@ -45,7 +45,10 @@ selected. Expo Go only includes its bundled native modules; native additions nee
 - **No secrets in the repository.** Never commit pairing payloads, tokens, keys, `credentials.json`, `keys/`,
   or screenshots with hostnames or account IDs.
 - **Keep documentation languages consistent and preserve accessibility.** Update the Chinese and English README
-  together and label icon-only controls. App-wide localization and the iOS release are deferred for this milestone.
+  together and label icon-only controls. The iOS release is deferred for this milestone. New visible text must go
+  through `tr()` with the Chinese string as the key; regenerate the dictionaries with
+  `node scripts/i18n-extract.mjs && node scripts/i18n-build-dict.mjs`. The English dictionary uses `satisfies`,
+  so an uncovered key fails typecheck.
 
 ## Commit and pull request
 

@@ -26,6 +26,7 @@ import { approvalRisk } from '../protocol/risk';
 import { chargeStartFeedback, successFeedback } from './haptics';
 import { useTheme, useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 interface Props {
   approval: PendingApproval | null;
@@ -66,7 +67,7 @@ export function InteractionSheet({
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <View style={styles.grabber} />
             <View style={styles.kickerRow}>
-              <Text style={styles.kicker}>{approval ? '需要审批' : '需要你回答'}</Text>
+              <Text style={styles.kicker}>{approval ? tr("需要审批") : tr("需要你回答")}</Text>
               {approval?.toolName ? (
                 <Text style={styles.toolChip} numberOfLines={1}>
                   {approval.toolName}
@@ -74,11 +75,11 @@ export function InteractionSheet({
               ) : null}
               {question ? (
                 <Text style={styles.toolChip} numberOfLines={1}>
-                  {question.questions.length > 1 ? question.questions.length + ' 个问题' : '1 个问题'}
+                  {question.questions.length > 1 ? question.questions.length + tr(" 个问题") : tr("1 个问题")}
                 </Text>
               ) : null}
               <Pressable hitSlop={10} style={styles.later} onPress={onDismiss}>
-                <Text style={styles.laterText}>稍后</Text>
+                <Text style={styles.laterText}>{tr("稍后")}</Text>
               </Pressable>
             </View>
             {approval ? (
@@ -147,25 +148,25 @@ function ApprovalBody({
 
   return (
     <View>
-      <Text style={styles.reason}>{reason || '该操作需要你确认后才能继续。'}</Text>
+      <Text style={styles.reason}>{reason || tr("该操作需要你确认后才能继续。")}</Text>
       {high ? (
         <View style={styles.riskRow}>
-          <Text style={styles.riskTag}>高危</Text>
+          <Text style={styles.riskTag}>{tr("高危")}</Text>
           <Text style={styles.riskText}>{risk.labels.join(' · ')}</Text>
         </View>
       ) : null}
-      <Text style={styles.note}>这是一次性授权，只对当前这一次操作生效。</Text>
+      <Text style={styles.note}>{tr("这是一次性授权，只对当前这一次操作生效。")}</Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.buttonRow}>
         <Pressable style={[styles.button, styles.reject]} onPress={() => onApproval('rejected')}>
-          <Text style={styles.rejectText}>拒绝</Text>
+          <Text style={styles.rejectText}>{tr("拒绝")}</Text>
         </Pressable>
         {high ? (
           <Pressable
             style={[styles.button, styles.allow, styles.holdButton]}
             onPressIn={startCharge}
             onPressOut={cancelCharge}
-            accessibilityHint="按住半秒才会放行，防止误触"
+            accessibilityHint={tr("按住半秒才允许一次，防止误触")}
           >
             <Animated.View
               style={[
@@ -175,11 +176,11 @@ function ApprovalBody({
                 },
               ]}
             />
-            <Text style={styles.allowText}>长按 0.5s 放行</Text>
+            <Text style={styles.allowText}>{tr("长按 0.5s 允许一次")}</Text>
           </Pressable>
         ) : (
           <Pressable style={[styles.button, styles.allow]} onPress={() => onApproval('allowed-once')}>
-            <Text style={styles.allowText}>允许一次</Text>
+            <Text style={styles.allowText}>{tr("允许一次")}</Text>
           </Pressable>
         )}
       </View>
@@ -248,7 +249,8 @@ function QuestionBody({
               {item.detail ? <Text style={styles.questionDetail}>{item.detail}</Text> : null}
               {!item.options?.length ? (
                 <Text style={styles.noOptions}>
-                  模型这次没有给出选项，直接在下面输入答案即可。
+                  
+                  {tr("模型这次没有给出选项，直接在下面输入答案即可。")}
                 </Text>
               ) : null}
               {(item.options ?? []).map((option) => {
@@ -277,10 +279,10 @@ function QuestionBody({
                 onChangeText={(text) => setCustom(item.id, text)}
                 placeholder={
                   !item.options?.length
-                    ? '输入你的答案'
+                    ? tr("输入你的答案")
                     : multi
-                      ? '补充说明（可选）'
-                      : '或者自己写一个答案'
+                      ? tr("补充说明（可选）")
+                      : tr("或者自己写一个答案")
                 }
                 placeholderTextColor={t.text.muted}
                 multiline
@@ -294,20 +296,20 @@ function QuestionBody({
         <Pressable
           style={[styles.button, styles.reject]}
           onPress={() =>
-            Alert.alert('跳过这个问题？', '跳过会让 agent 收到「用户取消」，这一轮不会记录任何答案。', [
-              { text: '继续回答', style: 'cancel' },
-              { text: '跳过', style: 'destructive', onPress: onCancel },
+            Alert.alert(tr("跳过这个问题？"), tr("跳过会让 agent 收到「用户取消」，这一轮不会记录任何答案。"), [
+              { text: tr("继续回答"), style: 'cancel' },
+              { text: tr("跳过"), style: 'destructive', onPress: onCancel },
             ])
           }
         >
-          <Text style={styles.rejectText}>跳过</Text>
+          <Text style={styles.rejectText}>{tr("跳过")}</Text>
         </Pressable>
         <Pressable
           style={[styles.button, styles.allow, !complete && styles.buttonDisabled]}
           disabled={!complete}
           onPress={() => onAnswer(buildAnswers(question.questions, drafts))}
         >
-          <Text style={styles.allowText}>提交</Text>
+          <Text style={styles.allowText}>{tr("提交")}</Text>
         </Pressable>
       </View>
     </View>

@@ -4,6 +4,7 @@ import { Image, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } 
 import type { ImageAttachmentRef } from '../protocol/types';
 import { useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
+import { tr } from '../i18n';
 
 interface Props {
   refs: ImageAttachmentRef[];
@@ -61,7 +62,8 @@ export function MessageImages({ refs, cache, onNeed }: Props) {
               <Image source={{ uri }} style={styles.image} resizeMode="cover" />
             ) : (
               <Text style={styles.placeholder} numberOfLines={1}>
-                图片
+                
+                {tr("图片")}
               </Text>
             )}
           </Pressable>
@@ -79,7 +81,7 @@ export function ImageViewer({ uri, onClose }: { uri: string | null; onClose: () 
     <Modal visible={Boolean(uri)} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         {uri ? <Image source={{ uri }} style={styles.viewer} resizeMode="contain" /> : null}
-        <Text style={styles.hint}>轻点关闭</Text>
+        <Text style={styles.hint}>{tr("轻点关闭")}</Text>
       </Pressable>
     </Modal>
   );

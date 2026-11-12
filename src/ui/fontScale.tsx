@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { readJson, writeJson } from '../storage/persisted-state';
+import { readAppSettings, writeAppSettings } from '../storage/app-settings';
+import { tr } from '../i18n';
 
 /**
  * 全局字号：只缩放文字（fontSize / lineHeight），不动间距和控件尺寸。
@@ -10,15 +11,13 @@ import { readJson, writeJson } from '../storage/persisted-state';
  */
 
 export const FONT_SCALES = [
-  { id: 'small', label: '小', scale: 0.9, hint: '信息密度更高' },
-  { id: 'standard', label: '标准', scale: 1, hint: '默认' },
-  { id: 'large', label: '大', scale: 1.12, hint: '看得更轻松' },
-  { id: 'xlarge', label: '特大', scale: 1.26, hint: '适老化' },
+  { id: 'small', get label() { return tr("小"); }, scale: 0.9, get hint() { return tr("信息密度更高"); } },
+  { id: 'standard', get label() { return tr("标准"); }, scale: 1, get hint() { return tr("默认"); } },
+  { id: 'large', get label() { return tr("大"); }, scale: 1.12, get hint() { return tr("看得更轻松"); } },
+  { id: 'xlarge', get label() { return tr("特大"); }, scale: 1.26, get hint() { return tr("适老化"); } },
 ] as const;
 
 export type FontScaleId = (typeof FONT_SCALES)[number]['id'];
-
-const SETTINGS_KEY = 'app-settings';
 
 interface FontScaleValue {
   id: FontScaleId;
@@ -37,7 +36,7 @@ export function FontScaleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    void readJson<{ fontScale?: FontScaleId }>(SETTINGS_KEY).then((saved) => {
+    void readAppSettings().then((saved) => {
       if (!alive) return;
       if (saved?.fontScale && FONT_SCALES.some((item) => item.id === saved.fontScale)) {
         setIdState(saved.fontScale);
@@ -50,7 +49,7 @@ export function FontScaleProvider({ children }: { children: ReactNode }) {
 
   const setId = useCallback((next: FontScaleId) => {
     setIdState(next);
-    void writeJson(SETTINGS_KEY, { fontScale: next });
+    void writeAppSettings({ fontScale: next });
   }, []);
 
   const scale = FONT_SCALES.find((item) => item.id === id)?.scale ?? 1;

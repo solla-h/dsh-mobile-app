@@ -20,6 +20,7 @@ import {
   toolKinds,
 } from '../tool-format';
 import { DiffView, type QuoteLine } from './DiffView';
+import { tr } from '../../i18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -95,7 +96,7 @@ export function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuo
         onPress={toggleGroup}
         hitSlop={4}
         accessibilityRole="button"
-        accessibilityLabel={open ? '收起工具调用' : '展开工具调用'}
+        accessibilityLabel={open ? tr("收起工具调用") : tr("展开工具调用")}
       >
         {running ? (
           <ActivityIndicator size="small" color={t.text.muted} style={styles.spinner} />
@@ -104,12 +105,12 @@ export function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuo
         )}
         <Text style={[styles.label, { color: t.text.primary }]} numberOfLines={1}>
           {hasGate
-            ? `等待审批 (${done}/${tools.length})`
+            ? tr("等待审批 ({0}/{1})", [done, tools.length])
             : running
-              ? `正在连续调用工具 (${done}/${tools.length})`
+              ? tr("正在连续调用工具 ({0}/{1})", [done, tools.length])
               : open
-                ? `${tools.length} 项工具调用`
-                : `已折叠 ${tools.length} 项连续工具调用`}
+                ? tr("{0} 项工具调用", [tools.length])
+                : tr("已折叠 {0} 项连续工具调用", [tools.length])}
         </Text>
         {!open ? (
           <Text style={[styles.meta, { color: t.text.muted }]} numberOfLines={1}>
@@ -117,7 +118,7 @@ export function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuo
           </Text>
         ) : null}
         <View style={styles.tail}>
-          <Text style={[styles.meta, { color: t.text.muted }]}>{open ? '收起' : '查阅'}</Text>
+          <Text style={[styles.meta, { color: t.text.muted }]}>{open ? tr("收起") : tr("展开")}</Text>
           <Text style={[styles.chevron, { color: t.text.muted }]}>{open ? '⌃' : '⌄'}</Text>
         </View>
       </Pressable>
@@ -226,10 +227,11 @@ function ToolRow({
           ) : null}
           {isGate ? (
             <Text style={[styles.gateTag, { color: t.semantic.gateAmberText }]}>
-              点击审批 ↗
+              
+              {tr("点击审批 ↗")}
             </Text>
           ) : failed ? (
-            <Text style={[styles.rowFail, { color: t.semantic.dangerText }]}>失败</Text>
+            <Text style={[styles.rowFail, { color: t.semantic.dangerText }]}>{tr("失败")}</Text>
           ) : (
             <Text style={[styles.doneTag, { color: t.text.muted }]}>
               {tool.running ? 'running' : 'done'}

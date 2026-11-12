@@ -28,6 +28,7 @@ import { ExemptionsSheet } from './ExemptionsSheet';
 import { SettingsEditor } from './SettingsEditor';
 import { PluginCard, type CardItem } from './PluginCard';
 import { usePluginManager } from './usePluginManager';
+import { tr } from '../../i18n';
 
 /**
  * 「插件」页：与 DSH Web 插件页对齐的管理界面。
@@ -47,29 +48,29 @@ interface Props {
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
-  'split-channels': '双通道（control / conversation）',
-  'assistant-stream-v1': '助手流式输出',
-  'history-format-version': '历史格式版本号',
-  'projection-baseline': '投影基线（任务/目标/大纲）',
-  'turn-outline-v1': '轮次大纲',
-  images: '图片收发',
-  'session-create': '新建会话',
-  'session-agent-preset': '会话模式切换',
-  'agent-team-v1': '智能体团队',
-  'subagent-conversations-v1': '子会话',
-  commands: '命令与技能目录',
-  tasks: '任务列表',
-  goals: '目标',
-  'schedule-management': '定时任务管理',
-  'plugin-management-v1': '插件管理',
-  'speech-input-v1': '语音输入',
-  'file-upload-v1': '文件上传',
-  'session-cancel': '停止当前回合',
-  'queue-control': '队列控制',
-  'session-archive': '会话归档',
-  'session-rename': '会话改名',
-  'file-downloads': '文件下载',
-  'file-references-v1': '文件引用解析',
+  get 'split-channels'() { return tr("双通道（control / conversation）"); },
+  get 'assistant-stream-v1'() { return tr("助手流式输出"); },
+  get 'history-format-version'() { return tr("历史格式版本号"); },
+  get 'projection-baseline'() { return tr("投影基线（任务/目标/大纲）"); },
+  get 'turn-outline-v1'() { return tr("轮次大纲"); },
+  get images() { return tr("图片收发"); },
+  get 'session-create'() { return tr("新建会话"); },
+  get 'session-agent-preset'() { return tr("会话模式切换"); },
+  get 'agent-team-v1'() { return tr("智能体团队"); },
+  get 'subagent-conversations-v1'() { return tr("子智能体会话"); },
+  get commands() { return tr("命令与技能目录"); },
+  get tasks() { return tr("任务列表"); },
+  get goals() { return tr("目标"); },
+  get 'schedule-management'() { return tr("定时任务管理"); },
+  get 'plugin-management-v1'() { return tr("插件管理"); },
+  get 'speech-input-v1'() { return tr("语音输入"); },
+  get 'file-upload-v1'() { return tr("文件上传"); },
+  get 'session-cancel'() { return tr("停止生成"); },
+  get 'queue-control'() { return tr("队列控制"); },
+  get 'session-archive'() { return tr("会话归档"); },
+  get 'session-rename'() { return tr("会话改名"); },
+  get 'file-downloads'() { return tr("文件下载"); },
+  get 'file-references-v1'() { return tr("文件引用解析"); },
 };
 
 export function PluginsView({ control, gatewayName, protocol, deviceName, capabilities, speechReady }: Props) {
@@ -161,24 +162,26 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
               <Text style={styles.rowTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
                 {bundle.title ?? bundle.name}
               </Text>
-              {bundle.experimental ? <Text style={styles.tagExperimental}>实验</Text> : null}
-              {official ? <Text style={styles.tagOfficial}>官方</Text> : null}
-              {!bundle.installed ? <Text style={styles.tagNotInstalled}>未安装</Text> : null}
+              {bundle.experimental ? <Text style={styles.tagExperimental}>{tr("实验")}</Text> : null}
+              {official ? <Text style={styles.tagOfficial}>{tr("官方")}</Text> : null}
+              {!bundle.installed ? <Text style={styles.tagNotInstalled}>{tr("未安装")}</Text> : null}
             </View>
             <Text style={styles.rowMeta} numberOfLines={1}>
               {bundle.version ?? ''}
               {bundle.version && entryCount > 0 ? ' · ' : ''}
-              {entryCount > 0 ? entryCount + ' 个条目' : ''}
+              {entryCount > 0 ? entryCount + tr(" 个条目") : ''}
               {bundle.description && !bundle.version ? bundle.description : ''}
             </Text>
             {bundle.error ? (
               <Text style={styles.rowError} numberOfLines={2}>
-                诊断：{bundle.error}
+                
+                {tr("诊断：")}{bundle.error}
               </Text>
             ) : null}
             {bundle.readOnlyReason ? (
               <Text style={styles.rowMeta} numberOfLines={1}>
-                只读：{bundle.readOnlyReason}
+                
+                {tr("只读：")}{bundle.readOnlyReason}
               </Text>
             ) : null}
           </View>
@@ -198,7 +201,7 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
             onPress={() => setInstallOpen(true)}
             hitSlop={6}
           >
-            <Text style={styles.installPillText}>安装</Text>
+            <Text style={styles.installPillText}>{tr("安装")}</Text>
           </Pressable>
         )}
       </View>
@@ -216,17 +219,18 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       }
     >
       <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-        插件管理
+        
+        {tr("插件管理")}
       </Text>
       <Text style={styles.subtitle} maxFontSizeMultiplier={1.3}>
-        {gatewayName ?? '网关'} · 协议 v{protocol ?? '?'} · {deviceName ?? '未知设备'}
+        {gatewayName ?? tr("网关")}  {tr("· 协议 v")}{protocol ?? '?'} · {deviceName ?? tr("未知设备")}
       </Text>
 
       {manager.error ? (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{manager.error}</Text>
           <Pressable hitSlop={8} onPress={() => void manager.refresh()}>
-            <Text style={styles.errorAction}>重试</Text>
+            <Text style={styles.errorAction}>{tr("重试")}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -234,20 +238,22 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {catalog && !catalog.managementAvailable ? (
         <View style={styles.readonlyCard}>
           <Text style={styles.readonlyText}>
-            当前 DSH profile 不支持插件管理（managementAvailable=false），只能查看。
+            
+            {tr("当前 DSH profile 不支持插件管理（managementAvailable=false），只能查看。")}
           </Text>
         </View>
       ) : null}
 
       {!catalog && !manager.error && manager.loading ? (
-        <Text style={styles.loadingHint}>正在读取插件目录…</Text>
+        <Text style={styles.loadingHint}>{tr("正在读取插件目录…")}</Text>
       ) : null}
 
       {installRunning && manager.installProgress ? (
         <Pressable style={styles.installBanner} onPress={() => setInstallOpen(true)}>
           <View style={styles.installDot} />
           <Text style={styles.installBannerText} numberOfLines={1}>
-            正在安装（{manager.installProgress.phase}）· 点开查看进度
+            
+            {tr("正在安装（")}{manager.installProgress.phase}{tr("）· 点开查看进度")}
           </Text>
         </Pressable>
       ) : null}
@@ -255,7 +261,7 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {/* 内置配置卡片 */}
       {catalog && catalog.officialItems.length > 0 ? (
         <>
-          <SectionHeader title="内置配置" />
+          <SectionHeader title={tr("内置配置")} />
           <View style={styles.cardStack}>
             {catalog.officialItems.map((item) => (
               <Pressable
@@ -276,7 +282,7 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
                     {item.namespaces.join(' · ')}
                   </Text>
                 </View>
-                <Text style={styles.rowChevron}>{writable ? '配置' : ''}</Text>
+                <Text style={styles.rowChevron}>{writable ? tr("配置") : ''}</Text>
               </Pressable>
             ))}
           </View>
@@ -286,7 +292,7 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {/* 已安装 */}
       {groups && groups.installed.length > 0 ? (
         <>
-          <SectionHeader title={'已安装 · ' + groups.installed.length} />
+          <SectionHeader title={tr("已安装 · ") + groups.installed.length} />
           <View style={styles.cardStack}>{groups.installed.map((b) => renderBundleRow(b, false))}</View>
         </>
       ) : null}
@@ -294,7 +300,7 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {/* 官方可选 */}
       {groups && groups.official.length > 0 ? (
         <>
-          <SectionHeader title={'官方 · ' + groups.official.length} />
+          <SectionHeader title={tr("官方 · ") + groups.official.length} />
           <View style={styles.cardStack}>{groups.official.map((b) => renderBundleRow(b, true))}</View>
         </>
       ) : null}
@@ -303,8 +309,8 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {extras.length > 0 ? (
         <>
           <Pressable style={styles.sectionRowPressable} onPress={() => setExtrasExpanded((v) => !v)}>
-            <SectionHeader title={'独立条目 · ' + extras.length} />
-            <Text style={styles.rowChevron}>{extrasExpanded ? '收起' : '展开'}</Text>
+            <SectionHeader title={tr("独立条目 · ") + extras.length} />
+            <Text style={styles.rowChevron}>{extrasExpanded ? tr("收起") : tr("展开")}</Text>
           </Pressable>
           {extrasExpanded ? (
           <View style={styles.cardStack}>
@@ -353,10 +359,10 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {writable ? (
         <View style={styles.actionsRow}>
           <Pressable style={styles.actionButton} onPress={() => setInstallOpen(true)}>
-            <Text style={styles.actionButtonText}>添加插件</Text>
+            <Text style={styles.actionButtonText}>{tr("添加插件")}</Text>
           </Pressable>
           <Pressable style={styles.actionButton} onPress={() => setExemptionsOpen(true)}>
-            <Text style={styles.actionButtonText}>版本豁免</Text>
+            <Text style={styles.actionButtonText}>{tr("版本豁免")}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -364,7 +370,7 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
       {/* 网关能力位：诊断信息，默认折叠 */}
       <Pressable style={styles.capToggle} onPress={() => setCapExpanded((v) => !v)}>
         <Text style={styles.capToggleText}>
-          {capExpanded ? '收起网关能力位' : '网关能力位 · ' + (capabilities.length - 1)}
+          {capExpanded ? tr("收起网关能力位") : tr("网关能力位 · ") + (capabilities.length - 1)}
         </Text>
       </Pressable>
       {capExpanded
@@ -381,12 +387,12 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
         : null}
       <View style={styles.capRow}>
         <View style={[styles.capDot, speechReady ? styles.capDotOn : styles.capDotOff]} />
-        <Text style={styles.capText}>语音输入（本地 SenseVoice）· {speechReady ? '就绪' : '未就绪'}</Text>
+        <Text style={styles.capText}>{tr("语音输入（本地 SenseVoice）·")} {speechReady ? tr("就绪") : tr("未就绪")}</Text>
       </View>
 
       <Text style={styles.footnote} maxFontSizeMultiplier={1.3}>
-        管理的是网关所连 DSH profile 的插件，不是手机本地。开关与卸载会实时影响桌面端；
-        关闭 dsh-plugin-mobile-gateway 自身会断开手机连接，只能从 DSH Web 重新开启。
+        
+        {tr("管理的是网关所连 DSH profile 的插件，不是手机本地。开关与卸载会实时影响桌面端；\n        关闭 dsh-plugin-mobile-gateway 自身会断开手机连接，只能从 DSH Web 重新开启。")}
       </Text>
 
       {cardIndex !== null && cardItems.length > 0 ? (

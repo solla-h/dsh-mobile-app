@@ -11,6 +11,8 @@
  */
 import type { HistoryEventFrame, ClientFrame, PairingPayload, ServerFrame, SessionItem } from '../../protocol/types';
 import type { ConnectOptions, ConnectionState } from '../../transport/gateway-client';
+import type { CloseDecision } from '../../transport/connection-policy';
+import { writeJson } from '../../storage/persisted-state';
 
 export interface TransportScript {
   /** connect() 之后同步执行：脚本在这里推 paired / hello / error 等开场帧。 */
@@ -75,7 +77,11 @@ export function audioMock() {
 }
 
 type FrameListener = (frame: ServerFrame) => void;
-type StateListener = (state: ConnectionState, detail?: string) => void;
+type StateListener = (
+  state: ConnectionState,
+  detail?: string,
+  kind?: CloseDecision['kind'],
+) => void;
 
 /**
  * 带帧监听/状态监听两条接口的假客户端，语义对齐真 GatewayClient：
@@ -163,9 +169,9 @@ export class FakeGatewayClient {
     for (const listener of Array.from(this.frameListeners)) listener(frame);
   }
 
-  emitState(state: ConnectionState, detail?: string): void {
+  emitState(state: ConnectionState, detail?: string, kind?: CloseDecision['kind']): void {
     this.currentState = state;
-    for (const listener of Array.from(this.stateListeners)) listener(state, detail);
+    for (const listener of Array.from(this.stateListeners)) listener(state, detail, kind);
   }
 }
 
@@ -181,6 +187,11 @@ export function controlClient(): FakeGatewayClient {
   const found = FakeGatewayClient.instances.find((entry) => entry.options?.channel === 'control');
   if (!found) throw new Error('找不到 control 连接（App 还没 connect？）');
   return found;
+}
+
+/** 显式声明界面语言偏好，避免既有中文断言依赖 CI 的系统 locale。 */
+export async function setAppLanguage(language: 'zh' | 'en'): Promise<void> {
+  await writeJson('app-settings', { language });
 }
 
 export function resetHarness(): void {

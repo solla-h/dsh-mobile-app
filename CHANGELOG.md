@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Roadmap and candidate pool ([docs/ROADMAP.md](docs/ROADMAP.md)): planned, half-done and deliberately-not-done capabilities with their reconsider conditions, plus the repository working agreement in [AGENTS.md](AGENTS.md).
+
 ## [0.1.0-alpha.5] - 2026-11-09
 
 ### Added
