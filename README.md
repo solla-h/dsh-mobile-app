@@ -1,4 +1,4 @@
-# DSH Mobile
+# DSH Mobile App（大肥鱼 / FatWhale）
 
 [官网 fatwhale.app](https://fatwhale.app) · [English](README.en.md) · [下载 Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
 [使用说明](docs/USER-GUIDE.zh-CN.md) · [版本兼容](docs/COMPATIBILITY.md)
@@ -6,10 +6,12 @@
 [![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
 [![Code: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](LICENSE)
 
-**在手机上查看 DSH 进度、处理审批、继续对话。**
+**DSH Mobile App（大肥鱼 / FatWhale）是第三方、开源的 DeepSeek Harness（DSH）Android 客户端——在手机上查看 DSH 进度、处理审批、继续对话。**
+**DSH Mobile App (FatWhale) is a third-party, open-source Android client for DeepSeek Harness (DSH): watch agent sessions, handle approvals, and keep chatting from your phone.**
 
-DSH Mobile 是第三方、开源的 **DeepSeek Harness（DSH）** Android 客户端，连接你自己运行的 DSH 宿主。
-Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在等我、我接下来要说什么」。
+DSH Mobile App 连接你自己运行的 DSH 宿主。Agent 在宿主上执行，手机让你随时看清「什么在跑、什么在等我、我接下来要说什么」。
+
+> **官方仓库为 [solla-h/dsh-mobile-app](https://github.com/solla-h/dsh-mobile-app)，官网 [fatwhale.app](https://fatwhale.app)。** 同名 fork 与本项目无关，请认准官方仓库与官网。
 
 > **Android 公开 alpha。** [`v0.1.0-alpha.5`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.5)
 > 由发布流水线构建并签名；签名 APK 通过本地合成网关的完整模拟器旅程与独立下载/签名校验，任一步失败都不会发布。
