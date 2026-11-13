@@ -6,7 +6,7 @@ mobile gateway on a host, stop here and use [docs/AGENT-SETUP.md](docs/AGENT-SET
 
 ## Project snapshot
 
-- Expo SDK 58 (`expo ~58.0.23`), React Native 0.88.1, React 19.3.0, TypeScript ~6.0.3.
+- Expo SDK 58 (`expo ~58.0.25`), React Native 0.88.1, React 19.3.0, TypeScript ~6.0.3.
   Node.js 22.13+ and npm.
 - **No Expo Router.** `App.tsx` is a single state-driven navigator: unpaired → session list →
   session screen. Do not add routes, `_layout.tsx` files, or template navigation advice.
