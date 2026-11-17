@@ -223,5 +223,15 @@
   "检查更新失败：更新信息格式不正确": "Update check failed: malformed update info",
   "检查更新失败：{0}": "Update check failed: {0}",
   "检查更新失败": "Update check failed",
-  "发现新版本 {0}": "New version available: {0}"
+  "发现新版本 {0}": "New version available: {0}",
+  "下载并安装": "Download and install",
+  "正在下载更新包…": "Downloading update…",
+  "正在校验…": "Verifying…",
+  "已打开系统安装器，请按提示完成安装": "System installer opened — follow the prompts to finish",
+  "请允许本应用「安装未知应用」，授权后返回这里重试": "Allow \"Install unknown apps\" for this app, then come back and retry",
+  "更新失败": "Update failed",
+  "下载地址未通过校验，已取消下载。请改用手动下载": "The download address failed validation and the download was cancelled. Use manual download instead",
+  "下载失败，请检查网络后重试": "Download failed. Check your network and retry",
+  "文件校验未通过，已删除下载内容。请重试或改用手动下载": "File verification failed and the download was deleted. Retry or use manual download",
+  "无法打开系统安装器，请重试或改用手动下载": "Couldn't open the system installer. Retry or use manual download"
 }

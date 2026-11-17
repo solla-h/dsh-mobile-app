@@ -125,7 +125,7 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 33,
+        "line": 47,
         "parentKind": "CallExpression",
         "context": "if (diff < 3_600_000) return Math.floor(diff / 60_000) + tr(\" 分钟前\"",
         "moduleLevel": false
@@ -188,7 +188,7 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 35,
+        "line": 49,
         "parentKind": "CallExpression",
         "context": ") + tr(\" 小时前\"); return Math.floor(diff / 86_400_000) + tr(\" 天前\"",
         "moduleLevel": false
@@ -216,7 +216,7 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 34,
+        "line": 48,
         "parentKind": "CallExpression",
         "context": "diff < 86_400_000) return Math.floor(diff / 3_600_000) + tr(\" 小时前\"",
         "moduleLevel": false
@@ -1427,7 +1427,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 48,
+        "line": 62,
         "parentKind": "CallExpression",
         "context": "本机 DSH 版本，请自行核对\"); case 'dsh-outdated': return tr(\"本机 DSH 版本低于新版要求\"",
         "moduleLevel": false
@@ -1469,7 +1469,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 44,
+        "line": 58,
         "parentKind": "CallExpression",
         "context": "机网关版本，请自行核对\"); case 'gateway-outdated': return tr(\"本机网关版本低于新版要求\"",
         "moduleLevel": false
@@ -1483,7 +1483,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 52,
+        "line": 66,
         "parentKind": "CallExpression",
         "context": "机语音模块版本，请自行核对\"); case 'voice-outdated': return tr(\"本机语音模块版本低于新版要求\"",
         "moduleLevel": false
@@ -2995,7 +2995,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 123,
+        "line": 232,
         "parentKind": "CallExpression",
         "context": "<> <Text style={styles.section}>{tr(\"发布说明\"",
         "moduleLevel": false
@@ -3079,7 +3079,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 92,
+        "line": 201,
         "parentKind": "CallExpression",
         "context": "tyles.title} maxFontSizeMultiplier={1.3}> {tr(\"发现新版本\"",
         "moduleLevel": false
@@ -3471,7 +3471,7 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 32,
+        "line": 46,
         "parentKind": "CallExpression",
         "context": "ath.max(0, Date.now() - at); if (diff < 60_000) return tr(\"刚刚\"",
         "moduleLevel": false
@@ -3598,6 +3598,20 @@
     ]
   },
   {
+    "key": "更新失败",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 270,
+        "parentKind": "CallExpression",
+        "context": "ock}> <Text style={styles.failureTitle}>{tr(\"更新失败\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "工具",
     "kind": "string",
     "expressions": [],
@@ -3702,7 +3716,7 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 94,
+        "line": 203,
         "parentKind": "CallExpression",
         "context": "sable hitSlop={10} onPress={onClose} accessibilityLabel={tr(\"关闭\"",
         "moduleLevel": false
@@ -6726,7 +6740,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 112,
+        "line": 221,
         "parentKind": "CallExpression",
         "context": "tBlocked ? ( <Text style={styles.blocked}>{tr(\"请先更新宿主网关再升级 App\"",
         "moduleLevel": false
@@ -6743,6 +6757,20 @@
         "line": 56,
         "parentKind": "CallExpression",
         "context": "return; } if (!acceptRisk) { Alert.alert(tr(\"请先确认\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "请允许本应用「安装未知应用」，授权后返回这里重试",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 264,
+        "parentKind": "CallExpression",
+        "context": "<Text style={styles.warning}> {tr(\"请允许本应用「安装未知应用」，授权后返回这里重试\"",
         "moduleLevel": false
       }
     ]
@@ -6856,6 +6884,13 @@
         "parentKind": "CallExpression",
         "context": "onClose}> <Text style={styles.buttonText}>{tr(\"取消\"",
         "moduleLevel": false
+      },
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 313,
+        "parentKind": "CallExpression",
+        "context": "> <Text style={styles.secondaryLabel}>{tr(\"取消\"",
+        "moduleLevel": false
       }
     ]
   },
@@ -6936,9 +6971,16 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 142,
+        "line": 301,
         "parentKind": "CallExpression",
         "context": "> <Text style={styles.primaryLabel}>{tr(\"去 Releases 手动下载\"",
+        "moduleLevel": false
+      },
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 344,
+        "parentKind": "CallExpression",
+        "context": "> <Text style={styles.secondaryLabel}>{tr(\"去 Releases 手动下载\"",
         "moduleLevel": false
       }
     ]
@@ -7559,7 +7601,14 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 135,
+        "line": 294,
+        "parentKind": "CallExpression",
+        "context": "> <Text style={styles.secondaryLabel}>{tr(\"稍后\"",
+        "moduleLevel": false
+      },
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 325,
         "parentKind": "CallExpression",
         "context": "> <Text style={styles.secondaryLabel}>{tr(\"稍后\"",
         "moduleLevel": false
@@ -9443,6 +9492,20 @@
     ]
   },
   {
+    "key": "文件校验未通过，已删除下载内容。请重试或改用手动下载",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 82,
+        "parentKind": "CallExpression",
+        "context": "n tr(\"下载失败，请检查网络后重试\"); case 'checksum': return tr(\"文件校验未通过，已删除下载内容。请重试或改用手动下载\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "文件需要在线发送，等连接恢复后再试",
     "kind": "string",
     "expressions": [],
@@ -9569,6 +9632,20 @@
     ]
   },
   {
+    "key": "无法打开系统安装器，请重试或改用手动下载",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 84,
+        "parentKind": "CallExpression",
+        "context": "过，已删除下载内容。请重试或改用手动下载\"); case 'install': return tr(\"无法打开系统安装器，请重试或改用手动下载\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "无法读取本机版本号",
     "kind": "string",
     "expressions": [],
@@ -9617,7 +9694,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 46,
+        "line": 60,
         "parentKind": "CallExpression",
         "context": "tr(\"本机网关版本低于新版要求\"); case 'dsh-unknown': return tr(\"无法确认本机 DSH 版本，请自行核对\"",
         "moduleLevel": false
@@ -9631,7 +9708,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 42,
+        "line": 56,
         "parentKind": "CallExpression",
         "context": "switch (code) { case 'gateway-unknown': return tr(\"无法确认本机网关版本，请自行核对\"",
         "moduleLevel": false
@@ -9645,7 +9722,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 54,
+        "line": 68,
         "parentKind": "CallExpression",
         "context": "音模块版本低于新版要求\"); case 'protocol-unknown': return tr(\"无法确认本机协议版本，请先更新宿主网关\"",
         "moduleLevel": false
@@ -9659,7 +9736,7 @@
     "files": [
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 50,
+        "line": 64,
         "parentKind": "CallExpression",
         "context": "机 DSH 版本低于新版要求\"); case 'voice-unknown': return tr(\"无法确认本机语音模块版本，请自行核对\"",
         "moduleLevel": false
@@ -9737,6 +9814,34 @@
     ]
   },
   {
+    "key": "下载并安装",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 283,
+        "parentKind": "CallExpression",
+        "context": "> <Text style={styles.primaryLabel}>{tr(\"下载并安装\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "下载地址未通过校验，已取消下载。请改用手动下载",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 78,
+        "parentKind": "CallExpression",
+        "context": "tring { switch (reason) { case 'url': return tr(\"下载地址未通过校验，已取消下载。请改用手动下载\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "下载失败",
     "kind": "string",
     "expressions": [],
@@ -9746,6 +9851,20 @@
         "line": 366,
         "parentKind": "CallExpression",
         "context": "r(\"路径无效\"); default: return message ? message : tr(\"下载失败\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "下载失败，请检查网络后重试",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 80,
+        "parentKind": "CallExpression",
+        "context": "未通过校验，已取消下载。请改用手动下载\"); case 'download': return tr(\"下载失败，请检查网络后重试\"",
         "moduleLevel": false
       }
     ]
@@ -10509,6 +10628,20 @@
         "line": 1388,
         "parentKind": "CallExpression",
         "context": "tGraceLabel(null); setDecidedId(null); showToast(tr(\"已撤回决定\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "已打开系统安装器，请按提示完成安装",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 259,
+        "parentKind": "CallExpression",
+        "context": "ling' ? ( <Text style={styles.statusText}>{tr(\"已打开系统安装器，请按提示完成安装\"",
         "moduleLevel": false
       }
     ]
@@ -12271,6 +12404,34 @@
     ]
   },
   {
+    "key": "正在下载更新包…",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 246,
+        "parentKind": "CallExpression",
+        "context": "Row}> <Text style={styles.statusText}>{tr(\"正在下载更新包…\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "正在校验…",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 255,
+        "parentKind": "CallExpression",
+        "context": "ying' ? ( <Text style={styles.statusText}>{tr(\"正在校验…\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "之后新建的会话会开在这个目录",
     "kind": "string",
     "expressions": [],
@@ -12526,6 +12687,13 @@
         "parentKind": "CallExpression",
         "context": "load()}> <Text style={styles.retryText}>{tr(\"重试\"",
         "moduleLevel": false
+      },
+      {
+        "file": "src/ui/update/UpdateSheet.tsx",
+        "line": 337,
+        "parentKind": "CallExpression",
+        "context": "> <Text style={styles.primaryLabel}>{tr(\"重试\"",
+        "moduleLevel": false
       }
     ]
   },
@@ -12732,7 +12900,7 @@
       },
       {
         "file": "src/ui/update/UpdateSheet.tsx",
-        "line": 107,
+        "line": 216,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.checkedAt}> {tr(\"最近检查：{0}\"",
         "moduleLevel": false

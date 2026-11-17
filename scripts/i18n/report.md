@@ -1,8 +1,8 @@
 # i18n 扫描报告
 
-- 扫描文件：90
-- 去重后 key：827
-- 按类型：{"string":827,"template":0,"jsx":0}
+- 扫描文件：91
+- 去重后 key：837
+- 按类型：{"string":837,"template":0,"jsx":0}
 - 含模块级求值（切换语言需惰性处理）：0
 - 跳过的非文案节点：0
 
@@ -13,6 +13,7 @@
 - src/ui/plugins/PluginsView.tsx: 54
 - src/ui/home/HostInfoSheet.tsx: 51
 - src/ui/stream/TrajectoryView.tsx: 47
+- src/ui/update/UpdateSheet.tsx: 32
 - src/ui/home/FocusHome.tsx: 31
 - src/ui/plugins/InstallFlow.tsx: 31
 - src/ui/home/AllSessionsView.tsx: 30
@@ -28,7 +29,6 @@
 - src/ui/nav/ArcDial.tsx: 20
 - src/transport/file-download.ts: 19
 - src/ui/dock/ApprovalDock.tsx: 18
-- src/ui/update/UpdateSheet.tsx: 18
 - src/protocol/risk.ts: 17
 - src/ui/dock/TriageSheet.tsx: 15
 - src/ui/session/ModelPermissionBar.tsx: 13

@@ -1,17 +1,22 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { File } from 'expo-file-system';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { currentLanguage, tr } from '../../i18n';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { LatestManifest, UpdateEvaluation } from '../../update/manifest';
+import { downloadAndVerify, installApk, type DownloadFailure } from '../../update/installer';
 
 /**
- * 更新结果弹窗（issue #12，只展示「检查」结果）。
+ * 更新结果弹窗（issue #12）：检查结果 + Android 下载/校验/安装。
  *
- * 刻意没有「下载并安装」按钮：本块不做下载 / 校验和 / 安装，那是 chunk 4。
- * 这里只给「稍后」和跳 Releases 手动下载两个出口。
+ * 平台边界：只有 Android 且 hostBlocked 为 false 时显示「下载并安装」；
+ * 其它情况保持只读的「稍后 / 去 Releases 手动下载」，安装链路不在这里兜底。
  *
- * 只有 update-available 会挂载本弹窗；up-to-date 由调用方用轻提示处理。
+ * 安装没有成功回调：系统安装器接管后覆盖安装会重启进程，弹窗只能展示
+ * 「等待安装器」；`installApk` 返回 launched 时关闭弹窗，needs-unknown-sources
+ * 时停在授权提示，failed 时回到可重试的失败态。
  */
 
 interface Props {
@@ -25,6 +30,15 @@ interface Props {
   onClose: () => void;
   onManualDownload: () => void;
 }
+
+/** 弹窗内的下载/校验/安装状态；一次下载对应一个 AbortController。 */
+type Phase =
+  | { kind: 'idle' }
+  | { kind: 'downloading'; progress: number }
+  | { kind: 'verifying' }
+  | { kind: 'installing' }
+  | { kind: 'needs-permission' }
+  | { kind: 'failed'; reason: DownloadFailure | 'install' };
 
 /** 相对时间；与列表同口径，避免同一界面出现两种时间语言。 */
 export function checkedAgo(at: number): string {
@@ -57,6 +71,20 @@ function weakWarningLabel(code: string): string | null {
   }
 }
 
+/** 失败原因码 → 用户能看懂的一句话；不把机器码带到界面。 */
+function failureMessage(reason: DownloadFailure | 'install'): string {
+  switch (reason) {
+    case 'url':
+      return tr("下载地址未通过校验，已取消下载。请改用手动下载");
+    case 'download':
+      return tr("下载失败，请检查网络后重试");
+    case 'checksum':
+      return tr("文件校验未通过，已删除下载内容。请重试或改用手动下载");
+    case 'install':
+      return tr("无法打开系统安装器，请重试或改用手动下载");
+  }
+}
+
 export function UpdateSheet({
   visible,
   manifest,
@@ -67,6 +95,22 @@ export function UpdateSheet({
 }: Props) {
   const styles = useThemedStyles(makeStyles);
 
+  const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  /** 当前这次下载的取消句柄；取消/关闭/重试都会换掉它。 */
+  const controllerRef = useRef<AbortController | null>(null);
+  /** 用递增 id 让已经取消的异步结果失效，不再改状态。 */
+  const runIdRef = useRef(0);
+  /** 校验通过的包：授权未知来源后重试安装时直接复用，不重复下载。 */
+  const readyFileRef = useRef<File | null>(null);
+
+  useEffect(
+    () => () => {
+      runIdRef.current += 1;
+      controllerRef.current?.abort();
+    },
+    [],
+  );
+
   // 按当前语言取发布说明；当前语言缺失时退回另一份，两份都没有就整区不展示。
   const notes = manifest.releaseNotes;
   const releaseNotes = notes
@@ -76,12 +120,77 @@ export function UpdateSheet({
     : undefined;
 
   const hostBlocked = evaluation.kind === 'update-available' && evaluation.hostBlocked;
+  const canInstall = Platform.OS === 'android' && !hostBlocked;
   const weakWarnings =
     evaluation.kind === 'update-available'
       ? evaluation.weakWarnings
           .map((code) => weakWarningLabel(code))
           .filter((label): label is string => label !== null)
       : [];
+
+  const install = useCallback(
+    async (file: File) => {
+      setPhase({ kind: 'installing' });
+      const status = await installApk(file);
+      if (status === 'launched') {
+        // 安装器已拉起；覆盖安装会重启进程，这里只负责收起弹窗。
+        onClose();
+        return;
+      }
+      if (status === 'needs-unknown-sources') {
+        setPhase({ kind: 'needs-permission' });
+        return;
+      }
+      readyFileRef.current = null;
+      setPhase({ kind: 'failed', reason: 'install' });
+    },
+    [onClose],
+  );
+
+  const startDownload = useCallback(async () => {
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    readyFileRef.current = null;
+    setPhase({ kind: 'downloading', progress: 0 });
+
+    const result = await downloadAndVerify(
+      manifest,
+      (progress) => {
+        if (runIdRef.current !== runId) return;
+        // 最后一次进度事件≈下载完成；之后才开始取 SHA256SUMS 与比对摘要。
+        setPhase(progress >= 1 ? { kind: 'verifying' } : { kind: 'downloading', progress });
+      },
+      controller.signal,
+    );
+
+    if (runIdRef.current !== runId) return;
+    controllerRef.current = null;
+
+    if ('error' in result) {
+      setPhase({ kind: 'failed', reason: result.error });
+      return;
+    }
+
+    readyFileRef.current = result.file;
+    await install(result.file);
+  }, [install, manifest]);
+
+  const cancelDownload = useCallback(() => {
+    runIdRef.current += 1;
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setPhase({ kind: 'idle' });
+  }, []);
+
+  const retry = useCallback(() => {
+    const file = readyFileRef.current;
+    if (file === null) void startDownload();
+    else void install(file);
+  }, [install, startDownload]);
+
+  const percent = phase.kind === 'downloading' ? Math.round(phase.progress * 100) : 0;
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -124,23 +233,118 @@ export function UpdateSheet({
                 <Text style={styles.notes}>{releaseNotes}</Text>
               </>
             ) : null}
+
+            {phase.kind === 'downloading' ? (
+              <View style={styles.progressBlock}>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[styles.progressFill, { width: `${percent}%` as const }]}
+                    testID="update-progress-fill"
+                  />
+                </View>
+                <View style={styles.progressRow}>
+                  <Text style={styles.progressText}>{tr("正在下载更新包…")}</Text>
+                  <Text style={styles.progressPercent} testID="update-progress">
+                    {percent}%
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
+            {phase.kind === 'verifying' ? (
+              <Text style={styles.statusText}>{tr("正在校验…")}</Text>
+            ) : null}
+
+            {phase.kind === 'installing' ? (
+              <Text style={styles.statusText}>{tr("已打开系统安装器，请按提示完成安装")}</Text>
+            ) : null}
+
+            {phase.kind === 'needs-permission' ? (
+              <Text style={styles.warning}>
+                {tr("请允许本应用「安装未知应用」，授权后返回这里重试")}
+              </Text>
+            ) : null}
+
+            {phase.kind === 'failed' ? (
+              <View style={styles.failureBlock}>
+                <Text style={styles.failureTitle}>{tr("更新失败")}</Text>
+                <Text style={styles.failureText}>{failureMessage(phase.reason)}</Text>
+              </View>
+            ) : null}
           </ScrollView>
 
-          <View style={styles.buttons}>
-            <Pressable
-              style={[styles.button, styles.secondaryButton]}
-              onPress={onClose}
-              testID="update-later"
-            >
-              <Text style={styles.secondaryLabel}>{tr("稍后")}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.primaryButton]}
-              onPress={onManualDownload}
-              testID="update-manual-download"
-            >
-              <Text style={styles.primaryLabel}>{tr("去 Releases 手动下载")}</Text>
-            </Pressable>
+          <View style={styles.actions}>
+            {phase.kind === 'idle' && canInstall ? (
+              <Pressable
+                style={[styles.button, styles.primaryButton]}
+                onPress={() => void startDownload()}
+                testID="update-install"
+              >
+                <Text style={styles.primaryLabel}>{tr("下载并安装")}</Text>
+              </Pressable>
+            ) : null}
+
+            {phase.kind === 'idle' ? (
+              <View style={styles.buttons}>
+                <Pressable
+                  style={[styles.button, styles.secondaryButton]}
+                  onPress={onClose}
+                  testID="update-later"
+                >
+                  <Text style={styles.secondaryLabel}>{tr("稍后")}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.button, styles.primaryButton]}
+                  onPress={onManualDownload}
+                  testID="update-manual-download"
+                >
+                  <Text style={styles.primaryLabel}>{tr("去 Releases 手动下载")}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {phase.kind === 'downloading' ? (
+              <View style={styles.buttons}>
+                <Pressable
+                  style={[styles.button, styles.secondaryButton]}
+                  onPress={cancelDownload}
+                  testID="update-cancel"
+                >
+                  <Text style={styles.secondaryLabel}>{tr("取消")}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {phase.kind === 'installing' ? (
+              <View style={styles.buttons}>
+                <Pressable
+                  style={[styles.button, styles.secondaryButton]}
+                  onPress={onClose}
+                  testID="update-later"
+                >
+                  <Text style={styles.secondaryLabel}>{tr("稍后")}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {phase.kind === 'needs-permission' || phase.kind === 'failed' ? (
+              <View style={styles.buttons}>
+                <Pressable
+                  style={[styles.button, styles.primaryButton]}
+                  onPress={retry}
+                  testID="update-retry"
+                >
+                  <Text style={styles.primaryLabel}>{tr("重试")}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.button, styles.secondaryButton]}
+                  onPress={onManualDownload}
+                  testID="update-manual-download"
+                >
+                  <Text style={styles.secondaryLabel}>{tr("去 Releases 手动下载")}</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
         </Pressable>
       </Pressable>
@@ -190,7 +394,29 @@ const makeStyles = (t: Palette) =>
       marginBottom: 6,
     },
     notes: { color: t.text.secondary, fontSize: 12.5, lineHeight: 18 },
-    buttons: { flexDirection: 'row', gap: 10, marginTop: 18 },
+    progressBlock: { marginTop: 16, gap: 8 },
+    progressTrack: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: t.bg.subtle,
+      overflow: 'hidden',
+    },
+    progressFill: { height: 6, borderRadius: 3, backgroundColor: t.action.primaryBg },
+    progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    progressText: { color: t.text.secondary, fontSize: 12.5, lineHeight: 18 },
+    statusText: { color: t.text.secondary, fontSize: 12.5, lineHeight: 18, marginTop: 14 },
+    progressPercent: { color: t.text.primary, fontSize: 12, fontWeight: '700' },
+    failureBlock: {
+      backgroundColor: t.semantic.dangerBg,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginTop: 14,
+    },
+    failureTitle: { color: t.semantic.dangerText, fontSize: 12.5, fontWeight: '700' },
+    failureText: { color: t.semantic.dangerText, fontSize: 12, lineHeight: 17, marginTop: 3 },
+    actions: { gap: 10, marginTop: 18 },
+    buttons: { flexDirection: 'row', gap: 10 },
     button: { flex: 1, alignItems: 'center', borderRadius: 10, paddingVertical: 11 },
     secondaryButton: { backgroundColor: t.action.secondaryBg },
     primaryButton: { backgroundColor: t.action.primaryBg },
