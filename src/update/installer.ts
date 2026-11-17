@@ -1,11 +1,17 @@
-import type { File } from 'expo-file-system';
+import { applicationId } from 'expo-application';
+import { Directory, File, Paths } from 'expo-file-system';
+import type { DownloadTask } from 'expo-file-system';
+import { ActivityAction, startActivityAsync } from 'expo-intent-launcher';
+
+import { isAllowedUpdateUrl, type LatestManifest } from './manifest';
 
 /**
- * APK 下载后的完整性校验（issue #12，chunk 4 第一步）。
+ * APK 下载、校验与安装编排（issue #12，chunk 4）。
  *
- * 职责边界：只做「解析校验和 → 按 URL 推导文件名 → 比对下载文件摘要」，
- * 不发起下载、不拉起安装 Intent、不碰 app.json / config plugin。
- * 除 `File.digest()` 外不引入任何运行时依赖：解析函数在 Node 里可直接单测。
+ * 职责边界：只做「校验 URL → 下载到应用私有缓存 → 校验 SHA-256 → 拉起系统安装器」。
+ * 不碰 app.json / config plugin，不产出用户可见文案；UI 层只消费这里的状态码。
+ *
+ * 平台：安装链路仅 Android 有效。本文件不引入 react-native，调用方负责平台判断。
  */
 
 /** SHA256SUMS 的单行格式：`<hex>  <filename>` 或 `<hex> *<filename>`。 */
@@ -13,6 +19,24 @@ const CHECKSUM_LINE = /^([0-9a-fA-F]{64}) [ *](.+)$/;
 
 /** 合法的 SHA-256 摘要：64 个十六进制字符。 */
 const SHA256_HEX = /^[0-9a-f]{64}$/i;
+
+/** 更新包缓存在应用私有目录下的子目录，不写外部存储。 */
+const UPDATE_CACHE_DIR = 'dsh-updates';
+
+/** APK 的 MIME 类型：系统安装器只认这个。 */
+const APK_MIME_TYPE = 'application/vnd.android.package-archive';
+
+/** 拉起系统安装器的 action。 */
+const ACTION_VIEW = 'android.intent.action.VIEW';
+
+/** Intent.FLAG_GRANT_READ_URI_PERMISSION；content:// URI 必须显式授权。 */
+const FLAG_GRANT_READ_URI_PERMISSION = 1;
+
+/** 安装拉起结果。expected failure 只回状态，不抛异常。 */
+export type InstallStatus = 'launched' | 'needs-unknown-sources' | 'failed';
+
+/** 下载 + 校验失败的三类原因，供 UI 决定重试还是回退手动下载。 */
+export type DownloadFailure = 'download' | 'checksum' | 'url';
 
 /**
  * 从 SHA256SUMS 内容里取 fileName 对应的摘要。
@@ -80,4 +104,162 @@ export async function verifySha256(file: File, expectedHash: string): Promise<bo
   }
 
   return actual.toLowerCase() === expectedHash.toLowerCase();
+}
+
+/**
+ * 删除缓存文件；文件已不存在时 delete() 会抛错，这里吞掉。
+ * 清理失败不改变调用方结论：下次下载会先删同名文件。
+ */
+function deleteQuietly(file: File): void {
+  try {
+    if (file.exists) file.delete();
+  } catch {
+    // 忽略：调用方已经拿到失败状态，不能让清理异常盖掉它。
+  }
+}
+
+/**
+ * 下载 APK 到应用私有缓存目录。
+ *
+ * - 先过 `isAllowedUpdateUrl`：非 https / 非官方主机在创建任务前就拒绝，不发网络请求。
+ * - 进度按 bytesWritten / totalBytes 归一化到 0..1；服务端没给 Content-Length 时不回调。
+ * - `signal` 直接交给 DownloadTask，abort 时 downloadAsync() 以 AbortError 拒绝。
+ * - 任何失败（含取消）都删除半成品，绝不留一个可被误装的残包。
+ */
+export async function downloadApk(
+  apkUrl: string,
+  onProgress: (progress: number) => void,
+  signal?: AbortSignal,
+): Promise<File> {
+  if (!isAllowedUpdateUrl(apkUrl)) throw new Error('invalid-apk-url');
+
+  const fileName = apkFileNameFromUrl(apkUrl);
+  if (fileName === null) throw new Error('invalid-apk-url');
+
+  const directory = new Directory(Paths.cache, UPDATE_CACHE_DIR);
+  if (!directory.exists) directory.create({ intermediates: true });
+
+  const destination = new File(directory, fileName);
+  deleteQuietly(destination);
+
+  let task: DownloadTask | null = null;
+  try {
+    task = File.createDownloadTask(apkUrl, destination, {
+      signal,
+      onProgress: ({ bytesWritten, totalBytes }) => {
+        if (totalBytes > 0) onProgress(Math.min(1, Math.max(0, bytesWritten / totalBytes)));
+      },
+    });
+    const downloaded = await task.downloadAsync();
+    // 没有调用 pause()，null 只可能是平台异常状态；按失败处理。
+    if (downloaded === null) throw new Error('download-paused');
+    return downloaded;
+  } catch (error) {
+    deleteQuietly(destination);
+    throw error;
+  } finally {
+    task?.release();
+  }
+}
+
+/**
+ * 拉取 SHA256SUMS 并取出 apkFileName 的摘要。
+ *
+ * URL 不在白名单、网络失败、非 2xx、内容里没有该文件——一律返回 null。
+ * 调用方必须把 null 当作校验失败，不能跳过比对。
+ */
+export async function fetchExpectedHash(
+  sha256Url: string,
+  apkFileName: string,
+): Promise<string | null> {
+  if (!isAllowedUpdateUrl(sha256Url)) return null;
+
+  let text: string;
+  try {
+    const response = await fetch(sha256Url, { method: 'GET' });
+    if (!response.ok) return null;
+    text = await response.text();
+  } catch {
+    return null;
+  }
+
+  return parseSha256Sums(text, apkFileName);
+}
+
+/**
+ * 用系统安装器打开已下载的 APK。
+ *
+ * SDK 58 没有暴露 `canRequestPackageInstalls` 的 JS API（expo-file-system /
+ * expo-intent-launcher 均无），因此无法在拉起前查询「安装未知应用」授权。
+ * 回退方案：ACTION_VIEW 拉起失败时，打开本应用的 MANAGE_UNKNOWN_APP_SOURCES
+ * 设置页并返回 `needs-unknown-sources`；设置页也打不开才返回 `failed`。
+ *
+ * 设置页调用会等用户返回应用后才 resolve，期间 UI 应展示等待态。
+ */
+export async function installApk(file: File): Promise<InstallStatus> {
+  let contentUri: string;
+  try {
+    contentUri = file.contentUri;
+  } catch {
+    // 文件被清理/缓存被系统回收时读取 contentUri 会抛错；安装入口只回状态。
+    return 'failed';
+  }
+  if (typeof contentUri !== 'string' || contentUri.length === 0) return 'failed';
+
+  try {
+    await startActivityAsync(ACTION_VIEW, {
+      data: contentUri,
+      type: APK_MIME_TYPE,
+      flags: FLAG_GRANT_READ_URI_PERMISSION,
+    });
+    return 'launched';
+  } catch {
+    // 授权缺失、安装器被禁用等都以 launch 失败的形式出现，统一走设置页兜底。
+  }
+
+  try {
+    await startActivityAsync(
+      ActivityAction.MANAGE_UNKNOWN_APP_SOURCES,
+      applicationId === null ? undefined : { data: `package:${applicationId}` },
+    );
+    return 'needs-unknown-sources';
+  } catch {
+    return 'failed';
+  }
+}
+
+/**
+ * 下载并校验一个清单指向的 APK；不安装。
+ *
+ * 返回 `{ error: 'url' }` 时没有发过网络请求；`download` 表示下载/网络失败；
+ * `checksum` 表示拿不到期望摘要或摘要不匹配（必要时调用方回退手动下载）。
+ * 任何失败路径都会删掉缓存里的包。
+ */
+export async function downloadAndVerify(
+  manifest: LatestManifest,
+  onProgress: (progress: number) => void,
+  signal?: AbortSignal,
+): Promise<{ file: File } | { error: DownloadFailure }> {
+  if (!isAllowedUpdateUrl(manifest.apkUrl) || !isAllowedUpdateUrl(manifest.sha256Url)) {
+    return { error: 'url' };
+  }
+
+  const fileName = apkFileNameFromUrl(manifest.apkUrl);
+  if (fileName === null) return { error: 'url' };
+
+  let file: File | null = null;
+  try {
+    file = await downloadApk(manifest.apkUrl, onProgress, signal);
+
+    const expectedHash = await fetchExpectedHash(manifest.sha256Url, fileName);
+    if (expectedHash === null || !(await verifySha256(file, expectedHash))) {
+      deleteQuietly(file);
+      return { error: 'checksum' };
+    }
+
+    return { file };
+  } catch {
+    if (file !== null) deleteQuietly(file);
+    return { error: 'download' };
+  }
 }
