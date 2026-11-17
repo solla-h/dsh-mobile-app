@@ -12412,7 +12412,7 @@
         "file": "src/ui/update/UpdateSheet.tsx",
         "line": 246,
         "parentKind": "CallExpression",
-        "context": "Row}> <Text style={styles.statusText}>{tr(\"正在下载更新包…\"",
+        "context": "w}> <Text style={styles.progressText}>{tr(\"正在下载更新包…\"",
         "moduleLevel": false
       }
     ]

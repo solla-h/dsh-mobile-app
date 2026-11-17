@@ -3,7 +3,7 @@ import type { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import { UpdateSheet } from '../UpdateSheet';
-import { tr } from '../../../i18n';
+import { currentLanguage, tr } from '../../../i18n';
 import { downloadAndVerify, installApk } from '../../../update/installer';
 import type { LatestManifest, UpdateEvaluation } from '../../../update/manifest';
 
@@ -12,8 +12,15 @@ jest.mock('../../../update/installer', () => ({
   installApk: jest.fn(),
 }));
 
+// 只替换语言选择函数；tr / useThemedStyles 仍走真实字典。
+jest.mock('../../../i18n', () => ({
+  ...jest.requireActual('../../../i18n'),
+  currentLanguage: jest.fn(() => 'zh'),
+}));
+
 const downloadMock = downloadAndVerify as jest.Mock;
 const installMock = installApk as jest.Mock;
+const languageMock = currentLanguage as jest.Mock;
 
 /**
  * 更新弹窗：检查结果 + Android 下载/安装状态机。
@@ -51,6 +58,7 @@ function forcePlatform(os: 'android' | 'ios'): void {
 
 beforeEach(() => {
   forcePlatform('android');
+  languageMock.mockReturnValue('zh');
   downloadMock.mockReset();
   installMock.mockReset();
   installMock.mockResolvedValue('launched');
@@ -375,5 +383,51 @@ describe('UpdateSheet 下载与安装', () => {
 
     expect(await screen.findByText(tr(message))).toBeTruthy();
     expect(screen.queryByText(error)).toBeNull();
+  });
+});
+
+describe('UpdateSheet 发布说明语言', () => {
+  it.each([
+    ['zh', { 'zh-CN': '中文发布说明', en: 'English release notes' }, '中文发布说明', 'English release notes'],
+    ['en', { 'zh-CN': '中文发布说明', en: 'English release notes' }, 'English release notes', '中文发布说明'],
+    ['en', { 'zh-CN': '仅中文说明' }, '仅中文说明', 'English release notes'],
+    ['zh', { en: '仅英文说明' }, '仅英文说明', '中文发布说明'],
+  ] as const)(
+    '当前语言 %s 时选择或回退发布说明',
+    async (language, releaseNotes, shown, hidden) => {
+      languageMock.mockReturnValue(language);
+      const manifest: LatestManifest = { ...MANIFEST, releaseNotes };
+
+      await render(
+        <UpdateSheet
+          visible
+          manifest={manifest}
+          evaluation={available({ manifest })}
+          onClose={NOOP}
+          onManualDownload={NOOP}
+        />,
+      );
+
+      expect(screen.getByText(shown)).toBeTruthy();
+      expect(screen.queryByText(hidden)).toBeNull();
+    },
+  );
+
+  it('两种语言都没有说明时不渲染发布说明区', async () => {
+    languageMock.mockReturnValue('en');
+    const manifest: LatestManifest = { ...MANIFEST, releaseNotes: {} };
+
+    await render(
+      <UpdateSheet
+        visible
+        manifest={manifest}
+        evaluation={available({ manifest })}
+        onClose={NOOP}
+        onManualDownload={NOOP}
+      />,
+    );
+
+    expect(screen.queryByText(tr("发布说明"))).toBeNull();
+    expect(screen.getByText('0.2.0')).toBeTruthy();
   });
 });

@@ -140,4 +140,21 @@ describe('HostInfoSheet 检查更新行', () => {
     expect(await screen.findByText('检查更新超时，请稍后再试')).toBeTruthy();
     expect(onUpdateAvailable).not.toHaveBeenCalled();
   });
+
+  it('检查抛错时就地提示失败，抽屉不崩且可再次检查', async () => {
+    checkMock.mockRejectedValue(new Error('boom'));
+    const { onUpdateAvailable } = await renderSheet();
+
+    await fireEvent.press(await screen.findByText('检查'));
+
+    expect(await screen.findByText('检查更新失败')).toBeTruthy();
+    expect(onUpdateAvailable).not.toHaveBeenCalled();
+    // 失败后不卡在「检查中…」，同一行还能再点。
+    expect(screen.getByText('检查')).toBeTruthy();
+
+    checkMock.mockResolvedValue({ kind: 'failed', error: 'network', cached: null });
+    await fireEvent.press(screen.getByText('检查'));
+
+    expect(await screen.findByText('检查更新失败：网络不可用')).toBeTruthy();
+  });
 });
