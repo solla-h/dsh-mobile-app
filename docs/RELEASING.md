@@ -123,6 +123,99 @@ Older tags without an explicit versionCode count as 1. The workflow never bumps 
 
 Never move a published tag or replace its APK. If code needs changing, create a new version/tag.
 
+## In-app update manifest (`latest.json`)
+
+The app polls a single static manifest at a stable URL and offers an APK download when the manifest's
+`versionCode` is higher than the installed one. This section covers what the pipeline does for it and
+how a maintainer verifies or repairs it. What the app does with the manifest is documented in
+[ROADMAP.md](ROADMAP.md) §1.
+
+Stable URL (read from `src/update/checker.ts`):
+
+```
+https://raw.githubusercontent.com/solla-h/dsh-mobile-app/release-latest/latest.json
+```
+
+### Cutting a release
+
+1. Bump `expo.android.versionCode` in `app.json` for every APK release (it must exceed every earlier
+   `v*` tag). Update the version fields and CHANGELOG, merge to `master`.
+2. Validate metadata and tag the merged commit exactly as in **Version and tag contract** above
+   (`node scripts/release-metadata.mjs TAG`, `git tag`, `git push`).
+
+No separate step writes `latest.json`; the publish job does it automatically after the Release exists.
+
+### What the publish job does automatically
+
+After the signed APK passes the emulator journey and the Release is published, the `publish` job in
+`.github/workflows/android-release.yml`:
+
+- Runs `node scripts/latest-json.mjs "$TAG" "$NOTES_FILE"` to build the manifest from the checked-out
+  `package.json`, `app.json` and `compatibility.json`, using the release notes file it already produced.
+- Sanity-checks that the generated `tag` and `versionCode` match the release just published, and refuses
+  to push a mismatched manifest.
+- Commits `latest.json` to the `release-latest` branch (creating it as an orphan branch on first use)
+  only when the content actually changed. A failed push does not roll back the Release; it only delays
+  the next manifest refresh.
+
+The Release itself is published with `gh release edit ... --latest=false`, so GitHub's `/releases/latest`
+endpoint does not move to the new tag. The app never calls that endpoint; it only reads the static
+`latest.json` above.
+
+### `latest.json` fields and where they come from
+
+| Field | Source |
+| --- | --- |
+| `version` | tag core version, validated against `package.json`, `app.json`, `compatibility.json` |
+| `versionCode` | `app.json` `expo.android.versionCode` |
+| `tag` | the release tag |
+| `apkUrl` | `…/releases/download/<tag>/<apkName>` |
+| `sha256Url` | `…/releases/download/<tag>/SHA256SUMS` |
+| `releaseNotes` | the release notes file, duplicated into `zh-CN` and `en` (the job only generates one text) |
+| `required` | `compatibility.json`: `recommended.{gateway,dsh,voice}.version` and `protocol.version` |
+
+The app treats `required.protocol` as a hard gate and the other `required.*` entries as weak prompts
+(runtime has no reliable gateway/DSH/voice version signal yet). The shape must always parse as
+`LatestManifest` in `src/update/manifest.ts`.
+
+### Verifying a release
+
+After the workflow finishes, on the default branch you can confirm the published manifest without any
+special tooling:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/solla-h/dsh-mobile-app/release-latest/latest.json
+```
+
+Check that:
+
+- `tag` and `version` match the release you just cut;
+- `versionCode` equals the `app.json` value you bumped for this release;
+- `apkUrl` and `sha256Url` point at the new tag and resolve (they use `…/releases/download/<tag>/…`);
+- downloading the APK and running `sha256sum --check SHA256SUMS` matches the `sha256Url` contents.
+
+If the manifest is absent or stale, the `publish` job logs (`Publish latest.json to the release-latest
+branch`) show whether generation or the branch push failed.
+
+### Fixing a bad manifest
+
+`latest.json` is a plain file on the `release-latest` branch; repairing it does not touch the published
+Release or its assets. Push a corrected `latest.json` (regenerate with `node scripts/latest-json.mjs TAG
+NOTES_FILE` if you need to rebuild it from the manifests) to that branch:
+
+```bash
+git fetch origin release-latest
+git checkout -B release-latest origin/release-latest
+# edit latest.json
+git add latest.json
+git commit -m "chore: correct latest.json"
+git push origin release-latest
+```
+
+The app re-checks at most once every 24 hours automatically, and the settings drawer's manual check
+fetches immediately, so a corrected manifest is picked up on the next check rather than instantly.
+Never move the release tag or replace a published APK to "fix" a manifest; only the manifest file changes.
+
 ## Download, install and verify
 
 Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases) and choose a release with an APK

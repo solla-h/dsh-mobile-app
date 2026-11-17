@@ -32,6 +32,33 @@
 | 首页细节 | 卡片按住直回无移动容差与录音反馈；`mobile` 工作区不自动准备（只在已存在时自动选，需手动新建）；分组折叠不持久化、无高度动画、组头无「在该项目新建」 | 逐项小改 | 都是观感与便利项 |
 | 方案 C（上下分屏 HUD） | **仅文档记录**：规范里的备选形态，未开工 | 见产品 UI 规范原文 | 未采纳为当前设计 |
 
+### 已交付（用户可见）：应用内版本检查与 APK 自更新（issue #12，2026-11-17）
+
+> 已交付项在此登记以便与上表对照；状态为 `已做`，不再属于「未完成」。按本文件约定，已做条目保留、不静默删除。
+
+状态：`已做`。**验证边界：源码 / 单元与组件测试 / typecheck / lint / CI 确认；真机覆盖安装尚未实测（待补）。**
+
+做什么：
+
+- 启动后自动检查一次（距上次成功检查不足 24h 则读缓存，不重复请求），设置抽屉「检查更新」可手动检查并绕过节流。
+- 只拉稳定入口上的 `latest.json`（`release-latest` 分支的 raw 地址），不调 GitHub API，避免未认证限流。
+- 判定用 Android `versionCode` 整数比较，不比较版本名；远端不高于本机即视为已是最新，绝不提示降级。
+- 兼容门禁：`required.protocol` 高于运行时 `hello.protocol` 时强阻断（`hostBlocked`，不给下载入口）；`gateway`/`dsh`/`voice` 运行时拿不到可靠版本信号（见 §2 COMPAT-1），只给弱提示，不阻断。
+- 下载到应用私有缓存目录：仅 `https` 且官方主机白名单（`src/update/manifest.ts` 的 `isAllowedUpdateUrl`）；进度条 + 取消；下完用 `SHA256SUMS` 做 SHA-256 校验，失败即删除并回退「去 Releases 手动下载」。
+- 安装走系统安装器（`ACTION_VIEW` + `content://` URI；provider 由 `expo-file-system` 自带，`app.json` 声明 `REQUEST_INSTALL_PACKAGES`）；缺「安装未知应用」授权时跳本应用的授权设置页，返回后重试复用已校验的包。
+
+不做什么：
+
+- 不做 OTA / 热更新；更新形态是整包 APK 覆盖安装。
+- 不做静默自动安装；必须用户触发、系统安装器确认。
+- 不接第三方分析或上报。
+- 检查请求只带 `latest.json` 的 URL，**不带**网关地址、账号、token、配对凭据或设备标识。
+
+验证状态（分级）：
+
+- **源码 / 测试确认**：`src/update/manifest.ts`、`checker.ts`、`installer.ts` 单测；`UpdateSheet` 与 `HostInfoSheet` 组件测试；typecheck / lint；发布流水线（`latest.json` 生成器 + Node 测试、publish job 推 `release-latest`）。
+- **仍为假设（未做真机）**：覆盖安装保留配对记录与草稿、「安装未知应用」授权流程、安装完成后冷启动，均需 Huang 在实体设备上跑一遍确认。文档不据此声称真机已通过。
+
 ## 2. 已实现一半
 
 | 能力 | 已做 | 未做 |
