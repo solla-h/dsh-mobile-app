@@ -14,6 +14,12 @@ import { isAllowedUpdateUrl, type LatestManifest } from './manifest';
  * 平台：安装链路仅 Android 有效。本文件不引入 react-native，调用方负责平台判断。
  */
 
+const HASH_FETCH_TIMEOUT_MS = 15_000;
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error('aborted');
+}
+
 /** SHA256SUMS 的单行格式：`<hex>  <filename>` 或 `<hex> *<filename>`。 */
 const CHECKSUM_LINE = /^([0-9a-fA-F]{64}) [ *](.+)$/;
 
@@ -164,26 +170,34 @@ export async function downloadApk(
 
 /**
  * 拉取 SHA256SUMS 并取出 apkFileName 的摘要。
- *
- * URL 不在白名单、网络失败、非 2xx、内容里没有该文件——一律返回 null。
- * 调用方必须把 null 当作校验失败，不能跳过比对。
+ * 网络/HTTP 失败抛出供调用方归类；文件名对应的摘要不存在时返回 null。
  */
 export async function fetchExpectedHash(
   sha256Url: string,
   apkFileName: string,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   if (!isAllowedUpdateUrl(sha256Url)) return null;
 
-  let text: string;
-  try {
-    const response = await fetch(sha256Url, { method: 'GET' });
-    if (!response.ok) return null;
-    text = await response.text();
-  } catch {
-    return null;
-  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(abort, HASH_FETCH_TIMEOUT_MS);
 
-  return parseSha256Sums(text, apkFileName);
+  try {
+    throwIfAborted(signal);
+    const response = await fetch(sha256Url, { method: 'GET', signal: controller.signal });
+    throwIfAborted(signal);
+    if (controller.signal.aborted) throw new Error('hash-fetch-timeout');
+    if (!response.ok) throw new Error('hash-fetch-failed');
+    const text = await response.text();
+    throwIfAborted(signal);
+    if (controller.signal.aborted) throw new Error('hash-fetch-timeout');
+    return parseSha256Sums(text, apkFileName);
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
 }
 
 /**
@@ -249,10 +263,23 @@ export async function downloadAndVerify(
 
   let file: File | null = null;
   try {
+    throwIfAborted(signal);
     file = await downloadApk(manifest.apkUrl, onProgress, signal);
+    throwIfAborted(signal);
 
-    const expectedHash = await fetchExpectedHash(manifest.sha256Url, fileName);
-    if (expectedHash === null || !(await verifySha256(file, expectedHash))) {
+    const expectedHash = await fetchExpectedHash(manifest.sha256Url, fileName, signal);
+    throwIfAborted(signal);
+    if (expectedHash === null) {
+      deleteQuietly(file);
+      return { error: 'checksum' };
+    }
+
+    const matches = await verifySha256(file, expectedHash);
+    if (signal?.aborted) {
+      deleteQuietly(file);
+      return { error: 'download' };
+    }
+    if (!matches) {
       deleteQuietly(file);
       return { error: 'checksum' };
     }

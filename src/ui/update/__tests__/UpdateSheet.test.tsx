@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import type { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 
@@ -384,8 +384,78 @@ describe('UpdateSheet 下载与安装', () => {
     expect(await screen.findByText(tr(message))).toBeTruthy();
     expect(screen.queryByText(error)).toBeNull();
   });
-});
+  it('hostBlocked arriving during download aborts it and prevents retry', async () => {
+    let seenSignal: AbortSignal | undefined;
+    downloadMock.mockImplementation(
+      (_manifest: unknown, _onProgress: (progress: number) => void, signal?: AbortSignal) => {
+        seenSignal = signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const view = await render(
+      <UpdateSheet
+        visible
+        manifest={MANIFEST}
+        evaluation={available({})}
+        onClose={NOOP}
+        onManualDownload={NOOP}
+      />,
+    );
 
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId('update-install'));
+    });
+    await act(async () => {
+      view.rerender(
+        <UpdateSheet
+          visible
+          manifest={MANIFEST}
+          evaluation={available({ hostBlocked: true, blockedReasons: ['protocol'] })}
+          onClose={NOOP}
+          onManualDownload={NOOP}
+        />,
+      );
+    });
+
+    expect(seenSignal?.aborted).toBe(true);
+    expect(screen.getByText(tr("请先更新宿主网关再升级 App"))).toBeTruthy();
+    expect(screen.queryByTestId('update-retry')).toBeNull();
+    expect(screen.getByTestId('update-later')).toBeTruthy();
+    expect(downloadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('hostBlocked clears a verified file and prevents permission retry from installing it', async () => {
+    downloadMock.mockResolvedValue({ file: FILE });
+    installMock.mockResolvedValue('needs-unknown-sources');
+    const view = await render(
+      <UpdateSheet
+        visible
+        manifest={MANIFEST}
+        evaluation={available({})}
+        onClose={NOOP}
+        onManualDownload={NOOP}
+      />,
+    );
+
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId('update-install'));
+    });
+    expect(await screen.findByTestId('update-retry')).toBeTruthy();
+    await act(async () => {
+      view.rerender(
+        <UpdateSheet
+          visible
+          manifest={MANIFEST}
+          evaluation={available({ hostBlocked: true, blockedReasons: ['protocol'] })}
+          onClose={NOOP}
+          onManualDownload={NOOP}
+        />,
+      );
+    });
+    expect(screen.queryByTestId('update-retry')).toBeNull();
+    expect(installMock).toHaveBeenCalledTimes(1);
+  });
+});
 describe('UpdateSheet 发布说明语言', () => {
   it.each([
     ['zh', { 'zh-CN': '中文发布说明', en: 'English release notes' }, '中文发布说明', 'English release notes'],

@@ -10,9 +10,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { AppState, Linking, Platform } from 'react-native';
 
 import App from '../../../App';
-import type { LatestManifest } from '../../update/manifest';
-import { resetHarness, setAppLanguage, setTransportScript } from './test-harness';
-
+import { upsertGateway } from '../../storage/gateway-store';
+import type { LatestManifest, UpdateEvaluation } from '../../update/manifest';
+import { conversationClient, helloFrame, resetHarness, setAppLanguage, setTransportScript } from './test-harness';
 jest.mock('expo-secure-store', () => require('./test-harness').secureStoreMock());
 jest.mock('expo-crypto', () => require('./test-harness').cryptoMock());
 jest.mock('expo-audio', () => require('./test-harness').audioMock());
@@ -42,17 +42,24 @@ const MANIFEST: LatestManifest = {
   releaseNotes: { 'zh-CN': '修复若干问题', en: 'Bug fixes' },
 };
 
-function updateAvailable(checkedAt: number) {
+type AvailableUpdateResult = {
+  kind: 'checked';
+  manifest: LatestManifest;
+  checkedAt: number;
+  evaluation: Extract<UpdateEvaluation, { kind: 'update-available' }>;
+};
+
+function updateAvailable(checkedAt: number): AvailableUpdateResult {
   return {
-    kind: 'checked' as const,
+    kind: 'checked',
     manifest: MANIFEST,
     checkedAt,
     evaluation: {
-      kind: 'update-available' as const,
+      kind: 'update-available',
       manifest: MANIFEST,
       hostBlocked: false,
-      blockedReasons: [] as string[],
-      weakWarnings: [] as string[],
+      blockedReasons: [],
+      weakWarnings: [],
     },
   };
 }
@@ -101,7 +108,44 @@ describe('更新检查接线', () => {
     await waitFor(() => expect(screen.queryByText('发现新版本')).toBeNull());
     openURL.mockRestore();
   });
+  it('discards an older protocol-unknown result when a newer hostBlocked check finishes first', async () => {
+    const unknownDeferred = Promise.withResolvers<AvailableUpdateResult>();
+    const blockedDeferred = Promise.withResolvers<AvailableUpdateResult>();
+    checkForUpdate
+      .mockImplementationOnce(() => unknownDeferred.promise)
+      .mockImplementationOnce(() => blockedDeferred.promise);
+    const blocked: AvailableUpdateResult = {
+      ...updateAvailable(1_700_000_000_001),
+      evaluation: {
+        ...updateAvailable(1_700_000_000_001).evaluation,
+        hostBlocked: true,
+        blockedReasons: ['protocol'],
+      },
+    };
+    await upsertGateway({
+      id: 'gw:test-gateway',
+      url: 'ws://127.0.0.1:3080/ws/mobile',
+      token: 'token-seeded',
+      gatewayId: 'test-gateway',
+      label: '测试网关',
+    });
+    await render(<App />);
+    expect(checkForUpdate).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      conversationClient().emit(helloFrame());
+    });
+    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledTimes(2));
 
+    await act(async () => {
+      blockedDeferred.resolve(blocked);
+    });
+    expect(await screen.findByText('请先更新宿主网关再升级 App')).toBeTruthy();
+
+    await act(async () => {
+      unknownDeferred.resolve(updateAvailable(1_700_000_000_000));
+    });
+    expect(screen.getByText('请先更新宿主网关再升级 App')).toBeTruthy();
+  });
   it('回到前台会再检查一次；同一 versionCode 不重复弹窗', async () => {
     checkForUpdate.mockResolvedValue(updateAvailable(1_700_000_000_000));
     await render(<App />);

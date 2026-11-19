@@ -1244,8 +1244,8 @@ function AppBody() {
     };
   }, [connectWith]);
 
-  /** hello.protocol 供自动检查读取；用 ref 保持检查回调 identity 稳定。 */
   const helloProtocolRef = useRef<number | undefined>(undefined);
+  const updateCheckRunIdRef = useRef(0);
   useEffect(() => {
     helloProtocolRef.current = hello?.protocol;
   }, [hello?.protocol]);
@@ -1255,12 +1255,14 @@ function AppBody() {
    * 结果只用于「有新版本就提示一次」；失败静默，不打扰用户。
    */
   const runUpdateCheck = useCallback(async () => {
+    const runId = ++updateCheckRunIdRef.current;
     const versionCode = parseBuildVersion(Application.nativeBuildVersion);
     if (versionCode === null) return;
     const result = await checkForUpdate({
       versionCode,
       protocol: helloProtocolRef.current,
     });
+    if (runId !== updateCheckRunIdRef.current) return;
     // failed / invalid：自动检查保持静默。
     if (result.kind !== 'checked' && result.kind !== 'cached') return;
     if (result.evaluation.kind !== 'update-available') return;

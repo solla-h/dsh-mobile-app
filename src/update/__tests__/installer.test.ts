@@ -320,11 +320,47 @@ describe('downloadApk', () => {
 });
 
 describe('fetchExpectedHash', () => {
-  test('从 SHA256SUMS 取出目标文件的摘要', async () => {
+  test('从 SHA256SUMS 取出目标文件的摘要并传递取消信号', async () => {
     fetchMock.mockResolvedValue(textResponse(`${HASH}  ${APK_NAME}\n`));
+    const controller = new AbortController();
 
-    await expect(fetchExpectedHash(SHA_URL, APK_NAME)).resolves.toBe(HASH);
-    expect(fetchMock).toHaveBeenCalledWith(SHA_URL, { method: 'GET' });
+    await expect(fetchExpectedHash(SHA_URL, APK_NAME, controller.signal)).resolves.toBe(HASH);
+    expect(fetchMock).toHaveBeenCalledWith(SHA_URL, { method: 'GET', signal: expect.any(AbortSignal) });
+  });
+
+  test('SHA256SUMS 请求超时会 abort fetch 并抛出网络错误', async () => {
+    jest.useFakeTimers();
+    let seenSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation((_url: string, options: { signal: AbortSignal }) => {
+      seenSignal = options.signal;
+      const { promise, reject } = Promise.withResolvers<Response>();
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      return promise;
+    });
+
+    const request = fetchExpectedHash(SHA_URL, APK_NAME);
+    const rejection = expect(request).rejects.toThrow('aborted');
+    await jest.advanceTimersByTimeAsync(15_000);
+    expect(seenSignal?.aborted).toBe(true);
+    await rejection;
+    jest.useRealTimers();
+  });
+
+  test('用户取消会 abort SHA256SUMS 请求', async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation((_url: string, options: { signal: AbortSignal }) => {
+      seenSignal = options.signal;
+      const { promise, reject } = Promise.withResolvers<Response>();
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      return promise;
+    });
+
+    const request = fetchExpectedHash(SHA_URL, APK_NAME, controller.signal);
+    const rejection = expect(request).rejects.toThrow('aborted');
+    controller.abort();
+    expect(seenSignal?.aborted).toBe(true);
+    await rejection;
   });
 
   test('非白名单 URL 不发请求', async () => {
@@ -333,16 +369,15 @@ describe('fetchExpectedHash', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test('网络失败、非 2xx、内容缺失或损坏都返回 null', async () => {
+  test('网络失败或非 2xx 抛出，只有摘要缺失返回 null', async () => {
     fetchMock.mockRejectedValueOnce(new Error('offline'));
-    await expect(fetchExpectedHash(SHA_URL, APK_NAME)).resolves.toBeNull();
+    await expect(fetchExpectedHash(SHA_URL, APK_NAME)).rejects.toThrow('offline');
 
-    fetchMock.mockResolvedValueOnce(textResponse('not found', 404));
-    await expect(fetchExpectedHash(SHA_URL, APK_NAME)).resolves.toBeNull();
+    fetchMock.mockResolvedValueOnce(textResponse('unavailable', 503));
+    await expect(fetchExpectedHash(SHA_URL, APK_NAME)).rejects.toThrow('hash-fetch-failed');
 
     fetchMock.mockResolvedValueOnce(textResponse(`${HASH}  other.apk\n`));
     await expect(fetchExpectedHash(SHA_URL, APK_NAME)).resolves.toBeNull();
-
     fetchMock.mockResolvedValueOnce(textResponse('garbage'));
     await expect(fetchExpectedHash(SHA_URL, APK_NAME)).resolves.toBeNull();
   });
@@ -387,15 +422,38 @@ describe('downloadAndVerify', () => {
     expect(destination.delete).toHaveBeenCalledTimes(1);
   });
 
-  test('拿不到期望摘要时按 checksum 处理并删除文件', async () => {
+  test('SHA256SUMS network failure is download while a missing digest remains checksum', async () => {
     setUpDownload(async () => {
       destination.exists = true;
       return destination as unknown as File;
     });
-    fetchMock.mockResolvedValue(textResponse('not found', 404));
+    fetchMock.mockRejectedValueOnce(new Error('offline'));
 
+    await expect(downloadAndVerify(MANIFEST, jest.fn())).resolves.toEqual({ error: 'download' });
+    expect(destination.delete).toHaveBeenCalledTimes(1);
+
+    destination.delete.mockClear();
+    destination.exists = false;
+    fetchMock.mockResolvedValueOnce(textResponse(`${HASH}  other.apk\n`));
     await expect(downloadAndVerify(MANIFEST, jest.fn())).resolves.toEqual({ error: 'checksum' });
+    expect(destination.delete).toHaveBeenCalledTimes(1);
+  });
 
+  test('aborting during hash verification deletes the downloaded APK', async () => {
+    setUpDownload(async () => {
+      destination.exists = true;
+      return destination as unknown as File;
+    });
+    const controller = new AbortController();
+    fetchMock.mockResolvedValue({
+      ok: true,
+      text: async () => {
+        controller.abort();
+        return `${HASH}  ${APK_NAME}\n`;
+      },
+    } as Response);
+
+    await expect(downloadAndVerify(MANIFEST, jest.fn(), controller.signal)).resolves.toEqual({ error: 'download' });
     expect(destination.digest).not.toHaveBeenCalled();
     expect(destination.delete).toHaveBeenCalledTimes(1);
   });

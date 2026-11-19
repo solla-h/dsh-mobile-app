@@ -177,12 +177,23 @@ export function UpdateSheet({
     await install(result.file);
   }, [install, manifest]);
 
-  const cancelDownload = useCallback(() => {
+  const abortDownload = useCallback(() => {
     runIdRef.current += 1;
     controllerRef.current?.abort();
     controllerRef.current = null;
-    setPhase({ kind: 'idle' });
   }, []);
+  const cancelDownload = useCallback(() => {
+    abortDownload();
+    setPhase({ kind: 'idle' });
+  }, [abortDownload]);
+  useEffect(() => {
+    if (canInstall || phase.kind === 'idle') return;
+    // A host block invalidates active install state, so reset it with the abort.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cancelDownload();
+    readyFileRef.current = null;
+  }, [canInstall, cancelDownload, phase.kind]);
+  const blockedPhase: Phase = canInstall ? phase : { kind: 'idle' };
 
   const retry = useCallback(() => {
     const file = readyFileRef.current;
@@ -190,7 +201,7 @@ export function UpdateSheet({
     else void install(file);
   }, [install, startDownload]);
 
-  const percent = phase.kind === 'downloading' ? Math.round(phase.progress * 100) : 0;
+  const percent = blockedPhase.kind === 'downloading' ? Math.round(blockedPhase.progress * 100) : 0;
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -234,7 +245,7 @@ export function UpdateSheet({
               </>
             ) : null}
 
-            {phase.kind === 'downloading' ? (
+            {blockedPhase.kind === 'downloading' ? (
               <View style={styles.progressBlock}>
                 <View style={styles.progressTrack}>
                   <View
@@ -251,30 +262,30 @@ export function UpdateSheet({
               </View>
             ) : null}
 
-            {phase.kind === 'verifying' ? (
+            {blockedPhase.kind === 'verifying' ? (
               <Text style={styles.statusText}>{tr("正在校验…")}</Text>
             ) : null}
 
-            {phase.kind === 'installing' ? (
+            {blockedPhase.kind === 'installing' ? (
               <Text style={styles.statusText}>{tr("已打开系统安装器，请按提示完成安装")}</Text>
             ) : null}
 
-            {phase.kind === 'needs-permission' ? (
+            {blockedPhase.kind === 'needs-permission' ? (
               <Text style={styles.warning}>
                 {tr("请允许本应用「安装未知应用」，授权后返回这里重试")}
               </Text>
             ) : null}
 
-            {phase.kind === 'failed' ? (
+            {blockedPhase.kind === 'failed' ? (
               <View style={styles.failureBlock}>
                 <Text style={styles.failureTitle}>{tr("更新失败")}</Text>
-                <Text style={styles.failureText}>{failureMessage(phase.reason)}</Text>
+                <Text style={styles.failureText}>{failureMessage(blockedPhase.reason)}</Text>
               </View>
             ) : null}
           </ScrollView>
 
           <View style={styles.actions}>
-            {phase.kind === 'idle' && canInstall ? (
+            {blockedPhase.kind === 'idle' && canInstall ? (
               <Pressable
                 style={[styles.button, styles.primaryButton]}
                 onPress={() => void startDownload()}
@@ -284,7 +295,7 @@ export function UpdateSheet({
               </Pressable>
             ) : null}
 
-            {phase.kind === 'idle' ? (
+            {blockedPhase.kind === 'idle' ? (
               <View style={styles.buttons}>
                 <Pressable
                   style={[styles.button, styles.secondaryButton]}
@@ -303,7 +314,7 @@ export function UpdateSheet({
               </View>
             ) : null}
 
-            {phase.kind === 'downloading' ? (
+            {blockedPhase.kind === 'downloading' ? (
               <View style={styles.buttons}>
                 <Pressable
                   style={[styles.button, styles.secondaryButton]}
@@ -315,7 +326,7 @@ export function UpdateSheet({
               </View>
             ) : null}
 
-            {phase.kind === 'installing' ? (
+            {blockedPhase.kind === 'installing' ? (
               <View style={styles.buttons}>
                 <Pressable
                   style={[styles.button, styles.secondaryButton]}
@@ -327,7 +338,7 @@ export function UpdateSheet({
               </View>
             ) : null}
 
-            {phase.kind === 'needs-permission' || phase.kind === 'failed' ? (
+            {blockedPhase.kind === 'needs-permission' || blockedPhase.kind === 'failed' ? (
               <View style={styles.buttons}>
                 <Pressable
                   style={[styles.button, styles.primaryButton]}
