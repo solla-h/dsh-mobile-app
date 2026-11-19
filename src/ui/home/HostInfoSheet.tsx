@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Application from 'expo-application';
 
 
 import {
@@ -16,6 +17,10 @@ import { tr, languageOptions, useLanguage, type Language } from '../../i18n';
 import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { GatewayClient } from '../../transport/gateway-client';
+import { checkForUpdate, parseBuildVersion } from '../../update/checker';
+import { evaluateUpdate, type LatestManifest, type UpdateEvaluation } from '../../update/manifest';
+import { loadUpdateState } from '../../storage/update-state';
+import { checkedAgo } from '../update/UpdateSheet';
 
 /**
  * 宿主信息与全局默认（PROTOCOL.md §10/§12）。
@@ -25,12 +30,32 @@ import type { GatewayClient } from '../../transport/gateway-client';
  * - set-default：修改全局默认（写操作，走 control 连接更稳）
  */
 
+export interface UpdateAvailablePayload {
+  manifest: LatestManifest;
+  evaluation: UpdateEvaluation;
+  checkedAt: number;
+}
+
 interface Props {
   control: GatewayClient;
   onClose: () => void;
+  /** hello.protocol；未配对时为 undefined，门禁只会给弱警告。 */
+  protocol?: number;
+  /** 手动检查发现新版本：由 App 挂载全局 UpdateSheet。 */
+  onUpdateAvailable?: (payload: UpdateAvailablePayload) => void;
 }
 
-export function HostInfoSheet({ control, onClose }: Props) {
+/** failed 的机器码 → 用户可读句子；未知码保留原码便于反馈。 */
+function updateFailureText(error: string): string {
+  if (error === 'timeout') return tr("检查更新超时，请稍后再试");
+  if (error === 'network') return tr("检查更新失败：网络不可用");
+  const status = /^http-(\d{3})$/.exec(error)?.[1];
+  if (status) return tr("检查更新失败：服务器返回 {0}", [status]);
+  if (error === 'invalid-manifest') return tr("检查更新失败：更新信息格式不正确");
+  return tr("检查更新失败：{0}", [error]);
+}
+
+export function HostInfoSheet({ control, onClose, protocol, onUpdateAvailable }: Props) {
   const styles = useThemedStyles(makeStyles);
   const [host, setHost] = useState<HostInfo | null>(null);
   const [defaults, setDefaults] = useState<DefaultsInfo | null>(null);
@@ -41,6 +66,11 @@ export function HostInfoSheet({ control, onClose }: Props) {
   const { language, setLanguage } = useLanguage();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** 更新检查：加载态、最近检查时间与「有新版本」角标。 */
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
+  const [lastCheckAt, setLastCheckAt] = useState<number | null>(null);
+  const [hasUpdate, setHasUpdate] = useState(false);
 
   const reload = useCallback(() => {
     control.send({ type: 'host' });
@@ -88,6 +118,71 @@ export function HostInfoSheet({ control, onClose }: Props) {
     },
     [control],
   );
+
+  /** 打开抽屉时回显上次自动检查的时间与「有新版本」角标（读缓存，不发请求）。 */
+  useEffect(() => {
+    let alive = true;
+    void loadUpdateState().then((state) => {
+      if (!alive) return;
+      setLastCheckAt(state.lastCheckAt);
+      const versionCode = parseBuildVersion(Application.nativeBuildVersion);
+      if (state.cachedManifest !== null && versionCode !== null) {
+        const evaluation = evaluateUpdate({ versionCode, protocol }, state.cachedManifest);
+        setHasUpdate(evaluation.kind === 'update-available');
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [protocol]);
+
+  /**
+   * 手动检查：绕过节流，成功/失败都就地给反馈。
+   * 有更新交给 App 的全局 UpdateSheet（本抽屉在 Android 上会被 Modal 盖住，
+   * 内嵌第二层 Modal 不显示——与文件顶部 picking 的注释同因）。
+   */
+  const runUpdateCheck = useCallback(async () => {
+    const versionCode = parseBuildVersion(Application.nativeBuildVersion);
+    if (versionCode === null) {
+      setUpdateNotice(tr("无法读取本机版本号"));
+      return;
+    }
+    setCheckingUpdate(true);
+    setUpdateNotice(null);
+    try {
+      const result = await checkForUpdate({ versionCode, protocol }, { manual: true });
+      if (result.kind === 'checked' || result.kind === 'cached') {
+        setLastCheckAt(result.checkedAt);
+        setHasUpdate(result.evaluation.kind === 'update-available');
+        if (result.kind === 'checked' && result.evaluation.kind === 'update-available') {
+          tapFeedback();
+          if (onUpdateAvailable) {
+            onUpdateAvailable({
+              manifest: result.manifest,
+              evaluation: result.evaluation,
+              checkedAt: result.checkedAt,
+            });
+            return;
+          }
+          // 没有全局弹窗可挂（非 Android）：就地说明，别让点击看起来没反应。
+          setUpdateNotice(tr("发现新版本 {0}", [result.manifest.tag]));
+          return;
+        }
+        setUpdateNotice(tr("已是最新版本"));
+        return;
+      }
+      if (result.kind === 'invalid') {
+        setUpdateNotice(tr("检查更新失败：更新信息格式不正确"));
+        return;
+      }
+      // 手动失败才提示；自动检查失败在 App 侧静默。
+      setUpdateNotice(updateFailureText(result.error));
+    } catch {
+      setUpdateNotice(tr("检查更新失败"));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, [onUpdateAvailable, protocol]);
 
   const presetActions = (presets?.presets ?? []).map((preset) => ({
     id: preset.id,
@@ -149,6 +244,31 @@ export function HostInfoSheet({ control, onClose }: Props) {
               <Text style={styles.rowAction}>{tr("修改")}</Text>
             </TouchableOpacity>
 
+            <Text style={styles.section}>{tr("检查更新")}</Text>
+            <TouchableOpacity
+              style={styles.row}
+              disabled={checkingUpdate}
+              onPress={() => void runUpdateCheck()}
+            >
+              <View style={styles.rowBody}>
+                <Text style={styles.rowLabel}>
+                  {tr("当前版本 {0}", [
+                    [Application.nativeApplicationVersion, Application.nativeBuildVersion]
+                      .filter(Boolean)
+                      .join(' · ') || tr("未知"),
+                  ])}
+                </Text>
+                <Text style={styles.rowValue}>
+                  {lastCheckAt === null
+                    ? tr("从未检查")
+                    : tr("最近检查：{0}", [checkedAgo(lastCheckAt)])}
+                </Text>
+              </View>
+              <Text style={[styles.rowAction, hasUpdate ? styles.rowActionAlert : null]}>
+                {checkingUpdate ? tr("检查中…") : hasUpdate ? tr("有新版本") : tr("检查")}
+              </Text>
+            </TouchableOpacity>
+
             <Text style={styles.section}>{tr("宿主")}</Text>
             {host === null ? (
               <Text style={styles.empty}>{tr("读取中…")}</Text>
@@ -171,6 +291,7 @@ export function HostInfoSheet({ control, onClose }: Props) {
               </>
             )}
 
+            {updateNotice ? <Text style={styles.notice}>{updateNotice}</Text> : null}
             {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
             <Text style={styles.section}>{tr("全局默认（新会话生效）")}</Text>
@@ -350,6 +471,7 @@ const makeStyles = (t: Palette) =>
     rowLabel: { color: t.text.primary, fontSize: 13, fontWeight: '600' },
     rowValue: { color: t.text.muted, fontSize: 11, marginTop: 2 },
     rowAction: { color: t.text.secondary, fontSize: 12, fontWeight: '700' },
+    rowActionAlert: { color: t.semantic.gateAmberText },
     footnote: { color: t.text.muted, fontSize: 10.5, lineHeight: 15, marginTop: 14 },
     fontPicker: {
       borderTopWidth: StyleSheet.hairlineWidth,

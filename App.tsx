@@ -1,11 +1,15 @@
+import * as Application from 'expo-application';
 import * as Clipboard from 'expo-clipboard';
 import { randomUUID } from 'expo-crypto';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   BackHandler,
   KeyboardAvoidingView,
+  Linking,
+  Platform,
   Pressable,
   Text,
   View,
@@ -44,7 +48,7 @@ import { RenameSessionModal } from './src/ui/home/RenameSessionModal';
 import { makeAppStyles } from './src/ui/home/appStyles';
 import { PluginsView } from './src/ui/plugins/PluginsView';
 import { SchedulesView, mapSchedules } from './src/ui/home/SchedulesView';
-import { HostInfoSheet } from './src/ui/home/HostInfoSheet';
+import { HostInfoSheet, type UpdateAvailablePayload } from './src/ui/home/HostInfoSheet';
 import { FontScaleProvider } from './src/ui/fontScale';
 import { tr, LanguageProvider, useLanguageVersion } from './src/i18n';
 import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
@@ -74,6 +78,8 @@ import { ScanScreen } from './src/ui/ScanScreen';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
 import { SessionScreen } from './src/ui/SessionScreen';
 import { useTheme, useThemedStyles } from './src/ui/theme';
+import { checkForUpdate, parseBuildVersion } from './src/update/checker';
+import { UpdateSheet } from './src/ui/update/UpdateSheet';
 
 /** 会话列表按网关分开缓存，切换网关时不会串味。 */
 const sessionsCacheKey = (gatewayId: string) => `sessions-${gatewayId}`;
@@ -237,6 +243,10 @@ function AppBody() {
   const [schedules, setSchedules] = useState<unknown[] | null>(null);
   /** 宿主信息与全局默认抽屉 */
   const [hostSheet, setHostSheet] = useState(false);
+  /** 发现新版本时的结果弹窗；只读展示，本块不做下载/安装。 */
+  const [updateSheet, setUpdateSheet] = useState<UpdateAvailablePayload | null>(null);
+  /** 已经自动提示过的 versionCode：节流命中时不重复弹窗。 */
+  const announcedUpdateRef = useRef<number | null>(null);
   /** 全部会话页里折叠起来的工作区分组 */
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   /** 当前工作区：只影响「之后新建的会话」，不移动任何历史会话。 */
@@ -1234,6 +1244,80 @@ function AppBody() {
     };
   }, [connectWith]);
 
+  const helloProtocolRef = useRef<number | undefined>(undefined);
+  const updateCheckRunIdRef = useRef(0);
+  useEffect(() => {
+    helloProtocolRef.current = hello?.protocol;
+  }, [hello?.protocol]);
+
+  /**
+   * 自动检查：拉取/节流/判定都在 checker，这里只做触发与展示。
+   * 结果只用于「有新版本就提示一次」；失败静默，不打扰用户。
+   */
+  const runUpdateCheck = useCallback(async () => {
+    const runId = ++updateCheckRunIdRef.current;
+    const versionCode = parseBuildVersion(Application.nativeBuildVersion);
+    if (versionCode === null) return;
+    const result = await checkForUpdate({
+      versionCode,
+      protocol: helloProtocolRef.current,
+    });
+    if (runId !== updateCheckRunIdRef.current) return;
+    // failed / invalid：自动检查保持静默。
+    if (result.kind !== 'checked' && result.kind !== 'cached') return;
+    if (result.evaluation.kind !== 'update-available') return;
+    const evaluation = result.evaluation;
+    const { manifest } = evaluation;
+    // 同一版本只自动打断一次；用户关掉后不再重复弹。
+    const alreadyAnnounced = announcedUpdateRef.current === manifest.versionCode;
+    announcedUpdateRef.current = manifest.versionCode;
+    setUpdateSheet((current) => {
+      // 弹窗已开着：用最新判定刷新它（例如 hello 到达后补上 hostBlocked）。
+      if (current !== null) {
+        if (current.manifest.versionCode !== manifest.versionCode) return current;
+        return { manifest, evaluation, checkedAt: result.checkedAt };
+      }
+      if (alreadyAnnounced) return current;
+      return { manifest, evaluation, checkedAt: result.checkedAt };
+    });
+  }, []);
+
+  /** 冷启动检查一次 + 每次回到前台检查（节流在 checker 内，24h 内不发请求）。 */
+  useEffect(() => {
+    void runUpdateCheck();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void runUpdateCheck();
+    });
+    return () => subscription.remove();
+  }, [runUpdateCheck]);
+
+  /**
+   * hello 到达后再用协议版本补一次判定。节流内直接复用缓存清单，不发网络请求；
+   * 这样「宿主网关协议落后」的强阻断能落到已经在屏幕上的弹窗里。
+   */
+  useEffect(() => {
+    if (hello?.protocol === undefined) return;
+    void runUpdateCheck();
+  }, [hello?.protocol, runUpdateCheck]);
+
+  /** 手动检查发现新版本：先关抽屉再挂全局弹窗（Android 上 Modal 套 Modal 不显示）。 */
+  const handleUpdateAvailable = useCallback((payload: UpdateAvailablePayload) => {
+    announcedUpdateRef.current = payload.manifest.versionCode;
+    setHostSheet(false);
+    setUpdateSheet(payload);
+  }, []);
+
+  const closeUpdateSheet = useCallback(() => setUpdateSheet(null), []);
+
+  const openUpdateReleasePage = useCallback(() => {
+    if (updateSheet === null) return;
+    // 只打开公开的 GitHub tag 页；不带任何本机/网关信息。
+    const url = `https://github.com/solla-h/dsh-mobile-app/releases/tag/${encodeURIComponent(
+      updateSheet.manifest.tag,
+    )}`;
+    void Linking.openURL(url).catch(() => undefined);
+  }, [updateSheet]);
+
   const handleCreate = useCallback(() => {
     if (!connected) return;
     setCreating(true);
@@ -1859,7 +1943,24 @@ function AppBody() {
         onClose={() => setCreateSheet(false)}
       />
 
-      {hostSheet ? <HostInfoSheet control={control} onClose={() => setHostSheet(false)} /> : null}
+      {hostSheet ? (
+        <HostInfoSheet
+          control={control}
+          protocol={hello?.protocol}
+          onUpdateAvailable={Platform.OS === 'android' ? handleUpdateAvailable : undefined}
+          onClose={() => setHostSheet(false)}
+        />
+      ) : null}
+      {updateSheet !== null && Platform.OS === 'android' ? (
+        <UpdateSheet
+          visible
+          manifest={updateSheet.manifest}
+          evaluation={updateSheet.evaluation}
+          checkedAt={updateSheet.checkedAt}
+          onClose={closeUpdateSheet}
+          onManualDownload={openUpdateReleasePage}
+        />
+      ) : null}
       <ActionSheet
         visible={gatewaySheet}
         title={tr("网关")}

@@ -191,3 +191,44 @@ jobs:
           [[ "$RELEASE_TAG" == *-* ]] && prerelease=true
           gh release edit "$RELEASE_TAG" --draft=false --prerelease="$prerelease" \
             --latest=false --notes-file "$RUNNER_TEMP/release-notes.md"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          path: source
+      - name: Publish latest.json to the release-latest branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          RELEASE_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          node scripts/latest-json.mjs "$RELEASE_TAG" "$RUNNER_TEMP/release-notes.md" \
+            > "$RUNNER_TEMP/latest.json"
+          # Never push a manifest that disagrees with the release just published.
+          jq -e --arg tag "$RELEASE_TAG" --argjson code "$RELEASE_VERSION_CODE" \
+            '.tag == $tag and .versionCode == $code' "$RUNNER_TEMP/latest.json" > /dev/null \
+            || { printf 'Generated latest.json does not match the published release\n' >&2; exit 1; }
+          if [[ -n $(git ls-remote --heads origin release-latest) ]]; then
+            git fetch origin release-latest
+            git checkout -B release-latest origin/release-latest
+          else
+            # An orphan keeps the checked-out tree in the index; keep only latest.json.
+            git checkout --orphan release-latest
+            git rm -rf --ignore-unmatch .
+          fi
+          if [[ -f latest.json ]] && cmp -s latest.json "$RUNNER_TEMP/latest.json"; then
+            printf 'latest.json already current for %s\n' "$RELEASE_TAG"
+            exit 0
+          fi
+          cp "$RUNNER_TEMP/latest.json" latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add latest.json
+          git commit -m "chore: update latest.json for $RELEASE_TAG"
+          # The published release is final; a lost push only delays the next manifest refresh.
+          git push origin release-latest \
+            || { printf 'Failed to push release-latest\n' >&2; exit 1; }
