@@ -211,13 +211,13 @@ describe('缓存写入节奏', () => {
     expect(saveMock).toHaveBeenCalledWith({ lastCheckAt: NOW, cachedManifest: MANIFEST });
   });
 
-  it('手动检查成功只写 cachedManifest，不推进自动检查节奏', async () => {
+  it('手动检查成功时记录检查时间与清单', async () => {
     const fetchImpl = jest.fn(async () => jsonResponse(MANIFEST));
 
     await checkForUpdate(INSTALLED, { fetchImpl, now: NOW, manual: true });
 
     expect(saveMock).toHaveBeenCalledTimes(1);
-    expect(saveMock).toHaveBeenCalledWith({ cachedManifest: MANIFEST });
+    expect(saveMock).toHaveBeenCalledWith({ lastCheckAt: NOW, cachedManifest: MANIFEST });
   });
 
   it('自动检查失败不写缓存', async () => {

@@ -5,9 +5,9 @@ import { readJson, removeJson, writeJson } from './persisted-state';
 /**
  * 更新检查的持久状态。
  *
- * 只放两件事：上次自动检查的时间（节流用）与上次成功拿到的清单（离线回显用）。
- * 落盘走 dsh-state 的 JSON 文件，与 app-settings 同一个后端；写操作必须读-合并-写，
- * 不能整对象覆盖——两个字段是分开写的（手动检查只写 cachedManifest）。
+ * 只放两件事：最近一次成功检查的时间戳与上次成功拿到的清单（离线回显用）。
+ * 落盘走 dsh-state 的 JSON 文件，与 app-settings 同一个后端；写操作必须读-合并-写。
+ *
  */
 export interface UpdateState {
   /** 上次自动检查成功的时间戳（毫秒）；从未检查为 null。 */

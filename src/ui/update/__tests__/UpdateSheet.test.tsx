@@ -33,7 +33,7 @@ const MANIFEST: LatestManifest = {
   tag: 'v0.2.0',
   apkUrl: 'https://github.com/solla-h/dsh-mobile-app/releases/download/v0.2.0/app.apk',
   sha256Url: 'https://github.com/solla-h/dsh-mobile-app/releases/download/v0.2.0/app.apk.sha256',
-  releaseNotes: { 'zh-CN': '修复若干问题', en: 'Bug fixes' },
+  releaseNotes: { 'zh-CN': '**重要**更新说明', en: '**Important** release notes' },
 };
 
 const FILE = { uri: 'file:///cache/dsh-updates/app.apk' } as unknown as File;
@@ -85,7 +85,7 @@ describe('UpdateSheet 检查结果', () => {
 
     expect(screen.getByText('0.2.0')).toBeTruthy();
     expect(screen.getByText('v0.2.0')).toBeTruthy();
-    expect(screen.getByText('修复若干问题')).toBeTruthy();
+    expect(screen.getByText('重要更新说明')).toBeTruthy();
     // 检查时间与相对时间同一行渲染（「最近检查：刚刚」）。
     expect(screen.getByText(/最近检查：/)).toBeTruthy();
     expect(screen.getByTestId('update-install')).toBeTruthy();
@@ -131,6 +131,39 @@ describe('UpdateSheet 检查结果', () => {
     expect(screen.queryByTestId('update-install')).toBeNull();
     expect(screen.getByTestId('update-manual-download')).toBeTruthy();
     expect(screen.getByTestId('update-later')).toBeTruthy();
+  });
+
+  it('shows required host component versions alongside unknown-version warnings', async () => {
+    const manifest: LatestManifest = {
+      ...MANIFEST,
+      required: { gateway: '0.12.0-rdv.3', dsh: '0.2.1-rc.5', voice: '0.2.1-rc.5' },
+    };
+    await render(
+      <UpdateSheet
+        visible
+        manifest={manifest}
+        evaluation={available({ manifest, weakWarnings: ['gateway-unknown', 'dsh-unknown', 'voice-unknown'] })}
+        onClose={NOOP}
+        onManualDownload={NOOP}
+      />,
+    );
+
+    expect(screen.getByText('新版要求：网关 0.12.0-rdv.3 · DSH 0.2.1-rc.5 · 语音模块 0.2.1-rc.5')).toBeTruthy();
+    expect(screen.getByText(tr("无法确认本机网关版本，请自行核对"))).toBeTruthy();
+  });
+
+  it('omits host requirements when the manifest has none', async () => {
+    await render(
+      <UpdateSheet
+        visible
+        manifest={MANIFEST}
+        evaluation={available({})}
+        onClose={NOOP}
+        onManualDownload={NOOP}
+      />,
+    );
+
+    expect(screen.queryByText(/新版要求：/)).toBeNull();
   });
 
   it('弱提示每个码一行，未知码不渲染', async () => {

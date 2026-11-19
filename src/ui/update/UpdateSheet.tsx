@@ -1,3 +1,4 @@
+import { MarkdownView } from '../Markdown';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { File } from 'expo-file-system';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -231,6 +232,15 @@ export function UpdateSheet({
             {hostBlocked ? (
               <Text style={styles.blocked}>{tr("请先更新宿主网关再升级 App")}</Text>
             ) : null}
+            {manifest.required && (manifest.required.gateway || manifest.required.dsh || manifest.required.voice) ? (
+              <Text style={styles.requiredVersions}>
+                {tr("新版要求：网关 {0} · DSH {1} · 语音模块 {2}", [
+                  manifest.required.gateway ?? tr("未指定"),
+                  manifest.required.dsh ?? tr("未指定"),
+                  manifest.required.voice ?? tr("未指定"),
+                ])}
+              </Text>
+            ) : null}
 
             {weakWarnings.map((label, index) => (
               <Text key={`${index}-${label}`} style={styles.warning}>
@@ -241,7 +251,7 @@ export function UpdateSheet({
             {releaseNotes ? (
               <>
                 <Text style={styles.section}>{tr("发布说明")}</Text>
-                <Text style={styles.notes}>{releaseNotes}</Text>
+                <MarkdownView text={releaseNotes} />
               </>
             ) : null}
 
@@ -397,6 +407,7 @@ const makeStyles = (t: Palette) =>
       marginTop: 12,
     },
     warning: { color: t.semantic.gateAmberText, fontSize: 11.5, lineHeight: 16, marginTop: 8 },
+    requiredVersions: { color: t.text.secondary, fontSize: 11.5, lineHeight: 16, marginTop: 8 },
     section: {
       color: t.text.secondary,
       fontSize: 12,

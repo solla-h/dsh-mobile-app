@@ -1,4 +1,6 @@
 {
+  "新版要求：网关 {0} · DSH {1} · 语音模块 {2}": "Newer version requires: gateway {0} · DSH {1} · voice module {2}",
+  "未指定": "not specified",
   "下载中": "Downloading",
   "响应缺少 result": "Response missing result",
   "消息输入框": "Message input",

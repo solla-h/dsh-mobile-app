@@ -84,8 +84,8 @@ function isAbort(error: unknown): boolean {
 /**
  * 拉取并评估一次更新。
  *
- * 自动检查（manual 不传）失败时静默返回 `failed`，绝不抛异常；
- * 成功才写 `lastCheckAt`，手动检查只刷新 `cachedManifest`，不改自动检查节奏。
+ * Automatic and manual checks both record the last successful remote check;
+ * manual checks still bypass the automatic throttle.
  */
 export async function checkForUpdate(
   installed: InstalledApp,
@@ -153,10 +153,7 @@ export async function checkForUpdate(
 
   const evaluation = evaluateUpdate(installed, manifest);
 
-  // 手动检查不推进 lastCheckAt：用户点了十次也不该让自动检查停一天。
-  await saveUpdateState(
-    options.manual ? { cachedManifest: manifest } : { lastCheckAt: now, cachedManifest: manifest },
-  );
+  await saveUpdateState({ lastCheckAt: now, cachedManifest: manifest });
 
   return { kind: 'checked', evaluation, manifest, checkedAt: now };
 }

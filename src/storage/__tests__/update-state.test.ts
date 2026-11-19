@@ -1,7 +1,7 @@
 /**
  * 更新检查的两个字段共用同一个落盘对象（update-state.json）。
- * 手动检查只写 cachedManifest、自动检查写 lastCheckAt + cachedManifest，
- * 所以写操作必须读-合并-写：整对象覆盖会让另一侧的状态悄悄消失。
+ * 成功检查写入 lastCheckAt + cachedManifest，写操作必须读-合并-写，
+ * 整对象覆盖会让另一侧的状态悄悄消失。
  */
 import { clearUpdateState, loadUpdateState, saveUpdateState } from '../update-state';
 import { readJson, removeJson, writeJson } from '../persisted-state';
@@ -46,7 +46,7 @@ describe('saveUpdateState 读-合并-写', () => {
     });
   });
 
-  it('只写 cachedManifest（手动检查）时保留已有 lastCheckAt', async () => {
+  it('写 cachedManifest 时保留已有 lastCheckAt', async () => {
     readMock.mockResolvedValue({ lastCheckAt: NOW, cachedManifest: null });
 
     await saveUpdateState({ cachedManifest: MANIFEST });

@@ -1,8 +1,8 @@
 # i18n 扫描报告
 
 - 扫描文件：91
-- 去重后 key：837
-- 按类型：{"string":837,"template":0,"jsx":0}
+- 去重后 key：839
+- 按类型：{"string":839,"template":0,"jsx":0}
 - 含模块级求值（切换语言需惰性处理）：0
 - 跳过的非文案节点：0
 
@@ -13,7 +13,7 @@
 - src/ui/plugins/PluginsView.tsx: 54
 - src/ui/home/HostInfoSheet.tsx: 51
 - src/ui/stream/TrajectoryView.tsx: 47
-- src/ui/update/UpdateSheet.tsx: 32
+- src/ui/update/UpdateSheet.tsx: 36
 - src/ui/home/FocusHome.tsx: 31
 - src/ui/plugins/InstallFlow.tsx: 31
 - src/ui/home/AllSessionsView.tsx: 30
