@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { LayoutAnimation, Platform, Pressable, StyleSheet, Text, UIManager, View } from 'react-native';
 
 import { softFeedback, tapFeedback } from '../haptics';
@@ -28,7 +28,7 @@ interface Props {
  * 一个胶囊替代原来 N 个思考胶囊 + M 个工具组，用户和回答之间不再隔几屏。
  * 点按可展开复看每一步；展开后仍是原来的 ThinkPill / ToolGroup 组件。
  */
-export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, animateIn }: Props) {
+export const ActivityGroup = memo(function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, animateIn }: Props) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
   const mountedRef = useRef(false);
@@ -102,7 +102,27 @@ export function ActivityGroup({ steps, pendingCallId, onOpenGate, onQuoteLine, a
       ) : null}
     </View>
   );
-}
+}, (previous, next) =>
+  previous.pendingCallId === next.pendingCallId &&
+  previous.onOpenGate === next.onOpenGate &&
+  previous.onQuoteLine === next.onQuoteLine &&
+  previous.animateIn === next.animateIn &&
+  previous.steps.length === next.steps.length &&
+  previous.steps.every((step, index) => {
+    const other = next.steps[index];
+    if (step.kind !== other.kind || step.id !== other.id) return false;
+    if (step.kind === 'message' && other.kind === 'message') return step.message === other.message;
+    if (step.kind === 'tools' && other.kind === 'tools') {
+      return step.tools.length === other.tools.length && step.tools.every((tool, toolIndex) => {
+        const otherTool = other.tools[toolIndex];
+        return tool.id === otherTool.id && tool.callId === otherTool.callId && tool.name === otherTool.name &&
+          tool.time === otherTool.time && tool.args === otherTool.args && tool.output === otherTool.output &&
+          tool.isError === otherTool.isError && tool.running === otherTool.running && tool.pendingGate === otherTool.pendingGate;
+      });
+    }
+    return false;
+  }),
+);
 
 const styles = StyleSheet.create({
   root: { marginVertical: 2 },
