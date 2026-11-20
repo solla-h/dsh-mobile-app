@@ -146,22 +146,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
       const kind = typeof frame.kind === 'string' ? frame.kind : '';
       const requestId = typeof frame.requestId === 'string' ? frame.requestId : undefined;
 
-      // 1) 请求-响应关联：error 与成功帧都回显 requestId。
-      if (requestId) {
-        const pending = pendingRef.current.get(requestId);
-        if (pending) {
-          pendingRef.current.delete(requestId);
-          clearTimeout(pending.timer);
-          if (kind === 'error') {
-            pending.reject(new Error(typeof frame.message === 'string' ? frame.message : String(frame.code)));
-          } else {
-            pending.resolve(frame);
-          }
-          return;
-        }
-      }
-
-      // 2) 安装进度（只发给发起安装的连接）。
+      // Install progress frames share the install requestId but must not settle its promise.
       if (kind === 'plugin-install-state') {
         const state = mapInstallState(frame);
         if (state) {
@@ -177,7 +162,6 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
       if (kind === 'plugin-install-log') {
         const log = mapInstallLog(frame);
         if (log) {
-          // 输出是不可信文本：限制行数，超出丢最旧的。
           setInstallProgress((current) => {
             if (!current || current.requestId !== log.requestId) return current;
             return { ...current, logs: [...current.logs, log].slice(-MAX_LOG_LINES) };
@@ -186,7 +170,23 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
         return;
       }
 
-      // 3) 全局推送。
+      // 1) Request-response correlation.
+      if (requestId) {
+        const pending = pendingRef.current.get(requestId);
+        if (pending) {
+          pendingRef.current.delete(requestId);
+          clearTimeout(pending.timer);
+          if (kind === 'error') {
+            pending.reject(new Error(typeof frame.message === 'string' ? frame.message : String(frame.code)));
+          } else {
+            pending.resolve(frame);
+          }
+          return;
+        }
+      }
+
+      // Global pushes.
+
       if (kind === 'plugins-changed') {
         refreshRef.current();
         return;
