@@ -78,6 +78,7 @@ export class GatewayClient {
   /** 网络状态监听；断网/恢复时立刻调整重连节奏。 */
   private unwatchNetwork: { remove: () => void } | null = null;
   private online = true;
+  private internetReachable = true;
   /** 第一次网络回调只是建立基线；之后任何 online 事件都可能是 WiFi↔5G/换 AP。 */
   private networkInitialized = false;
   /** 前后台监听；后台期间 JS 定时器会被挂起，回前台不能拿旧时间戳判假死。 */
@@ -377,7 +378,7 @@ export class GatewayClient {
     const options = this.options;
     if (this.stopped || !options?.refreshUrl || this.refreshing) return;
     if (this.attempt < REFRESH_AFTER_FAILURES - 1) return;
-    if (!this.online) return;
+    if (!this.internetReachable) return;
     if (Date.now() - this.lastRefreshAt < REFRESH_COOLDOWN_MS) return;
 
     this.refreshing = true;
@@ -469,7 +470,8 @@ export class GatewayClient {
     this.networkInitialized = false;
     try {
       this.unwatchNetwork = Network.addNetworkStateListener((state) => {
-        const online = state.isConnected !== false && state.isInternetReachable !== false;
+        this.internetReachable = state.isInternetReachable !== false;
+        const online = state.isConnected !== false;
         const wasOnline = this.online;
         this.online = online;
         if (this.stopped) return;

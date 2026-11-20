@@ -82,7 +82,7 @@
 | 流式渲染节流（PERF-1） | 每个 text/thinking delta 都直接进 state 并触发全量重组 | 约 100ms 合并 + 流式期间纯文本降级 |
 | 长会话窗口（PERF-2） | 消息只增不裁；主列表未设窗口参数 | 条数或字节上限，裁剪与缓存策略一起定 |
 | 单帧上限与背压（PERF-3） | `onmessage` 同步解析后逐个分发，无单帧上限 | 大帧日志 + 上限 + state 前瘦身 |
-| 下载超时（MISC-3） | `file-resolve` 有超时，`file-download-open/read` 没有 | 服务端不回帧时卡片会一直停在 downloading |
+| 下载超时（MISC-3） | `file-resolve`、`file-download-open/read` 均有 15s 超时 | 超时清理临时文件并取消服务端传输；读错误也会结束下载状态 |
 | 审批通道断线标记（MISC-4） | control 断线时待办仍按旧数据渲染 | 标明「通道重连中 / 可能过期」，不要直接清空 |
 | 存储管理（MISC-5） | 只有会话列表缓存与 L1 历史 | 做了磁盘历史缓存之后才需要 |
 
