@@ -243,7 +243,7 @@ function AppBody() {
   const [schedules, setSchedules] = useState<unknown[] | null>(null);
   /** 宿主信息与全局默认抽屉 */
   const [hostSheet, setHostSheet] = useState(false);
-  /** 发现新版本时的结果弹窗；只读展示，本块不做下载/安装。 */
+  /** 发现新版本时显示更新弹窗。 */
   const [updateSheet, setUpdateSheet] = useState<UpdateAvailablePayload | null>(null);
   /** 已经自动提示过的 versionCode：节流命中时不重复弹窗。 */
   const announcedUpdateRef = useRef<number | null>(null);
