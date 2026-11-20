@@ -1,3 +1,216 @@
+        "line": 1726,
+        "line": 1728,
+        "line": 172,
+        "line": 366,
+        "line": 1743,
+        "line": 226,
+        "line": 256,
+        "line": 1814,
+        "line": 1114,
+        "line": 1813,
+        "line": 1476,
+        "line": 204,
+        "line": 450,
+        "line": 365,
+        "line": 487,
+        "line": 526,
+        "line": 1531,
+        "context": "new URL(gateway.url).host; Alert.alert(tr(\"移除网关\"), tr(\"不再连接 {0}？本地记录会被删除。\"",
+        "line": 1897,
+        "line": 65,
+        "line": 223,
+        "line": 535,
+        "line": 1599,
+        "line": 1594,
+        "line": 1816,
+        "line": 1687,
+        "line": 640,
+        "line": 1468,
+        "line": 1468,
+        "line": 242,
+        "line": 1930,
+        "line": 607,
+        "line": 1015,
+        "line": 632,
+        "line": 1741,
+        "line": 1720,
+        "line": 1896,
+        "line": 64,
+        "line": 312,
+        "line": 69,
+        "line": 1595,
+        "line": 166,
+        "line": 303,
+        "line": 395,
+        "line": 1599,
+        "line": 71,
+        "line": 70,
+        "line": 1065,
+        "line": 58,
+        "line": 1940,
+        "line": 1333,
+        "line": 1427,
+        "line": 1332,
+        "line": 1426,
+        "line": 390,
+        "line": 1894,
+        "line": 397,
+        "line": 53,
+        "line": 1118,
+        "line": 378,
+        "line": 1153,
+        "line": 622,
+        "line": 1403,
+        "line": 1345,
+        "line": 1414,
+        "line": 1433,
+        "line": 103,
+        "line": 100,
+        "line": 1701,
+        "line": 55,
+        "line": 672,
+        "line": 687,
+        "line": 1051,
+        "line": 1055,
+        "line": 695,
+        "line": 1573,
+        "line": 61,
+        "line": 1385,
+        "line": 1391,
+        "line": 1393,
+        "line": 63,
+        "line": 264,
+        "line": 1183,
+        "line": 285,
+        "file": "App.tsx",
+        "line": 1635,
+        "parentKind": "CallExpression",
+        "context": ": tr(\"取消\"), style: 'cancel' }, { text: tr(\"清除\"",
+        "moduleLevel": false
+      },
+      {
+    "key": "清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "App.tsx",
+        "line": 1631,
+        "parentKind": "CallExpression",
+        "context": "(async () => { Alert.alert( tr(\"清除配对？\"), tr(\"清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "清除配对？",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "App.tsx",
+        "line": 1630,
+        "parentKind": "CallExpression",
+        "context": "orget = useCallback(async () => { Alert.alert( tr(\"清除配对？\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+        "line": 1532,
+        "file": "App.tsx",
+        "line": 1633,
+        "parentKind": "CallExpression",
+        "context": "新运行 dsh-pair 生成新的配对码（旧码不能复用）。\"), [ { text: tr(\"取消\"",
+        "moduleLevel": false
+      },
+      {
+        "line": 368,
+        "line": 1598,
+        "line": 478,
+        "line": 1895,
+        "line": 62,
+        "line": 1476,
+        "line": 418,
+        "line": 165,
+        "line": 313,
+        "line": 373,
+        "line": 51,
+        "line": 362,
+        "line": 1808,
+        "line": 653,
+        "line": 660,
+        "line": 68,
+        "line": 1967,
+        "line": 54,
+        "line": 56,
+        "line": 1966,
+        "line": 226,
+        "line": 1686,
+        "line": 373,
+        "line": 1470,
+        "line": 393,
+        "line": 167,
+        "line": 390,
+        "line": 99,
+        "line": 1590,
+        "line": 1922,
+        "line": 1686,
+        "line": 1693,
+        "line": 226,
+        "line": 67,
+        "line": 72,
+        "line": 73,
+        "line": 370,
+        "line": 543,
+        "line": 366,
+        "line": 363,
+        "line": 382,
+        "line": 1386,
+        "line": 1439,
+        "line": 1939,
+        "line": 57,
+        "line": 630,
+        "line": 1440,
+        "line": 1813,
+        "line": 1534,
+        "line": 1480,
+        "line": 1531,
+        "context": "ay.label ?? new URL(gateway.url).host; Alert.alert(tr(\"移除网关\"",
+        "line": 295,
+        "line": 102,
+        "line": 952,
+        "line": 960,
+        "line": 954,
+        "line": 101,
+        "line": 394,
+        "line": 396,
+        "line": 378,
+        "line": 394,
+        "line": 396,
+        "line": 1439,
+        "line": 1385,
+        "line": 66,
+        "line": 390,
+        "line": 1386,
+        "line": 313,
+        "line": 365,
+        "line": 455,
+        "line": 178,
+        "line": 256,
+        "line": 248,
+        "line": 397,
+        "line": 446,
+        "line": 184,
+        "line": 1481,
+        "line": 1931,
+        "line": 1440,
+        "line": 59,
+        "line": 1589,
+        "line": 233,
+        "line": 52,
+        "line": 60,
+        "line": 436,
 [
   {
     "key": " · 当前",
@@ -20,7 +233,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1726,
+        "line": 1713,
         "parentKind": "CallExpression",
         "context": "{detail} {repairRequired ? tr(\" · 点顶部网关名\"",
         "moduleLevel": false
@@ -34,7 +247,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1728,
+        "line": 1715,
         "parentKind": "CallExpression",
         "context": "\" · 点顶部网关名\") : saved ? tr(\" · 点这里重连\"",
         "moduleLevel": false
@@ -139,7 +352,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 172,
+        "line": 176,
         "parentKind": "CallExpression",
         "context": "' · ' : ''} {entryCount > 0 ? entryCount + tr(\" 个条目\"",
         "moduleLevel": false
@@ -321,7 +534,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 366,
+        "line": 367,
         "parentKind": "CallExpression",
         "context": ": tr(\"卸载 \") + (item.bundle.title ?? item.bundle.name) + tr(\"？卸载后需要重新安装才能恢复。\"",
         "moduleLevel": false
@@ -363,7 +576,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1743,
+        "line": 1730,
         "parentKind": "CallExpression",
         "context": "> <Text style={styles.error}>{error} {tr(\"· 点击关闭\"",
         "moduleLevel": false
@@ -391,7 +604,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 226,
+        "line": 230,
         "parentKind": "CallExpression",
         "context": "izeMultiplier={1.3}> {gatewayName ?? tr(\"网关\")} {tr(\"· 协议 v\"",
         "moduleLevel": false
@@ -461,7 +674,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 256,
+        "line": 260,
         "parentKind": "CallExpression",
         "context": "{tr(\"正在安装（\")}{manager.installProgress.phase}{tr(\"）· 点开查看进度\"",
         "moduleLevel": false
@@ -566,7 +779,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1814,
+        "line": 1801,
         "parentKind": "CallExpression",
         "context": "ns?.values.title ?? tr(\"一个会话\")]) : tr(\"{0} 个会话在等你\"",
         "moduleLevel": false
@@ -580,7 +793,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1114,
+        "line": 1113,
         "parentKind": "CallExpression",
         "context": "; if (flushed.adopted > 0) { notifyPet(tr(\"{0} 条旧待发消息按当前网关继续发送\"",
         "moduleLevel": false
@@ -643,7 +856,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1813,
+        "line": 1800,
         "parentKind": "CallExpression",
         "context": "{blocked.length === 1 ? tr(\"{0} 在等你\"",
         "moduleLevel": false
@@ -825,7 +1038,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1476,
+        "line": 1475,
         "parentKind": "CallExpression",
         "context": "name, hint }; }); list.push({ id: 'add', label: tr(\"＋ 添加网关\"",
         "moduleLevel": false
@@ -979,7 +1192,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 204,
+        "line": 208,
         "parentKind": "CallExpression",
         "context": "> <Text style={styles.installPillText}>{tr(\"安装\"",
         "moduleLevel": false
@@ -1182,7 +1395,7 @@
       },
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 450,
+        "line": 451,
         "parentKind": "CallExpression",
         "context": "? ( <Text style={styles.statusMeta}>{tr(\"版本\"",
         "moduleLevel": false
@@ -1217,7 +1430,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 365,
+        "line": 374,
         "parentKind": "CallExpression",
         "context": "ue)}> <Text style={styles.actionButtonText}>{tr(\"版本豁免\"",
         "moduleLevel": false
@@ -1273,7 +1486,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 487,
+        "line": 494,
         "parentKind": "CallExpression",
         "context": "<> <Text style={styles.section}>{tr(\"包内条目 ·\"",
         "moduleLevel": false
@@ -1581,7 +1794,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 526,
+        "line": 540,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.actionPillPrimaryText}>{tr(\"编辑配置\"",
         "moduleLevel": false
@@ -1679,9 +1892,9 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1531,
+        "line": 1548,
         "parentKind": "CallExpression",
-        "context": "new URL(gateway.url).host; Alert.alert(tr(\"移除网关\"), tr(\"不再连接 {0}？本地记录会被删除。\"",
+        "context": "el ?? hostOf(gateway.url); Alert.alert(tr(\"移除网关\"), tr(\"不再连接 {0}？本地记录会被删除。\"",
         "moduleLevel": false
       }
     ]
@@ -1833,7 +2046,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1897,
+        "line": 1884,
         "parentKind": "CallExpression",
         "context": ": tr(\"定时任务\") }, { key: 'plugins', label: tr(\"插件\"",
         "moduleLevel": false
@@ -1847,14 +2060,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 65,
+        "line": 68,
         "parentKind": "CallExpression",
         "context": "tr(\"定时任务管理\"); }, get 'plugin-management-v1'() { return tr(\"插件管理\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 223,
+        "line": 227,
         "parentKind": "CallExpression",
         "context": "es.title} maxFontSizeMultiplier={1.3}> {tr(\"插件管理\"",
         "moduleLevel": false
@@ -1882,7 +2095,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 535,
+        "line": 549,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.actionPillText}>{tr(\"查看配置节\"",
         "moduleLevel": false
@@ -2050,7 +2263,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1599,
+        "line": 1616,
         "parentKind": "CallExpression",
         "context": "归档\") } : { id: 'archive', label: tr(\"归档\"), hint: tr(\"从列表里收起来，随时可以再显示\"",
         "moduleLevel": false
@@ -2106,7 +2319,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1594,
+        "line": 1611,
         "parentKind": "CallExpression",
         "context": "话\"), }, { id: 'fork', label: tr(\"从最近一轮分叉\"",
         "moduleLevel": false
@@ -2134,7 +2347,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1816,
+        "line": 1803,
         "parentKind": "CallExpression",
         "context": "Text> <Text style={styles.gatePillGo}>{tr(\"打开\"",
         "moduleLevel": false
@@ -2190,7 +2403,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1687,
+        "line": 1674,
         "parentKind": "CallExpression",
         "context": "?.label ?? tr(\"未配置网关\")])} accessibilityHint={tr(\"打开网关菜单，切换或添加网关\"",
         "moduleLevel": false
@@ -2232,7 +2445,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 640,
+        "line": 639,
         "parentKind": "CallExpression",
         "context": "openSessionById(target.sessionId); notifyPet(tr(\"待办状态还没同步，已打开会话\"",
         "moduleLevel": false
@@ -2387,13 +2600,27 @@
     ]
   },
   {
+    "key": "待重连确认",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/plugins/gateway-disable.ts",
+        "line": 26,
+        "parentKind": "CallExpression",
+        "context": "nPress: () => { apply(); Alert.alert(tr(\"待重连确认\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "当前",
     "kind": "string",
     "expressions": [],
     "files": [
       {
         "file": "App.tsx",
-        "line": 1468,
+        "line": 1467,
         "parentKind": "CallExpression",
         "context": "hint = [ current ? (connected ? tr(\"当前 · 已连接\") : tr(\"当前\"",
         "moduleLevel": false
@@ -2414,7 +2641,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1468,
+        "line": 1467,
         "parentKind": "CallExpression",
         "context": "''); const hint = [ current ? (connected ? tr(\"当前 · 已连接\"",
         "moduleLevel": false
@@ -2428,7 +2655,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 242,
+        "line": 246,
         "parentKind": "CallExpression",
         "context": "t style={styles.readonlyText}> {tr(\"当前 DSH profile 不支持插件管理（managementAvailable=false），只能查看。\"",
         "moduleLevel": false
@@ -2470,7 +2697,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1930,
+        "line": 1917,
         "parentKind": "CallExpression",
         "context": "ionSheet visible={workspaceSheet} title={tr(\"当前工作区\"",
         "moduleLevel": false
@@ -2526,14 +2753,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 607,
+        "line": 606,
         "parentKind": "CallExpression",
         "context": "openSessionById(target.sessionId); notifyPet(tr(\"到上限了，文字已放进输入框\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1015,
+        "line": 1014,
         "parentKind": "CallExpression",
         "context": "created.sessionId, text: held }); notifyPet(tr(\"到上限了，文字已放进输入框\"",
         "moduleLevel": false
@@ -2547,7 +2774,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 632,
+        "line": 631,
         "parentKind": "CallExpression",
         "context": "t(tr(\"新建会话超时，文字已复制到剪贴板\")); }); notifyPet(tr(\"到上限了，正在新建会话\"",
         "moduleLevel": false
@@ -2659,7 +2886,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1741,
+        "line": 1728,
         "parentKind": "CallExpression",
         "context": "ccessibilityRole=\"button\" accessibilityHint={tr(\"点按关闭提示\"",
         "moduleLevel": false
@@ -2729,7 +2956,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1720,
+        "line": 1707,
         "parentKind": "CallExpression",
         "context": "ssibilityHint={ saved && !repairRequired ? tr(\"点按重新连接网关\"",
         "moduleLevel": false
@@ -2813,7 +3040,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1896,
+        "line": 1883,
         "parentKind": "CallExpression",
         "context": "tr(\"全部会话\") }, { key: 'schedules', label: tr(\"定时任务\"",
         "moduleLevel": false
@@ -2827,7 +3054,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 64,
+        "line": 67,
         "parentKind": "CallExpression",
         "context": "turn tr(\"目标\"); }, get 'schedule-management'() { return tr(\"定时任务管理\"",
         "moduleLevel": false
@@ -2883,7 +3110,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 312,
+        "line": 316,
         "parentKind": "CallExpression",
         "context": "sExpanded((v) => !v)}> <SectionHeader title={tr(\"独立条目 · \"",
         "moduleLevel": false
@@ -2953,7 +3180,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 69,
+        "line": 72,
         "parentKind": "CallExpression",
         "context": "{ return tr(\"停止生成\"); }, get 'queue-control'() { return tr(\"队列控制\"",
         "moduleLevel": false
@@ -3317,7 +3544,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1595,
+        "line": 1612,
         "parentKind": "CallExpression",
         "context": "id: 'fork', label: tr(\"从最近一轮分叉\"), hint: tr(\"复制出一个新会话，原会话不动\"",
         "moduleLevel": false
@@ -3758,7 +3985,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 166,
+        "line": 170,
         "parentKind": "CallExpression",
         "context": "{official ? <Text style={styles.tagOfficial}>{tr(\"官方\"",
         "moduleLevel": false
@@ -3772,7 +3999,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 303,
+        "line": 307,
         "parentKind": "CallExpression",
         "context": "ength > 0 ? ( <> <SectionHeader title={tr(\"官方 · \"",
         "moduleLevel": false
@@ -3786,7 +4013,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 395,
+        "line": 404,
         "parentKind": "CallExpression",
         "context": "maxFontSizeMultiplier={1.3}> {tr(\"管理的是网关所连 DSH profile 的插件，不是手机本地。开关与卸载会实时影响桌面端；\\n 关闭 dsh-plugin-mobile-gateway 自身会断开手机连接，只能从 DSH Web 重新开启。\"",
         "moduleLevel": false
@@ -3800,7 +4027,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1599,
+        "line": 1616,
         "parentKind": "CallExpression",
         "context": "', label: tr(\"取消归档\") } : { id: 'archive', label: tr(\"归档\"",
         "moduleLevel": false
@@ -4045,7 +4272,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 71,
+        "line": 74,
         "parentKind": "CallExpression",
         "context": "return tr(\"会话归档\"); }, get 'session-rename'() { return tr(\"会话改名\"",
         "moduleLevel": false
@@ -4059,7 +4286,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 70,
+        "line": 73,
         "parentKind": "CallExpression",
         "context": "return tr(\"队列控制\"); }, get 'session-archive'() { return tr(\"会话归档\"",
         "moduleLevel": false
@@ -4073,7 +4300,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1065,
+        "line": 1064,
         "parentKind": "CallExpression",
         "context": "nt.requestId) ) { rescueVoiceDraft(tr(\"会话没建成，文字已复制到剪贴板\"",
         "moduleLevel": false
@@ -4108,7 +4335,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 58,
+        "line": 61,
         "parentKind": "CallExpression",
         "context": "n tr(\"新建会话\"); }, get 'session-agent-preset'() { return tr(\"会话模式切换\"",
         "moduleLevel": false
@@ -4122,7 +4349,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1940,
+        "line": 1927,
         "parentKind": "CallExpression",
         "context": "reateSheet} title={tr(\"新建会话\")} subtitle={tr(\"会话跑起来之后目录就固定了，选错了只能重新建\"",
         "moduleLevel": false
@@ -4507,14 +4734,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1333,
+        "line": 1332,
         "parentKind": "CallExpression",
         "context": "setError(tr(\"建会话超时了，再点一次「新建会话」\")); notifyPet(tr(\"建会话超时，重试一下\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1427,
+        "line": 1426,
         "parentKind": "CallExpression",
         "context": "setError(tr(\"建会话超时了，再点一次「新建会话」\")); notifyPet(tr(\"建会话超时，重试一下\"",
         "moduleLevel": false
@@ -4528,14 +4755,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1332,
+        "line": 1331,
         "parentKind": "CallExpression",
         "context": "current = null; setCreating(false); setError(tr(\"建会话超时了，再点一次「新建会话」\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1426,
+        "line": 1425,
         "parentKind": "CallExpression",
         "context": "current = null; setCreating(false); setError(tr(\"建会话超时了，再点一次「新建会话」\"",
         "moduleLevel": false
@@ -4745,7 +4972,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 390,
+        "line": 399,
         "parentKind": "CallExpression",
         "context": "les.capText}>{tr(\"语音输入（本地 SenseVoice）·\")} {speechReady ? tr(\"就绪\"",
         "moduleLevel": false
@@ -4773,7 +5000,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1894,
+        "line": 1881,
         "parentKind": "CallExpression",
         "context": "tabs={[ { key: 'focus', label: tr(\"聚焦\"",
         "moduleLevel": false
@@ -4829,7 +5056,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 397,
+        "line": 398,
         "parentKind": "CallExpression",
         "context": "ryEnabled ? tr(\"已启用\") : tr(\"已停用\"); return writable ? tr(\"可配置\"",
         "moduleLevel": false
@@ -4927,7 +5154,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 53,
+        "line": 56,
         "parentKind": "CallExpression",
         "context": "(\"助手流式输出\"); }, get 'history-format-version'() { return tr(\"历史格式版本号\"",
         "moduleLevel": false
@@ -5081,7 +5308,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1118,
+        "line": 1117,
         "parentKind": "CallExpression",
         "context": "eated 的那句语音草稿等不到了：重连后网关也不会重放响应。 rescueVoiceDraft(tr(\"连接断了，文字已复制到剪贴板\"",
         "moduleLevel": false
@@ -5123,7 +5350,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 378,
+        "line": 379,
         "parentKind": "CallExpression",
         "context": "if (self) { Alert.alert(tr(\"已提交卸载\"), tr(\"连接可能已中断，重连后请确认最终状态。\"",
         "moduleLevel": false
@@ -5137,7 +5364,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1153,
+        "line": 1152,
         "parentKind": "CallExpression",
         "context": "setError(failure instanceof Error ? failure.message : tr(\"连接失败\"",
         "moduleLevel": false
@@ -5277,7 +5504,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 622,
+        "line": 621,
         "parentKind": "CallExpression",
         "context": "void Clipboard.setStringAsync(text); notifyPet(tr(\"连接已断开，文字已复制到剪贴板\"",
         "moduleLevel": false
@@ -5291,7 +5518,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1403,
+        "line": 1402,
         "parentKind": "CallExpression",
         "context": "})) { setDirLoading(false); setDirError(tr(\"连接已断开，无法读取目录\"",
         "moduleLevel": false
@@ -5403,21 +5630,21 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1345,
+        "line": 1344,
         "parentKind": "CallExpression",
         "context": "current = null; setCreating(false); setError(tr(\"连接已断开，重连后再试\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1414,
+        "line": 1413,
         "parentKind": "CallExpression",
         "context": "f (!cwd) return; if (!connected) { setDirError(tr(\"连接已断开，重连后再试\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1433,
+        "line": 1432,
         "parentKind": "CallExpression",
         "context": "current = null; setCreating(false); setError(tr(\"连接已断开，重连后再试\"",
         "moduleLevel": false
@@ -5445,7 +5672,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 103,
+        "line": 102,
         "parentKind": "CallExpression",
         "context": "t closed() { return tr(\"已断开\"); }, get error() { return tr(\"连接异常\"",
         "moduleLevel": false
@@ -5459,7 +5686,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 100,
+        "line": 99,
         "parentKind": "CallExpression",
         "context": "dle() { return tr(\"未连接\"); }, get connecting() { return tr(\"连接中\"",
         "moduleLevel": false
@@ -5487,7 +5714,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1701,
+        "line": 1688,
         "parentKind": "CallExpression",
         "context": "accessibilityRole=\"text\" accessibilityLabel={tr(\"连接状态：{0}\"",
         "moduleLevel": false
@@ -5571,7 +5798,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 55,
+        "line": 58,
         "parentKind": "CallExpression",
         "context": "\"投影基线（任务/目标/大纲）\"); }, get 'turn-outline-v1'() { return tr(\"轮次大纲\"",
         "moduleLevel": false
@@ -5613,28 +5840,28 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 672,
+        "line": 671,
         "parentKind": "CallExpression",
         "context": "xt, }); if (!sent) { notifyPet(tr(\"没发出去，检查网络后再试\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 687,
+        "line": 686,
         "parentKind": "CallExpression",
         "context": "} : {}), }); if (!sent) { notifyPet(tr(\"没发出去，检查网络后再试\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1051,
+        "line": 1050,
         "parentKind": "CallExpression",
         "context": "eMessagePendingRef.current = null; notifyPet(tr(\"没发出去，检查网络后再试\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1055,
+        "line": 1054,
         "parentKind": "CallExpression",
         "context": "ceCreateRequestRef.current = null; notifyPet(tr(\"没发出去，检查网络后再试\"",
         "moduleLevel": false
@@ -5662,7 +5889,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 695,
+        "line": 694,
         "parentKind": "CallExpression",
         "context": "voiceCreateRequestRef.current = null; notifyPet(tr(\"没收到网关回执，检查网络后再试\"",
         "moduleLevel": false
@@ -5760,7 +5987,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1573,
+        "line": 1590,
         "parentKind": "CallExpression",
         "context": "if (!target) return; if (!title) { Alert.alert(tr(\"名称不能为空\"",
         "moduleLevel": false
@@ -5837,7 +6064,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 61,
+        "line": 64,
         "parentKind": "CallExpression",
         "context": "1'() { return tr(\"子智能体会话\"); }, get commands() { return tr(\"命令与技能目录\"",
         "moduleLevel": false
@@ -6047,21 +6274,21 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1385,
+        "line": 1384,
         "parentKind": "CallExpression",
         "context": "int: item.path, })), { id: 'default', label: tr(\"默认目录\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1391,
+        "line": 1390,
         "parentKind": "CallExpression",
         "context": "el = useMemo(() => { if (!currentWorkspaceId) return tr(\"默认目录\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1393,
+        "line": 1392,
         "parentKind": "CallExpression",
         "context": "ceId === currentWorkspaceId); return found?.title ?? tr(\"默认目录\"",
         "moduleLevel": false
@@ -6117,7 +6344,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 63,
+        "line": 66,
         "parentKind": "CallExpression",
         "context": "t tasks() { return tr(\"任务列表\"); }, get goals() { return tr(\"目标\"",
         "moduleLevel": false
@@ -6159,7 +6386,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 264,
+        "line": 268,
         "parentKind": "CallExpression",
         "context": "ength > 0 ? ( <> <SectionHeader title={tr(\"内置配置\"",
         "moduleLevel": false
@@ -6432,7 +6659,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1183,
+        "line": 1182,
         "parentKind": "CallExpression",
         "context": "setError(failure instanceof Error ? failure.message : tr(\"配对失败\"",
         "moduleLevel": false
@@ -6446,7 +6673,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 285,
+        "line": 289,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.rowChevron}>{writable ? tr(\"配置\"",
         "moduleLevel": false
@@ -6627,13 +6854,6 @@
     "expressions": [],
     "files": [
       {
-        "file": "App.tsx",
-        "line": 1635,
-        "parentKind": "CallExpression",
-        "context": ": tr(\"取消\"), style: 'cancel' }, { text: tr(\"清除\"",
-        "moduleLevel": false
-      },
-      {
         "file": "src/ui/TasksSheet.tsx",
         "line": 67,
         "parentKind": "CallExpression",
@@ -6645,34 +6865,6 @@
         "line": 287,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.secretClear}>{tr(\"清除\"",
-        "moduleLevel": false
-      }
-    ]
-  },
-  {
-    "key": "清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。",
-    "kind": "string",
-    "expressions": [],
-    "files": [
-      {
-        "file": "App.tsx",
-        "line": 1631,
-        "parentKind": "CallExpression",
-        "context": "(async () => { Alert.alert( tr(\"清除配对？\"), tr(\"清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。\"",
-        "moduleLevel": false
-      }
-    ]
-  },
-  {
-    "key": "清除配对？",
-    "kind": "string",
-    "expressions": [],
-    "files": [
-      {
-        "file": "App.tsx",
-        "line": 1630,
-        "parentKind": "CallExpression",
-        "context": "orget = useCallback(async () => { Alert.alert( tr(\"清除配对？\"",
         "moduleLevel": false
       }
     ]
@@ -6796,16 +6988,9 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1532,
+        "line": 1549,
         "parentKind": "CallExpression",
         "context": "关\"), tr(\"不再连接 {0}？本地记录会被删除。\", [name]), [ { text: tr(\"取消\"",
-        "moduleLevel": false
-      },
-      {
-        "file": "App.tsx",
-        "line": 1633,
-        "parentKind": "CallExpression",
-        "context": "新运行 dsh-pair 生成新的配对码（旧码不能复用）。\"), [ { text: tr(\"取消\"",
         "moduleLevel": false
       },
       {
@@ -6873,7 +7058,7 @@
       },
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 368,
+        "line": 369,
         "parentKind": "CallExpression",
         "context": "e.name) + tr(\"？卸载后需要重新安装才能恢复。\"), [ { text: tr(\"取消\"",
         "moduleLevel": false
@@ -6883,6 +7068,13 @@
         "line": 320,
         "parentKind": "CallExpression",
         "context": "onClose}> <Text style={styles.buttonText}>{tr(\"取消\"",
+        "moduleLevel": false
+      },
+      {
+        "file": "src/ui/plugins/gateway-disable.ts",
+        "line": 20,
+        "parentKind": "CallExpression",
+        "context": "关会立即断开手机连接，只能从 DSH Web 重新开启。确定继续？\"), [ { text: tr(\"取消\"",
         "moduleLevel": false
       },
       {
@@ -6915,7 +7107,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1598,
+        "line": 1615,
         "parentKind": "CallExpression",
         "context": "}, isArchived ? { id: 'unarchive', label: tr(\"取消归档\"",
         "moduleLevel": false
@@ -6992,7 +7184,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 478,
+        "line": 485,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.installPillText}>{tr(\"去添加安装\"",
         "moduleLevel": false
@@ -7034,7 +7226,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1895,
+        "line": 1882,
         "parentKind": "CallExpression",
         "context": "ge: pendingCount }, { key: 'all', label: tr(\"全部会话\"",
         "moduleLevel": false
@@ -7153,7 +7345,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 62,
+        "line": 65,
         "parentKind": "CallExpression",
         "context": "ands() { return tr(\"命令与技能目录\"); }, get tasks() { return tr(\"任务列表\"",
         "moduleLevel": false
@@ -7223,7 +7415,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1476,
+        "line": 1475,
         "parentKind": "CallExpression",
         "context": "); list.push({ id: 'add', label: tr(\"＋ 添加网关\"), hint: tr(\"扫码或粘贴配对串\"",
         "moduleLevel": false
@@ -7797,14 +7989,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 418,
+        "line": 419,
         "parentKind": "CallExpression",
         "context": "{experimental ? <Text style={styles.tag}>{tr(\"实验\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 165,
+        "line": 169,
         "parentKind": "CallExpression",
         "context": "dle.experimental ? <Text style={styles.tagExperimental}>{tr(\"实验\"",
         "moduleLevel": false
@@ -7853,7 +8045,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 313,
+        "line": 317,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.rowChevron}>{extrasExpanded ? tr(\"收起\"",
         "moduleLevel": false
@@ -8007,7 +8199,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 373,
+        "line": 382,
         "parentKind": "CallExpression",
         "context": "t style={styles.capToggleText}> {capExpanded ? tr(\"收起网关能力位\"",
         "moduleLevel": false
@@ -8154,7 +8346,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 51,
+        "line": 54,
         "parentKind": "CallExpression",
         "context": "rd<string, string> = { get 'split-channels'() { return tr(\"双通道（control / conversation）\"",
         "moduleLevel": false
@@ -8441,7 +8633,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 362,
+        "line": 371,
         "parentKind": "CallExpression",
         "context": "ue)}> <Text style={styles.actionButtonText}>{tr(\"添加插件\"",
         "moduleLevel": false
@@ -8490,7 +8682,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1808,
+        "line": 1795,
         "parentKind": "CallExpression",
         "context": "bilityRole=\"button\" accessibilityHint={tr(\"跳到第一个等待审批或回答的会话\"",
         "moduleLevel": false
@@ -8553,7 +8745,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 653,
+        "line": 652,
         "parentKind": "CallExpression",
         "context": "setApprovalFocus(approval.rpcId); notifyPet(tr(\"听到「{0}」，请在审批卡上确认\"",
         "moduleLevel": false
@@ -8567,9 +8759,51 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 660,
+        "line": 659,
         "parentKind": "CallExpression",
         "context": "}, 5000); } else { notifyPet(tr(\"听到「{0}」，这个会话在等你处理\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "停用",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/plugins/gateway-disable.ts",
+        "line": 22,
+        "parentKind": "CallExpression",
+        "context": "text: tr(\"取消\"), style: 'cancel' }, { text: tr(\"停用\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "停用移动网关",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/plugins/gateway-disable.ts",
+        "line": 17,
+        "parentKind": "CallExpression",
+        "context": "bled) { apply(); return; } Alert.alert( tr(\"停用移动网关\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
+    "key": "停用移动网关会立即断开手机连接，只能从 DSH Web 重新开启。确定继续？",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/plugins/gateway-disable.ts",
+        "line": 18,
+        "parentKind": "CallExpression",
+        "context": "); return; } Alert.alert( tr(\"停用移动网关\"), tr(\"停用移动网关会立即断开手机连接，只能从 DSH Web 重新开启。确定继续？\"",
         "moduleLevel": false
       }
     ]
@@ -8588,7 +8822,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 68,
+        "line": 71,
         "parentKind": "CallExpression",
         "context": "return tr(\"文件上传\"); }, get 'session-cancel'() { return tr(\"停止生成\"",
         "moduleLevel": false
@@ -8644,7 +8878,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1967,
+        "line": 1954,
         "parentKind": "CallExpression",
         "context": "gatewaySheet} title={tr(\"网关\")} subtitle={tr(\"同一台设备可以记住多台网关，切换时会重新拉取会话列表\"",
         "moduleLevel": false
@@ -8672,7 +8906,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 54,
+        "line": 57,
         "parentKind": "CallExpression",
         "context": "tr(\"历史格式版本号\"); }, get 'projection-baseline'() { return tr(\"投影基线（任务/目标/大纲）\"",
         "moduleLevel": false
@@ -8714,7 +8948,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 56,
+        "line": 59,
         "parentKind": "CallExpression",
         "context": "ne-v1'() { return tr(\"轮次大纲\"); }, get images() { return tr(\"图片收发\"",
         "moduleLevel": false
@@ -8770,14 +9004,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1966,
+        "line": 1953,
         "parentKind": "CallExpression",
         "context": "ctionSheet visible={gatewaySheet} title={tr(\"网关\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 226,
+        "line": 230,
         "parentKind": "CallExpression",
         "context": "le} maxFontSizeMultiplier={1.3}> {gatewayName ?? tr(\"网关\"",
         "moduleLevel": false
@@ -8791,7 +9025,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1686,
+        "line": 1673,
         "parentKind": "CallExpression",
         "context": "cessibilityRole=\"button\" accessibilityLabel={tr(\"网关：{0}\"",
         "moduleLevel": false
@@ -8910,7 +9144,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 373,
+        "line": 382,
         "parentKind": "CallExpression",
         "context": "capToggleText}> {capExpanded ? tr(\"收起网关能力位\") : tr(\"网关能力位 · \"",
         "moduleLevel": false
@@ -8924,7 +9158,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1470,
+        "line": 1469,
         "parentKind": "CallExpression",
         "context": ") : null, hostOf(item.url), conflicted ? tr(\"网关身份已变化，重新扫码后可恢复自动找回\"",
         "moduleLevel": false
@@ -9106,14 +9340,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 393,
+        "line": 394,
         "parentKind": "CallExpression",
         "context": "=== 'bundle') { if (!item.bundle.installed) return tr(\"未安装\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 167,
+        "line": 171,
         "parentKind": "CallExpression",
         "context": "bundle.installed ? <Text style={styles.tagNotInstalled}>{tr(\"未安装\"",
         "moduleLevel": false
@@ -9155,7 +9389,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 390,
+        "line": 399,
         "parentKind": "CallExpression",
         "context": "}>{tr(\"语音输入（本地 SenseVoice）·\")} {speechReady ? tr(\"就绪\") : tr(\"未就绪\"",
         "moduleLevel": false
@@ -9169,7 +9403,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 99,
+        "line": 98,
         "parentKind": "CallExpression",
         "context": "ecord<ConnectionState, string> = { get idle() { return tr(\"未连接\"",
         "moduleLevel": false
@@ -9197,14 +9431,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1590,
+        "line": 1607,
         "parentKind": "CallExpression",
         "context": "(\"重命名\"), hint: item.projections?.values.title ?? tr(\"未命名会话\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1922,
+        "line": 1909,
         "parentKind": "CallExpression",
         "context": "title={menuSession?.projections?.values.title ?? tr(\"未命名会话\"",
         "moduleLevel": false
@@ -9260,14 +9494,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1686,
+        "line": 1673,
         "parentKind": "CallExpression",
         "context": "lo?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? tr(\"未配置网关\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1693,
+        "line": 1680,
         "parentKind": "CallExpression",
         "context": "lo?.gatewayName ?? saved?.gatewayName ?? saved?.label ?? tr(\"未配置网关\"",
         "moduleLevel": false
@@ -9337,7 +9571,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 226,
+        "line": 230,
         "parentKind": "CallExpression",
         "context": "\"网关\")} {tr(\"· 协议 v\")}{protocol ?? '?'} · {deviceName ?? tr(\"未知设备\"",
         "moduleLevel": false
@@ -9456,7 +9690,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 67,
+        "line": 70,
         "parentKind": "CallExpression",
         "context": "return tr(\"语音输入\"); }, get 'file-upload-v1'() { return tr(\"文件上传\"",
         "moduleLevel": false
@@ -9498,7 +9732,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 72,
+        "line": 75,
         "parentKind": "CallExpression",
         "context": "return tr(\"会话改名\"); }, get 'file-downloads'() { return tr(\"文件下载\"",
         "moduleLevel": false
@@ -9568,7 +9802,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 73,
+        "line": 76,
         "parentKind": "CallExpression",
         "context": "urn tr(\"文件下载\"); }, get 'file-references-v1'() { return tr(\"文件引用解析\"",
         "moduleLevel": false
@@ -10016,14 +10250,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 370,
+        "line": 371,
         "parentKind": "CallExpression",
         "context": ": tr(\"取消\"), style: 'cancel' }, { text: tr(\"卸载\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 543,
+        "line": 557,
         "parentKind": "CallExpression",
         "context": "<Text style={styles.actionPillDangerText}>{tr(\"卸载\"",
         "moduleLevel": false
@@ -10037,7 +10271,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 366,
+        "line": 367,
         "parentKind": "CallExpression",
         "context": "移动网关自身，卸载后会立刻断开手机连接，只能从 DSH Web/CLI 恢复。确定继续？\") : tr(\"卸载 \"",
         "moduleLevel": false
@@ -10051,7 +10285,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 363,
+        "line": 364,
         "parentKind": "CallExpression",
         "context": ".bundle.name === GATEWAY_PACKAGE; Alert.alert( tr(\"卸载插件\"",
         "moduleLevel": false
@@ -10065,7 +10299,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 382,
+        "line": 383,
         "parentKind": "CallExpression",
         "context": ".catch((err: unknown) => Alert.alert(tr(\"卸载失败\"",
         "moduleLevel": false
@@ -10135,7 +10369,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1386,
+        "line": 1385,
         "parentKind": "CallExpression",
         "context": "r(\"用网关自己的默认工作目录\") }, { id: 'create-mobile', label: tr(\"新建 mobile 工作区\"",
         "moduleLevel": false
@@ -10149,14 +10383,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1439,
+        "line": 1438,
         "parentKind": "CallExpression",
         "context": "heetAction[]>( () => [ { id: 'default', label: tr(\"新建会话\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 1939,
+        "line": 1926,
         "parentKind": "CallExpression",
         "context": "ActionSheet visible={createSheet} title={tr(\"新建会话\"",
         "moduleLevel": false
@@ -10170,7 +10404,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 57,
+        "line": 60,
         "parentKind": "CallExpression",
         "context": "return tr(\"图片收发\"); }, get 'session-create'() { return tr(\"新建会话\"",
         "moduleLevel": false
@@ -10184,7 +10418,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 630,
+        "line": 629,
         "parentKind": "CallExpression",
         "context": "void Clipboard.setStringAsync(text); notifyPet(tr(\"新建会话超时，文字已复制到剪贴板\"",
         "moduleLevel": false
@@ -10387,7 +10621,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1440,
+        "line": 1439,
         "parentKind": "CallExpression",
         "context": "\"), hint: tr(\"用网关的默认工作目录\") }, { id: 'pick', label: tr(\"选择目录…\"",
         "moduleLevel": false
@@ -10485,7 +10719,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1813,
+        "line": 1800,
         "parentKind": "CallExpression",
         "context": "? tr(\"{0} 在等你\", [blocked[0].projections?.values.title ?? tr(\"一个会话\"",
         "moduleLevel": false
@@ -10527,7 +10761,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1534,
+        "line": 1551,
         "parentKind": "CallExpression",
         "context": ": tr(\"取消\"), style: 'cancel' }, { text: tr(\"移除\"",
         "moduleLevel": false
@@ -10548,7 +10782,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1480,
+        "line": 1479,
         "parentKind": "CallExpression",
         "context": "{ list.push({ id: 'forget', label: tr(\"移除当前网关\"",
         "moduleLevel": false
@@ -10576,9 +10810,9 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1531,
+        "line": 1548,
         "parentKind": "CallExpression",
-        "context": "ay.label ?? new URL(gateway.url).host; Alert.alert(tr(\"移除网关\"",
+        "context": "gateway.label ?? hostOf(gateway.url); Alert.alert(tr(\"移除网关\"",
         "moduleLevel": false
       }
     ]
@@ -10590,7 +10824,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 295,
+        "line": 299,
         "parentKind": "CallExpression",
         "context": "ength > 0 ? ( <> <SectionHeader title={tr(\"已安装 · \"",
         "moduleLevel": false
@@ -10695,7 +10929,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 102,
+        "line": 101,
         "parentKind": "CallExpression",
         "context": "t ready() { return tr(\"已连接\"); }, get closed() { return tr(\"已断开\"",
         "moduleLevel": false
@@ -10709,14 +10943,14 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 952,
+        "line": 951,
         "parentKind": "CallExpression",
         "context": "ient.send({ type: 'sessions' }); notifyPet(tr(\"已发出\"",
         "moduleLevel": false
       },
       {
         "file": "App.tsx",
-        "line": 960,
+        "line": 959,
         "parentKind": "CallExpression",
         "context": "eMessagePendingRef.current = null; notifyPet(tr(\"已发出\"",
         "moduleLevel": false
@@ -10730,7 +10964,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 954,
+        "line": 953,
         "parentKind": "CallExpression",
         "context": "tr(\"已发出\")); } else { notifyPet(tr(\"已发出，但没拿到会话 id\"",
         "moduleLevel": false
@@ -10933,7 +11167,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 101,
+        "line": 100,
         "parentKind": "CallExpression",
         "context": "nnecting() { return tr(\"连接中\"); }, get ready() { return tr(\"已连接\"",
         "moduleLevel": false
@@ -10947,14 +11181,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 394,
+        "line": 395,
         "parentKind": "CallExpression",
         "context": "ed) return tr(\"未安装\"); return item.bundle.enabled ? tr(\"已启用\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 396,
+        "line": 397,
         "parentKind": "CallExpression",
         "context": "} if (item.kind === 'entry') return entryEnabled ? tr(\"已启用\"",
         "moduleLevel": false
@@ -11067,13 +11301,27 @@
     ]
   },
   {
+    "key": "已提交停用，连接可能已中断；重连后请确认最终状态。",
+    "kind": "string",
+    "expressions": [],
+    "files": [
+      {
+        "file": "src/ui/plugins/gateway-disable.ts",
+        "line": 26,
+        "parentKind": "CallExpression",
+        "context": "{ apply(); Alert.alert(tr(\"待重连确认\"), tr(\"已提交停用，连接可能已中断；重连后请确认最终状态。\"",
+        "moduleLevel": false
+      }
+    ]
+  },
+  {
     "key": "已提交卸载",
     "kind": "string",
     "expressions": [],
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 378,
+        "line": 379,
         "parentKind": "CallExpression",
         "context": "if (self) { Alert.alert(tr(\"已提交卸载\"",
         "moduleLevel": false
@@ -11094,14 +11342,14 @@
       },
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 394,
+        "line": 395,
         "parentKind": "CallExpression",
         "context": "r(\"未安装\"); return item.bundle.enabled ? tr(\"已启用\") : tr(\"已停用\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 396,
+        "line": 397,
         "parentKind": "CallExpression",
         "context": "item.kind === 'entry') return entryEnabled ? tr(\"已启用\") : tr(\"已停用\"",
         "moduleLevel": false
@@ -11290,7 +11538,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1439,
+        "line": 1438,
         "parentKind": "CallExpression",
         "context": "() => [ { id: 'default', label: tr(\"新建会话\"), hint: tr(\"用网关的默认工作目录\"",
         "moduleLevel": false
@@ -11304,7 +11552,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1385,
+        "line": 1384,
         "parentKind": "CallExpression",
         "context": "})), { id: 'default', label: tr(\"默认目录\"), hint: tr(\"用网关自己的默认工作目录\"",
         "moduleLevel": false
@@ -11374,7 +11622,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 66,
+        "line": 69,
         "parentKind": "CallExpression",
         "context": "return tr(\"插件管理\"); }, get 'speech-input-v1'() { return tr(\"语音输入\"",
         "moduleLevel": false
@@ -11388,7 +11636,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 390,
+        "line": 399,
         "parentKind": "CallExpression",
         "context": "les.capDotOff]} /> <Text style={styles.capText}>{tr(\"语音输入（本地 SenseVoice）·\"",
         "moduleLevel": false
@@ -11591,7 +11839,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1386,
+        "line": 1385,
         "parentKind": "CallExpression",
         "context": "{ id: 'create-mobile', label: tr(\"新建 mobile 工作区\"), hint: tr(\"在宿主 home 下建 mobile 目录并注册\"",
         "moduleLevel": false
@@ -11661,7 +11909,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 313,
+        "line": 317,
         "parentKind": "CallExpression",
         "context": "t style={styles.rowChevron}>{extrasExpanded ? tr(\"收起\") : tr(\"展开\"",
         "moduleLevel": false
@@ -12095,7 +12343,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 365,
+        "line": 366,
         "parentKind": "CallExpression",
         "context": "Alert.alert( tr(\"卸载插件\"), self ? tr(\"这是移动网关自身，卸载后会立刻断开手机连接，只能从 DSH Web/CLI 恢复。确定继续？\"",
         "moduleLevel": false
@@ -12263,14 +12511,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 455,
+        "line": 456,
         "parentKind": "CallExpression",
         "context": "Lines={3}> {tr(\"诊断：\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 178,
+        "line": 182,
         "parentKind": "CallExpression",
         "context": "or} numberOfLines={2}> {tr(\"诊断：\"",
         "moduleLevel": false
@@ -12298,7 +12546,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 256,
+        "line": 260,
         "parentKind": "CallExpression",
         "context": "BannerText} numberOfLines={1}> {tr(\"正在安装（\"",
         "moduleLevel": false
@@ -12340,7 +12588,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 248,
+        "line": 252,
         "parentKind": "CallExpression",
         "context": "er.loading ? ( <Text style={styles.loadingHint}>{tr(\"正在读取插件目录…\"",
         "moduleLevel": false
@@ -12508,7 +12756,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 397,
+        "line": 398,
         "parentKind": "CallExpression",
         "context": "tr(\"已启用\") : tr(\"已停用\"); return writable ? tr(\"可配置\") : tr(\"只读\"",
         "moduleLevel": false
@@ -12522,14 +12770,14 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 446,
+        "line": 447,
         "parentKind": "CallExpression",
         "context": "Lines={2}> {tr(\"只读：\"",
         "moduleLevel": false
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 184,
+        "line": 188,
         "parentKind": "CallExpression",
         "context": "ta} numberOfLines={1}> {tr(\"只读：\"",
         "moduleLevel": false
@@ -12557,7 +12805,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1481,
+        "line": 1480,
         "parentKind": "CallExpression",
         "context": "id: 'forget', label: tr(\"移除当前网关\"), hint: tr(\"只删本地记录，服务器上的设备授权需要另行撤销\"",
         "moduleLevel": false
@@ -12571,7 +12819,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1931,
+        "line": 1918,
         "parentKind": "CallExpression",
         "context": "paceSheet} title={tr(\"当前工作区\")} subtitle={tr(\"只影响之后新建的会话，已有的会话不会移动\"",
         "moduleLevel": false
@@ -12585,7 +12833,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1440,
+        "line": 1439,
         "parentKind": "CallExpression",
         "context": "认工作目录\") }, { id: 'pick', label: tr(\"选择目录…\"), hint: tr(\"指定一个项目目录再开始\"",
         "moduleLevel": false
@@ -12599,7 +12847,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 59,
+        "line": 62,
         "parentKind": "CallExpression",
         "context": "return tr(\"会话模式切换\"); }, get 'agent-team-v1'() { return tr(\"智能体团队\"",
         "moduleLevel": false
@@ -12641,7 +12889,7 @@
     "files": [
       {
         "file": "App.tsx",
-        "line": 1589,
+        "line": 1606,
         "parentKind": "CallExpression",
         "context": "return [ { id: 'rename', label: tr(\"重命名\"",
         "moduleLevel": false
@@ -12718,7 +12966,7 @@
       },
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 233,
+        "line": 237,
         "parentKind": "CallExpression",
         "context": "efresh()}> <Text style={styles.errorAction}>{tr(\"重试\"",
         "moduleLevel": false
@@ -12816,7 +13064,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 52,
+        "line": 55,
         "parentKind": "CallExpression",
         "context": "nversation）\"); }, get 'assistant-stream-v1'() { return tr(\"助手流式输出\"",
         "moduleLevel": false
@@ -12872,7 +13120,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginsView.tsx",
-        "line": 60,
+        "line": 63,
         "parentKind": "CallExpression",
         "context": "智能体团队\"); }, get 'subagent-conversations-v1'() { return tr(\"子智能体会话\"",
         "moduleLevel": false
@@ -13026,7 +13274,7 @@
     "files": [
       {
         "file": "src/ui/plugins/PluginCard.tsx",
-        "line": 436,
+        "line": 437,
         "parentKind": "CallExpression",
         "context": "l' ? ( <Text style={styles.description}>{tr(\"DSH 内置配置卡片，用下方「编辑配置」调整。\"",
         "moduleLevel": false
