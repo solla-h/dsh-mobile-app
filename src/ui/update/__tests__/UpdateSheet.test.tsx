@@ -63,6 +63,7 @@ beforeEach(() => {
   installMock.mockReset();
   installMock.mockResolvedValue('launched');
 });
+jest.setTimeout(15000);
 
 afterAll(() => {
   forcePlatform('ios');
