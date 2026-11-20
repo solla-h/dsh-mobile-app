@@ -186,7 +186,7 @@ export function usePluginManager(control: GatewayClient, active: boolean): Plugi
         return;
       }
 
-      // 3) 全局推送。
+      // Global pushes.
       if (kind === 'plugins-changed') {
         refreshRef.current();
         return;
