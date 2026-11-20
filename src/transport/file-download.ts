@@ -271,6 +271,7 @@ export class FileDownloader {
     } catch (failure) {
       transfer.busy = false;
       this.transfers.delete(transfer.transferId);
+      this.removeFile(transfer.file);
       this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
       this.fail(transfer.path, failure instanceof Error ? failure.message : tr("写入文件失败"));
     }

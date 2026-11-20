@@ -113,7 +113,7 @@ describe('HostInfoSheet 检查更新行', () => {
       checkedAt: 1_700_000_000_000,
       evaluation: { kind: 'up-to-date' },
     });
-    const { onUpdateAvailable } = await await renderSheet();
+    const { onUpdateAvailable } = await renderSheet();
 
     await fireEvent.press(await screen.findByText('检查'));
 
@@ -133,7 +133,7 @@ describe('HostInfoSheet 检查更新行', () => {
 
   it('手动检查失败时就地提示原因', async () => {
     checkMock.mockResolvedValue({ kind: 'failed', error: 'timeout', cached: null });
-    const { onUpdateAvailable } = await await renderSheet();
+    const { onUpdateAvailable } = await renderSheet();
 
     await fireEvent.press(await screen.findByText('检查'));
 
