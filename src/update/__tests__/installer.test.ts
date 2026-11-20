@@ -286,6 +286,31 @@ describe('downloadApk', () => {
     expect(destination.delete).not.toHaveBeenCalled();
     expect(task.release).toHaveBeenCalled();
   });
+  test('removes previous cached APKs before starting a new download', async () => {
+    const oldApk = fakeCachedFile({ exists: true });
+    const newApk = fakeCachedFile();
+    const entries = [oldApk, newApk];
+    let fileIndex = 0;
+    Object.setPrototypeOf(oldApk, fsMock.File.prototype);
+    Object.setPrototypeOf(newApk, fsMock.File.prototype);
+    Object.assign(oldApk, { name: 'dsh-mobile-v0.1.0.apk' });
+    Object.assign(newApk, { name: APK_NAME });
+    fsMock.File.mockImplementation(() => entries[fileIndex++]);
+    const createTask = jest.fn(() => ({
+      downloadAsync: jest.fn(async () => newApk as unknown as File),
+      release: jest.fn(),
+    }));
+    fsMock.File.createDownloadTask.mockImplementation(createTask);
+    fsMock.Directory.mockImplementation(() => ({
+      exists: true,
+      list: jest.fn(() => entries),
+    }));
+
+    await downloadApk(APK_URL, jest.fn());
+
+    expect(oldApk.delete).toHaveBeenCalledTimes(1);
+    expect(createTask).toHaveBeenCalledTimes(1);
+  });
 
   test('取消会中断下载、清理半成品并释放任务', async () => {
     const controller = new AbortController();

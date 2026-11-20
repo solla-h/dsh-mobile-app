@@ -8,14 +8,7 @@ import {
 } from './manifest';
 
 /**
- * 更新检查器（issue #12，只做「检查」）。
- *
- * 职责边界：拉取 latest.json、节流、缓存、判定。**不做**下载、校验和、安装——
- * 那是 chunk 4；本文件不申请权限、不改 app.json、不注册 config plugin。
- *
- * 平台约束：非 Android 也可以走这里拿到判定（复用同一份清单与门禁语义），
- * 但调用方不得展示任何安装入口。本块本身没有安装入口；chunk 4 加安装按钮时
- * 必须自己判 `Platform.OS === 'android'`，不要依赖本模块替它把关。
+ * 更新检查器：拉取 latest.json、节流、缓存、判定。
  *
  * 隐私：请求只带 URL 本身，不带网关地址、账号、token、配对凭据或设备标识。
  */
@@ -87,6 +80,7 @@ function isAbort(error: unknown): boolean {
  * Automatic and manual checks both record the last successful remote check;
  * manual checks still bypass the automatic throttle.
  */
+let automaticManifestRequest: Promise<{ status: number; text: string }> | null = null;
 export async function checkForUpdate(
   installed: InstalledApp,
   options: CheckOptions = {},
@@ -112,6 +106,7 @@ export async function checkForUpdate(
     !options.manual &&
     state.lastCheckAt !== null &&
     state.cachedManifest !== null &&
+    now >= state.lastCheckAt &&
     now - state.lastCheckAt < UPDATE_CHECK_THROTTLE_MS &&
     cached !== null
   ) {
@@ -120,42 +115,52 @@ export async function checkForUpdate(
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  let text: string;
+  const request = async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(LATEST_JSON_URL, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: controller.signal,
+      });
+      return { status: response.status, text: response.ok ? await response.text() : '' };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const shared = !options.manual;
+  const pending = shared ? (automaticManifestRequest ??= request()) : request();
+  let response: { status: number; text: string };
   try {
-    const response = await fetchImpl(LATEST_JSON_URL, {
-      method: 'GET',
-      headers: { accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
+    response = await pending;
+  } catch (error) {
+    if (shared && automaticManifestRequest === pending) automaticManifestRequest = null;
+    return { kind: 'failed', error: isAbort(error) ? 'timeout' : 'network', cached };
+  }
+  try {
+    if (response.status < 200 || response.status >= 300) {
       return { kind: 'failed', error: `http-${response.status}`, cached };
     }
-    text = await response.text();
-  } catch (error) {
-    return { kind: 'failed', error: isAbort(error) ? 'timeout' : 'network', cached };
+    const text = response.text;
+
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      // Invalid remote content leaves the previous cached manifest untouched.
+      return { kind: 'failed', error: 'invalid-manifest', cached };
+    }
+
+    const manifest = parseLatestManifest(raw);
+    if (manifest === null) return { kind: 'invalid', reason: 'invalid-manifest' };
+
+    const evaluation = evaluateUpdate(installed, manifest);
+    await saveUpdateState({ lastCheckAt: now, cachedManifest: manifest });
+    return { kind: 'checked', evaluation, manifest, checkedAt: now };
   } finally {
-    clearTimeout(timer);
+    if (shared && automaticManifestRequest === pending) automaticManifestRequest = null;
   }
-
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    // 内容损坏（代理劫持、分支被清空）：当作失败，保留旧缓存给 UI 兜底。
-    return { kind: 'failed', error: 'invalid-manifest', cached };
-  }
-
-  const manifest = parseLatestManifest(raw);
-  if (manifest === null) return { kind: 'invalid', reason: 'invalid-manifest' };
-
-  const evaluation = evaluateUpdate(installed, manifest);
-
-  await saveUpdateState({ lastCheckAt: now, cachedManifest: manifest });
-
-  return { kind: 'checked', evaluation, manifest, checkedAt: now };
 }
 
 /**

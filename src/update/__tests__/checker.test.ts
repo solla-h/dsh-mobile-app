@@ -70,6 +70,32 @@ describe('URL 门禁与节流', () => {
     expect(result.checkedAt).toBe(NOW - 60_000);
     expect(result.evaluation.kind).toBe('update-available');
   });
+  it('does not throttle when the stored check timestamp is in the future', async () => {
+    loadMock.mockResolvedValue({ lastCheckAt: NOW + 1, cachedManifest: MANIFEST });
+    const fetchImpl = jest.fn(async () => jsonResponse(MANIFEST));
+
+    const result = await checkForUpdate(INSTALLED, { fetchImpl, now: NOW });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.kind).toBe('checked');
+  });
+
+  it('shares a concurrent latest manifest request', async () => {
+    const { promise, resolve } = Promise.withResolvers<Response>();
+    const fetchImpl = jest.fn(() => promise);
+
+    const first = checkForUpdate(INSTALLED, { fetchImpl, now: NOW });
+    const second = checkForUpdate({ ...INSTALLED, protocol: 4 }, { fetchImpl, now: NOW });
+    resolve(jsonResponse(MANIFEST));
+    const results = await Promise.all([first, second]);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(results.map((result) => result.kind)).toEqual(['checked', 'checked']);
+    expect(results.map((result) => result.kind === 'checked' && result.evaluation.kind)).toEqual([
+      'update-available',
+      'update-available',
+    ]);
+  });
 
   it('手动检查绕过节流并实际发起请求', async () => {
     loadMock.mockResolvedValue({ lastCheckAt: NOW - 60_000, cachedManifest: MANIFEST });

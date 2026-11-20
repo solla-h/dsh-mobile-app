@@ -144,9 +144,15 @@ export async function downloadApk(
 
   const directory = new Directory(Paths.cache, UPDATE_CACHE_DIR);
   if (!directory.exists) directory.create({ intermediates: true });
+  else {
+    for (const entry of directory.list()) {
+      if (entry instanceof File && entry.name.toLowerCase().endsWith('.apk')) {
+        deleteQuietly(entry);
+      }
+    }
+  }
 
   const destination = new File(directory, fileName);
-  deleteQuietly(destination);
 
   let task: DownloadTask | null = null;
   try {
