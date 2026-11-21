@@ -101,9 +101,7 @@ node scripts/setup-gateway.mjs check
 
 打开 [Releases](https://github.com/solla-h/dsh-mobile-app/releases)，从 `v0.1.0-alpha.5` 的 **Assets**
 下载 [`dsh-mobile-v0.1.0-alpha.5.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.5/dsh-mobile-v0.1.0-alpha.5.apk)。
-允许浏览器或文件管理器安装；不需要 Expo 账号或开发服务器。同页的 `SHA256SUMS` 与 `build-info.json`
-用于校验下载和签名，步骤见[发布手册](docs/RELEASING.md)。升级时覆盖安装，保留配对记录和草稿，
-不要先卸载。
+同页的 `SHA256SUMS` 与 `build-info.json` 用于校验下载和签名，步骤见[发布手册](docs/RELEASING.md)。后续包含应用内更新能力的版本，也可在 App 内检查、下载并交由 Android 系统安装器安装更新；安装仍需用户确认，不会静默更新。覆盖安装可保留配对记录和草稿，不要先卸载。
 
 ### 3. 生成配对码并扫码
 
@@ -117,7 +115,8 @@ node scripts/setup-gateway.mjs pair --open
 也可以打开 DSH Web → **移动设备 → 连接与配对**。配对码一次性、默认五分钟有效；打开 App 扫码，
 或手动粘贴配对串。公网入口必须使用 `wss://`，App 会拒绝公网明文 `ws://`；请把二维码当作密码。
 
-完整流程（局域网/隧道、故障排查、多设备）见[使用说明](docs/USER-GUIDE.zh-CN.md)。
+包含应用内更新能力的版本可在 App 内检查新 APK、下载并调用 Android 系统安装器完成安装；仍需用户确认，不会静默更新。
+应用内下载与安装的真机验证尚待完成，详见[发布验证状态](docs/OPEN-SOURCE-READINESS.md)。
 
 ## 已验证范围与边界
 
