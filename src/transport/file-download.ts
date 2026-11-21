@@ -125,9 +125,17 @@ export class FileDownloader {
         requestId?: string;
       };
       const type = failure.requestType;
-      if (type === 'file-download-cancel' || type === 'file-download-read') {
-        // 传输已经死了再取消会回 file-transfer-not-found，这类错误只影响内部状态。
+      if (type === 'file-download-cancel') {
         if (failure.requestId) this.cancelled.delete(failure.requestId);
+        return true;
+      }
+      if (type === 'file-download-read') {
+        // Read errors have no transferId, so every outstanding read is ambiguous.
+        for (const transfer of this.transfers.values()) {
+          this.removeFile(transfer.file);
+          this.fail(transfer.path, describeFailure(failure.code, failure.message));
+        }
+        this.transfers.clear();
         return true;
       }
       if (type !== 'file-resolve' && type !== 'file-download-open') return false;
@@ -271,6 +279,7 @@ export class FileDownloader {
     } catch (failure) {
       transfer.busy = false;
       this.transfers.delete(transfer.transferId);
+      this.removeFile(transfer.file);
       this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
       this.fail(transfer.path, failure instanceof Error ? failure.message : tr("写入文件失败"));
     }
