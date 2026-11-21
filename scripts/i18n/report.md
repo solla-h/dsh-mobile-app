@@ -1,15 +1,15 @@
 # i18n 扫描报告
 
-- 扫描文件：91
-- 去重后 key：839
-- 按类型：{"string":839,"template":0,"jsx":0}
+- 扫描文件：92
+- 去重后 key：842
+- 按类型：{"string":842,"template":0,"jsx":0}
 - 含模块级求值（切换语言需惰性处理）：0
 - 跳过的非文案节点：0
 
 ## 各文件命中数
 
 - src/ui/SessionScreen.tsx: 149
-- App.tsx: 93
+- App.tsx: 89
 - src/ui/plugins/PluginsView.tsx: 54
 - src/ui/home/HostInfoSheet.tsx: 51
 - src/ui/stream/TrajectoryView.tsx: 47
@@ -47,6 +47,7 @@
 - src/ui/home/RenameSessionModal.tsx: 7
 - src/ui/voice/useVoiceInput.ts: 7
 - src/ui/ErrorBoundary.tsx: 6
+- src/ui/plugins/gateway-disable.ts: 6
 - src/ui/stream/DiffView.tsx: 6
 - src/ui/stream/ThinkPill.tsx: 6
 - src/protocol/pending.ts: 5
