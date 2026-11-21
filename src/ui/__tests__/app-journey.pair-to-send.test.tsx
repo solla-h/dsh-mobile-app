@@ -82,6 +82,34 @@ describe('配对 → 全部会话 → 发送', () => {
     expect(await screen.findByText('上一条答的')).toBeTruthy();
 
     // 6. 发文字：帧真的写进「socket」，脚本回执 + 回复渲染出来。
+    // A burst of deltas is published together, and the final committed event remains visible.
+    await act(async () => {
+      conversationClient().emit({
+        kind: 'assistant-stream',
+        sessionId: TEST_SESSION_ID,
+        frame: { type: 'start', attemptId: 'stream-1' },
+      } as never);
+      conversationClient().emit({ kind: 'assistant-stream', sessionId: TEST_SESSION_ID, frame: { type: 'chunk', chunk: { type: 'text-delta', text: '流' } } } as never);
+      conversationClient().emit({ kind: 'assistant-stream', sessionId: TEST_SESSION_ID, frame: { type: 'chunk', chunk: { type: 'text-delta', text: '式' } } } as never);
+    });
+    expect(screen.queryByText('流式')).toBeNull();
+    await act(async () => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, 100);
+      await promise;
+    });
+    expect(await screen.findByText('流式')).toBeTruthy();
+    await act(async () => {
+      conversationClient().emit({
+        kind: 'event',
+        sessionId: TEST_SESSION_ID,
+        seq: 200,
+        time: Date.now(),
+        event: { type: 'assistant/message', text: '流式完成' },
+      } as never);
+    });
+    expect(await screen.findByText('流式完成')).toBeTruthy();
+
     await fireEvent.changeText(screen.getByTestId('session-composer-input'), '你好网关');
     await fireEvent.press(screen.getByTestId('session-send'));
     expect(await screen.findByText('脚本回复：收到')).toBeTruthy();

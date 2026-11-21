@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   LayoutAnimation,
@@ -60,7 +60,7 @@ interface Props {
  * 运行中默认展开逐行转圈；整批连续调用一旦全部完成，主动通过过阻尼曲线折叠为「已折叠 N 项连续工具调用」。
  * 遇到待审批 Gate 步骤时以暖琥珀色独立高亮，支持点按呼出方案 B 决策大卡或直接在流内点按 Diff 行引用。
  */
-export function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuoteLine }: Props) {
+export const ToolGroup = memo(function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuoteLine }: Props) {
   const hasGate = tools.some(
     (tool) => tool.pendingGate || (pendingCallId && tool.callId === pendingCallId),
   );
@@ -150,7 +150,19 @@ export function ToolGroup({ tools, defaultOpen, pendingCallId, onOpenGate, onQuo
       ) : null}
     </View>
   );
-}
+}, (previous, next) =>
+  previous.defaultOpen === next.defaultOpen &&
+  previous.pendingCallId === next.pendingCallId &&
+  previous.onOpenGate === next.onOpenGate &&
+  previous.onQuoteLine === next.onQuoteLine &&
+  previous.tools.length === next.tools.length &&
+  previous.tools.every((tool, index) => {
+    const other = next.tools[index];
+    return tool.id === other.id && tool.callId === other.callId && tool.name === other.name &&
+      tool.time === other.time && tool.args === other.args && tool.output === other.output &&
+      tool.isError === other.isError && tool.running === other.running && tool.pendingGate === other.pendingGate;
+  }),
+);
 
 function ToolRow({
   tool,

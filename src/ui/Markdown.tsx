@@ -1,6 +1,6 @@
 import { useTheme, useThemedStyles } from './theme';
 import type { Palette } from '../theme/tokens';
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import {
   Linking,
   Platform,
@@ -43,7 +43,7 @@ const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
 type MarkdownStyles = ReturnType<typeof makeStyles>;
 
-export function MarkdownView({
+export const MarkdownView = memo(function MarkdownView({
   text,
   onFileLink,
   onQuoteCode,
@@ -65,7 +65,7 @@ export function MarkdownView({
       {renderBlocks(tokens, 0, tokens.length, 'md', styles, onFileLink, onQuoteCode, onQuoteLine)}
     </View>
   );
-}
+});
 
 function findClose(tokens: MdToken[], from: number, open: string, close: string): number {
   let depth = 0;
