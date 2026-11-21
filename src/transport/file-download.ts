@@ -298,6 +298,7 @@ export class FileDownloader {
       }
       if (this.disposed) return;
       if (!chunk.eof) {
+        this.reading = null;
         transfer.busy = false;
         this.onState(transfer.path, {
           status: 'downloading',
