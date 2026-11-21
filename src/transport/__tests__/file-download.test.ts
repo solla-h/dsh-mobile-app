@@ -153,3 +153,94 @@ describe('FileDownloader', () => {
   });
  });
 
+
+it('times out a silent open and reports a retryable failure', () => {
+  jest.useFakeTimers();
+  try {
+    const sent: ClientFrame[] = [];
+    const states: { path: string; status: string }[] = [];
+    const downloader = new FileDownloader('session', (outgoing) => { sent.push(outgoing); return true; }, (path, state) => {
+      states.push({ path, status: state.status });
+    });
+    downloader.open('/workspace/report.bin');
+    const resolve = sent[0] as { requestId: string };
+    downloader.handleFrame(frame('file-resolved', { requestId: resolve.requestId, path: '/workspace/report.bin' }));
+    jest.advanceTimersByTime(15000);
+    expect(states.at(-1)).toEqual({ path: '/workspace/report.bin', status: 'error' });
+    downloader.dispose();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('times out a silent read, cancels its transfer, and removes the partial file', () => {
+  jest.useFakeTimers();
+  try {
+    const sent: ClientFrame[] = [];
+    const states: { path: string; status: string }[] = [];
+    const downloader = new FileDownloader('session', (outgoing) => { sent.push(outgoing); return true; }, (path, state) => {
+      states.push({ path, status: state.status });
+    });
+    downloader.open('/workspace/report.bin');
+    const resolve = sent[0] as { requestId: string };
+    downloader.handleFrame(frame('file-resolved', { requestId: resolve.requestId, path: '/workspace/report.bin' }));
+    const opening = sent[1] as { requestId: string };
+    downloader.handleFrame(frame('file-download-opened', { requestId: opening.requestId, transferId: 'transfer-timeout' }));
+    jest.advanceTimersByTime(15000);
+    expect(sent).toContainEqual({ type: 'file-download-cancel', transferId: 'transfer-timeout' });
+    expect(states.at(-1)).toEqual({ path: '/workspace/report.bin', status: 'error' });
+    expect(mockInstances[0].deleted).toBe(true);
+    downloader.dispose();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('cancels and clears the active transfer on a read error', async () => {
+  const sent: ClientFrame[] = [];
+  const downloader = new FileDownloader('session', (outgoing) => { sent.push(outgoing); return true; }, () => {});
+  downloader.open('/workspace/report.bin');
+  const resolve = sent[0] as { requestId: string };
+  downloader.handleFrame(frame('file-resolved', { requestId: resolve.requestId, path: '/workspace/report.bin' }));
+  const opening = sent[1] as { requestId: string };
+  downloader.handleFrame(frame('file-download-opened', { requestId: opening.requestId, transferId: 'transfer-error' }));
+  downloader.handleFrame(frame('file-download-chunk', { transferId: 'transfer-error', offset: 0, data: 'AQID' }));
+  await flush();
+  downloader.handleFrame(frame('error', { code: 'file-unreadable', requestType: 'file-download-read' }));
+  expect(sent).toContainEqual({ type: 'file-download-cancel', transferId: 'transfer-error' });
+  expect(mockInstances[0].deleted).toBe(true);
+  downloader.dispose();
+});
+
+it('cleans partial files when disposed during a transfer', () => {
+  const sent: ClientFrame[] = [];
+  const downloader = new FileDownloader('session', (outgoing) => { sent.push(outgoing); return true; }, () => {});
+  downloader.open('/workspace/report.bin');
+  const resolve = sent[0] as { requestId: string };
+  downloader.handleFrame(frame('file-resolved', { requestId: resolve.requestId, path: '/workspace/report.bin' }));
+  const opening = sent[1] as { requestId: string };
+  downloader.handleFrame(frame('file-download-opened', { requestId: opening.requestId, transferId: 'transfer-dispose' }));
+  downloader.dispose();
+  expect(sent).toContainEqual({ type: 'file-download-cancel', transferId: 'transfer-dispose' });
+  expect(mockInstances[0].deleted).toBe(true);
+});
+
+it('removes a downloaded file when checksum validation fails', async () => {
+  const sent: ClientFrame[] = [];
+  const states: { path: string; status: string }[] = [];
+  const downloader = new FileDownloader('session', (outgoing) => { sent.push(outgoing); return true; }, (path, state) => {
+    states.push({ path, status: state.status });
+  });
+  downloader.open('/workspace/report.bin');
+  const resolve = sent[0] as { requestId: string };
+  downloader.handleFrame(frame('file-resolved', { requestId: resolve.requestId, path: '/workspace/report.bin' }));
+  const opening = sent[1] as { requestId: string };
+  downloader.handleFrame(frame('file-download-opened', { requestId: opening.requestId, transferId: 'transfer-checksum' }));
+  downloader.handleFrame(frame('file-download-chunk', {
+    transferId: 'transfer-checksum', offset: 0, data: '', eof: true, sha256: 'wrong',
+  }));
+  await flush();
+  expect(mockInstances[0].deleted).toBe(true);
+  expect(states.at(-1)).toEqual({ path: '/workspace/report.bin', status: 'error' });
+  downloader.dispose();
+});
