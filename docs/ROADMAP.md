@@ -57,7 +57,7 @@
 验证状态（分级）：
 
 - **源码 / 测试确认**：`src/update/manifest.ts`、`checker.ts`、`installer.ts` 单测；`UpdateSheet` 与 `HostInfoSheet` 组件测试；typecheck / lint；发布流水线（`latest.json` 生成器 + Node 测试、publish job 推 `release-latest`）。
-- **仍为假设（未做真机）**：覆盖安装保留配对记录与草稿、「安装未知应用」授权流程、安装完成后冷启动，均需 Huang 在实体设备上跑一遍确认。文档不据此声称真机已通过。
+- **仍为假设（未做真机）**：覆盖安装保留配对记录与草稿、「安装未知应用」授权流程、安装完成后冷启动，均需在实体设备上复验确认。文档不据此声称真机已通过。
 
 ## 2. 已实现一半
 

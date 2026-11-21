@@ -38,8 +38,9 @@ DSH Mobile 当前是 **Android public alpha**。下载入口是
 | 文档 | 当前使用、安装、兼容、开发、设计与发布说明；原始讨论、状态日记和过期设计草稿不作为当前文档保留 |
 
 单维护者模式不要求另一位维护者批准 PR，但 PR、CI 与对话处理规则仍生效。
-本地合并检查已通过：35 个 Jest suites / 341 个测试、Node 脚本测试、签名脚本回归、typecheck、lint、
-expo-doctor（20/20）和工作流语法检查。远端结果以
+本地合并检查已通过：47 个 Jest suites / 515 个测试、49 个 Node 测试、typecheck、lint、
+expo-doctor（20/20）和工作流语法检查。应用内版本检查、APK 下载校验及系统安装器调用已由源码、测试与 CI 覆盖；
+实体设备上的下载、授权、覆盖安装与安装后恢复仍待验证。远端结果以
 [Actions](https://github.com/solla-h/dsh-mobile-app/actions) 为准。
 
 ## 证据边界与待验证项

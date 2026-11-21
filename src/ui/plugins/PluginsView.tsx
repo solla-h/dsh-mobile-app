@@ -28,7 +28,9 @@ import { ExemptionsSheet } from './ExemptionsSheet';
 import { SettingsEditor } from './SettingsEditor';
 import { PluginCard, type CardItem } from './PluginCard';
 import { usePluginManager } from './usePluginManager';
+import { protectGatewayDisable } from './gateway-disable';
 import { tr } from '../../i18n';
+
 
 /**
  * 「插件」页：与 DSH Web 插件页对齐的管理界面。
@@ -118,19 +120,20 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
 
   const onToggleBundle = useCallback(
     (bundle: PluginBundle, enabled: boolean) => {
-      tapFeedback();
-      void manager
-        .toggleBundle(bundle.name, enabled)
-        .then((result) => {
-          // 不凭发送成功改 UI：等回执结论 + plugins-changed 推送刷新。
-          if (result.application === 'restart-required' || result.application === 'failed') {
-            manager.refresh();
-          }
-        })
-        .catch(() => {
-          // 回执失败（或超时）不猜结果：重查目录让服务端状态说话。
-          void manager.refresh();
-        });
+      const apply = () => {
+        tapFeedback();
+        void manager
+          .toggleBundle(bundle.name, enabled)
+          .then((result) => {
+            if (result.application === 'restart-required' || result.application === 'failed') {
+              manager.refresh();
+            }
+          })
+          .catch(() => {
+            void manager.refresh();
+          });
+      };
+      protectGatewayDisable(bundle.name, enabled, apply);
     },
     [manager],
   );
@@ -339,10 +342,15 @@ export function PluginsView({ control, gatewayName, protocol, deviceName, capabi
                   value={entry.enabled === true}
                   disabled={!writable}
                   onValueChange={(value) => {
-                    tapFeedback();
-                    void manager
-                      .toggleEntry(entry.entryId, value)
-                      .catch(() => manager.refresh());
+                    const apply = () => {
+                      tapFeedback();
+                      void manager.toggleEntry(entry.entryId, value).catch(() => manager.refresh());
+                    };
+                    protectGatewayDisable(
+                      entry.bundle === 'dsh-plugin-mobile-gateway' ? entry.bundle : entry.entryId,
+                      value,
+                      apply,
+                    );
                   }}
                   trackColor={{ false: styles.switchOff.backgroundColor, true: styles.switchOn.backgroundColor }}
                   thumbColor={styles.switchThumb.backgroundColor}

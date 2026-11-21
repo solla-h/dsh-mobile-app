@@ -55,7 +55,6 @@ import { FocusHome, type FocusItem } from './src/ui/home/FocusHome';
 import { buildHomeRows } from './src/ui/home/rows';
 import {
   activateGateway,
-  clearGateway,
   getDeviceId,
   getDeviceName,
   loadActiveGateway,
@@ -1501,33 +1500,55 @@ function AppBody() {
     setSessions((current) => (current.length === 0 ? cached : current));
   }, []);
 
+  const resetGatewayScopedState = useCallback(() => {
+    clearApprovalFocus();
+    voiceDraftRef.current = null;
+    voiceCreateRequestRef.current = null;
+    voiceMessagePendingRef.current = null;
+    setVoiceDelivery(null);
+    setSessions([]);
+    sessionsRef.current = [];
+    knownSessionsRef.current = new Set();
+    setQueues({});
+    setActive(null);
+    activeIdRef.current = null;
+    setHello(null);
+    setError(null);
+    setArchived([]);
+    setSchedules(null);
+    setWorkspaceFrame(null);
+    setSpeechCatalog(null);
+    setOutlines({});
+    setUnreadIds(new Set());
+    creatingWorkspaceRef.current = null;
+    creatingRequestRef.current = null;
+    for (const timer of createTimersRef.current.values()) clearTimeout(timer);
+    createTimersRef.current.clear();
+    rendezvousRequestRef.current = null;
+    setCreating(false);
+    setCurrentWorkspaceId(null);
+  }, [clearApprovalFocus, clearPending]);
+
   /** 切到另一台网关：上一个网关的会话/队列都不属于新网关，先清干净再连。 */
   const switchGateway = useCallback(
     async (gateway: SavedGateway) => {
       setGatewaySheet(false);
       if (gateway.id === savedRef.current?.id && connected) return;
-      clearApprovalFocus();
       client.disconnect();
       control.disconnect();
-      setSessions([]);
-      setQueues({});
-      setActive(null);
-      clearPending();
-      setHello(null);
-      setError(null);
-      setArchived([]);
+      resetGatewayScopedState();
       savedRef.current = gateway;
       setSaved(gateway);
       void revealCachedSessions(gateway.id);
       await activateGateway(gateway.id).catch(() => undefined);
       await connectWith(gateway);
     },
-    [clearApprovalFocus, clearPending, client, connected, connectWith, control, revealCachedSessions],
+    [client, connected, connectWith, control, resetGatewayScopedState, revealCachedSessions],
   );
 
   const forgetGateway = useCallback(
     (gateway: SavedGateway) => {
-      const name = gateway.gatewayName ?? gateway.label ?? new URL(gateway.url).host;
+      const name = gateway.gatewayName ?? gateway.label ?? hostOf(gateway.url);
       Alert.alert(tr("移除网关"), tr("不再连接 {0}？本地记录会被删除。", [name]), [
         { text: tr("取消"), style: 'cancel' },
         {
@@ -1541,14 +1562,12 @@ function AppBody() {
               dropCachedGateway(gateway.id);
               if (gateway.id !== savedRef.current?.id) return;
               // 删掉的正好是当前网关：断开并退回到列表/扫码页。
-              clearApprovalFocus();
               client.disconnect();
               control.disconnect();
+              resetGatewayScopedState();
               savedRef.current = null;
               setSaved(null);
-              setHello(null);
-              setSessions([]);
-              setActive(null);
+              pendingGateway.current = null;
               const next = rest[0];
               if (next) {
                 savedRef.current = next;
@@ -1562,7 +1581,7 @@ function AppBody() {
         },
       ]);
     },
-    [clearApprovalFocus, clearPending, client, connectWith, control, revealCachedSessions],
+    [client, connectWith, control, resetGatewayScopedState, revealCachedSessions],
   );
 
   const submitRename = useCallback(() => {
@@ -1625,36 +1644,6 @@ function AppBody() {
     [client, menuSession],
   );
 
-  const handleForget = useCallback(async () => {
-    Alert.alert(
-      tr("清除配对？"),
-      tr("清除后本机保存的设备凭证会被删除，再连接需要在服务器上重新运行 dsh-pair 生成新的配对码（旧码不能复用）。"),
-      [
-        { text: tr("取消"), style: 'cancel' },
-        {
-          text: tr("清除"),
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              client.disconnect();
-              control.disconnect();
-              await clearGateway();
-              savedRef.current = null;
-              pendingGateway.current = null;
-              setSaved(null);
-              setHello(null);
-              setSessions([]);
-              setActive(null);
-              setError(null);
-              clearPending();
-              setGateways([]);
-              setQueues({});
-            })();
-          },
-        },
-      ],
-    );
-  }, [client, control]);
 
   if (scanning) {
     return (
