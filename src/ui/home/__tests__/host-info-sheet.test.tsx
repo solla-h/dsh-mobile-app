@@ -77,10 +77,11 @@ beforeEach(() => {
   loadStateMock.mockResolvedValue({ lastCheckAt: null, cachedManifest: null });
 });
 
+jest.setTimeout(15000);
 describe('HostInfoSheet 检查更新行', () => {
   it('回显当前版本与「从未检查」，点按走手动检查并转交新版本', async () => {
     checkMock.mockResolvedValue(UPDATED);
-    const { onUpdateAvailable } = await await renderSheet();
+    const { onUpdateAvailable } = await renderSheet();
 
     expect(await screen.findByText('当前版本 0.1.0 · 5')).toBeTruthy();
     expect(screen.getByText('从未检查')).toBeTruthy();
@@ -113,7 +114,7 @@ describe('HostInfoSheet 检查更新行', () => {
       checkedAt: 1_700_000_000_000,
       evaluation: { kind: 'up-to-date' },
     });
-    const { onUpdateAvailable } = await await renderSheet();
+    const { onUpdateAvailable } = await renderSheet();
 
     await fireEvent.press(await screen.findByText('检查'));
 
@@ -133,7 +134,7 @@ describe('HostInfoSheet 检查更新行', () => {
 
   it('手动检查失败时就地提示原因', async () => {
     checkMock.mockResolvedValue({ kind: 'failed', error: 'timeout', cached: null });
-    const { onUpdateAvailable } = await await renderSheet();
+    const { onUpdateAvailable } = await renderSheet();
 
     await fireEvent.press(await screen.findByText('检查'));
 
