@@ -19,6 +19,7 @@ import { useThemedStyles } from '../theme';
 import type { Palette } from '../../theme/tokens';
 import type { PluginManager } from './usePluginManager';
 import { tr } from '../../i18n';
+import { protectGatewayDisable } from './gateway-disable';
 
 /**
  * 插件详情大卡片：居中悬浮的竖版卡（塔罗牌的形状，不是塔罗牌的皮），
@@ -462,12 +463,18 @@ function CardBody({
                       value={isSwitchOn}
                       disabled={!switchable}
                       onValueChange={(value) => {
-                        tapFeedback();
-                        if (item.kind === 'bundle') {
-                          void manager.toggleBundle(item.bundle.name, value).catch(() => manager.refresh());
-                        } else {
-                          void manager.toggleEntry(item.entry.entryId, value).catch(() => manager.refresh());
-                        }
+                        const apply = () => {
+                          tapFeedback();
+                          if (item.kind === 'bundle') {
+                            void manager.toggleBundle(item.bundle.name, value).catch(() => manager.refresh());
+                          } else {
+                            void manager.toggleEntry(item.entry.entryId, value).catch(() => manager.refresh());
+                          }
+                        };
+                        const target = item.kind === 'bundle'
+                          ? item.bundle.name
+                          : item.entry.bundle === GATEWAY_PACKAGE ? item.entry.bundle : item.entry.entryId;
+                        protectGatewayDisable(target, value, apply);
                       }}
                       trackColor={{ false: styles.switchOff.backgroundColor, true: styles.switchOn.backgroundColor }}
                       thumbColor={styles.switchThumb.backgroundColor}
@@ -502,8 +509,15 @@ function CardBody({
                         value={entry.enabled === true}
                         disabled={!switchable}
                         onValueChange={(value) => {
-                          tapFeedback();
-                          void manager.toggleEntry(entry.entryId, value).catch(() => manager.refresh());
+                          const apply = () => {
+                            tapFeedback();
+                            void manager.toggleEntry(entry.entryId, value).catch(() => manager.refresh());
+                          };
+                          protectGatewayDisable(
+                            entry.bundle === GATEWAY_PACKAGE ? entry.bundle : entry.entryId,
+                            value,
+                            apply,
+                          );
                         }}
                         trackColor={{ false: styles.switchOff.backgroundColor, true: styles.switchOn.backgroundColor }}
                         thumbColor={styles.switchThumb.backgroundColor}
