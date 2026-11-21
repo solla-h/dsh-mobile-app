@@ -1,4 +1,4 @@
-# DSH Mobile
+# DSH Mobile App (FatWhale)
 
 [Website](https://fatwhale.app/en/) · [简体中文](README.md) · [Download Android APK](https://github.com/solla-h/dsh-mobile-app/releases) ·
 [User guide](docs/USER-GUIDE.md) · [Compatibility](docs/COMPATIBILITY.md)
@@ -6,11 +6,11 @@
 [![CI](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/solla-h/dsh-mobile-app/actions/workflows/ci.yml)
 [![Code: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](LICENSE)
 
-**Check DSH progress, respond to approvals, and continue conversations from your phone.**
+**DSH Mobile App (FatWhale) is a third-party, open-source Android client for DeepSeek Harness (DSH): watch agent sessions, handle approvals, and keep chatting from your phone.**
 
-DSH Mobile is a third-party, open-source Android client for **DeepSeek Harness (DSH)** that connects to your own
-DSH host. The agent runs on the host; the phone keeps three things at hand: what is running, what is waiting
-for me, and what I want to say next.
+It connects to your own DSH host. The agent runs on the host; the phone keeps three things at hand: what is running, what is waiting for me, and what I want to say next.
+
+> **The official repository is [solla-h/dsh-mobile-app](https://github.com/solla-h/dsh-mobile-app), and the official website is [fatwhale.app](https://fatwhale.app).** Unrelated forks using the same name are not affiliated; use the official repository and website.
 
 > **Public Android alpha.** [`v0.1.0-alpha.5`](https://github.com/solla-h/dsh-mobile-app/releases/tag/v0.1.0-alpha.5)
 > is published. It is built and signed by the release pipeline; the signed APK passes the complete local-fixture emulator
@@ -111,8 +111,9 @@ Open [Releases](https://github.com/solla-h/dsh-mobile-app/releases) and download
 [`dsh-mobile-v0.1.0-alpha.5.apk`](https://github.com/solla-h/dsh-mobile-app/releases/download/v0.1.0-alpha.5/dsh-mobile-v0.1.0-alpha.5.apk)
 from the **Assets** of `v0.1.0-alpha.5`. Allow your browser or file manager to install it; no Expo account or
 development server is needed. The same release provides `SHA256SUMS` and `build-info.json` for download and
-signature verification; see the [release runbook](docs/RELEASING.md). To update, install over the existing app
-to keep pairings and drafts; do not uninstall first.
+signature verification; see the [release runbook](docs/RELEASING.md). To install a later APK update, use the in-app
+update check when available, or download it from Releases. Install over the existing app to keep pairings and drafts;
+do not uninstall first.
 
 ### 3. Generate a pairing code and scan it
 
@@ -127,6 +128,10 @@ Or open DSH Web → **Mobile devices → Connection & pairing** (移动设备 �
 single-use and valid for five minutes by default. Open the app and scan it, or paste the payload manually.
 Public endpoints must use `wss://`; the app rejects plain `ws://` for public addresses. Treat the QR code like
 a password.
+
+Starting with a release that includes in-app updates, the app checks for a newer APK and lets you download and install it
+through Android's system installer. Installation still requires your confirmation; updates are not installed silently.
+Physical-device verification of the in-app download and install journey is pending; see the [validation status](docs/OPEN-SOURCE-READINESS.md).
 
 See the [User guide](docs/USER-GUIDE.md) for the full journey (LAN/tunnel, troubleshooting, multiple devices).
 

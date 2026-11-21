@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- Add a complete Chinese and English app interface with locale selection and system-language fallback (PR #11).
+- Add in-app APK version checks, verified downloads, and user-confirmed installation through the Android system installer (PR #15); physical-device update installation remains pending verification.
 - Roadmap and candidate pool ([docs/ROADMAP.md](docs/ROADMAP.md)): planned, half-done and deliberately-not-done capabilities with their reconsider conditions, plus the repository working agreement in [AGENTS.md](AGENTS.md).
 
 ## [0.1.0-alpha.5] - 2026-11-09
