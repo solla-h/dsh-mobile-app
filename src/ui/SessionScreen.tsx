@@ -5,7 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -294,6 +294,21 @@ export function SessionScreen({
   const [streaming, setStreaming] = useState<StreamingDraft | null>(null);
   /** 最近一次已提交的流式草稿：帧回调是长命闭包，拿不到最新的 streaming，上膛判定要读它。 */
   const streamingRef = useRef<StreamingDraft | null>(null);
+  const pendingStreamingRef = useRef<StreamingDraft | null>(null);
+  const streamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publishStreaming = useCallback((next: StreamingDraft | null) => {
+    clearTimeout(streamingTimerRef.current);
+    streamingTimerRef.current = null;
+    pendingStreamingRef.current = null;
+    streamingRef.current = next;
+    setStreaming(next);
+  }, []);
+  useEffect(
+    () => () => {
+      clearTimeout(streamingTimerRef.current);
+    },
+    [],
+  );
   /**
    * 草稿行的正文是否**画上过屏幕**（按提交后的渲染状态记账）。
    * 不能用帧处理时的 live 状态判：正式消息和它前面的 text-delta 常在同一批到达，
@@ -303,7 +318,6 @@ export function SessionScreen({
   /** 草稿行折叠淡入的起点（ms）：240ms 窗口内到来的换行要接着淡，不能瞬切。 */
   const foldFadeAtRef = useRef(0);
   useEffect(() => {
-    streamingRef.current = streaming;
     if (streaming && splitThinkTags(streaming.text).text.trim()) draftBodyPaintedRef.current = true;
   }, [streaming]);
   /** 本次流式尝试是否已给收拢动画上过膛（`start` 时复位，一次折叠只上膛一次）。 */
@@ -772,12 +786,12 @@ export function SessionScreen({
               landingRowIdRef.current = `r${eventFrame.seq}`;
             }
           }
-          setStreaming(null);
+          publishStreaming(null);
         }
         if (type === 'turn/end') {
           onRunningChangeRef.current(false);
           setCancelling(false);
-          setStreaming(null);
+          publishStreaming(null);
           // 中断/出错的提示统一由 applyRealtime 生成的 outcome 行承担
           // （见 protocol/chat.ts outcomeOf），这里再补一条就是同一件事写两遍。
           if (atBottomRef.current) {
@@ -806,12 +820,13 @@ export function SessionScreen({
           if (atBottomRef.current) followRef.current = true;
           collapseArmedRef.current = false;
           draftBodyPaintedRef.current = false;
-          setStreaming({
+          const next = {
             attemptId: String(inner.attemptId ?? ''),
             text: '',
             reasoning: '',
             startedAt: Date.now(),
-          });
+          };
+          publishStreaming(next);
           return;
         }
         if (inner.type === 'chunk') {
@@ -847,21 +862,31 @@ export function SessionScreen({
             landingRowIdRef.current = `stream-${live.attemptId}`;
             foldFadeAtRef.current = Date.now();
           }
-          setStreaming((current) => {
-            if (!current) return current;
-            if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
-              return { ...current, text: current.text + chunk.text };
-            }
-            if ((chunk.type === 'thinking-delta' || chunk.type === 'reasoning-delta') && typeof chunk.text === 'string') {
-              return { ...current, reasoning: current.reasoning + chunk.text };
-            }
-            return current;
-          });
+          const current = streamingRef.current;
+          if (!current) return;
+          const next =
+            chunk.type === 'text-delta' && typeof chunk.text === 'string'
+              ? { ...current, text: current.text + chunk.text }
+              : (chunk.type === 'thinking-delta' || chunk.type === 'reasoning-delta') &&
+                  typeof chunk.text === 'string'
+                ? { ...current, reasoning: current.reasoning + chunk.text }
+                : current;
+          if (next === current) return;
+          streamingRef.current = next;
+          pendingStreamingRef.current = next;
+          if (!streamingTimerRef.current) {
+            streamingTimerRef.current = setTimeout(() => {
+              streamingTimerRef.current = null;
+              const pending = pendingStreamingRef.current;
+              pendingStreamingRef.current = null;
+              if (pending) setStreaming(pending);
+            }, 80);
+          }
           return;
         }
         if (inner.type === 'end') {
           followRef.current = false;
-          setStreaming(null);
+          publishStreaming(null);
           if (inner.outcome?.kind !== 'committed') onRunningChangeRef.current(false);
           return;
         }
@@ -1049,7 +1074,7 @@ export function SessionScreen({
         return;
       }
       if (kind === 'session-stream-reset') {
-        setStreaming(null);
+        publishStreaming(null);
         return;
       }
       if (kind === 'error') {
@@ -1087,7 +1112,7 @@ export function SessionScreen({
         setError(`${failure.code ?? 'error'}：${failure.message ?? ''}`);
       }
     },
-    [anchorTurn, client, handleVoiceFailure, handleVoiceFrame, session.sessionId, setStatusLabel, showToast],
+    [anchorTurn, client, handleVoiceFailure, handleVoiceFrame, publishStreaming, session.sessionId, setStatusLabel, showToast],
   );
 
   useEffect(() => {
@@ -1098,7 +1123,7 @@ export function SessionScreen({
     setLoading(cached === undefined);
     setLoadFailed(false);
     setMessages(cached ?? []);
-    setStreaming(null);
+    publishStreaming(null);
     setError(null);
     setApprovals([]);
     setQuestion(null);
@@ -1181,7 +1206,7 @@ export function SessionScreen({
       if (uploaderRef.current === uploader) uploaderRef.current = null;
       client.send({ type: 'unsubscribe' });
     };
-  }, [client, gatewayId, handleFrame, requestFirstScreen, session.sessionId, setStatusLabel]);
+  }, [client, gatewayId, handleFrame, publishStreaming, requestFirstScreen, session.sessionId, setStatusLabel]);
 
   // 首屏历史兜底：loading 期间没有回包就 15s 后落地（回包/快照把 loading 翻掉时定时器自动撤销）。
   useEffect(() => {
@@ -2224,6 +2249,18 @@ export function SessionScreen({
     // 连续的 tool 调用合并成一组，其余消息原样透传。
     return groupMessages([...baseRows, ...extras], { running });
   }, [baseRows, offlineItems, queued, running]);
+  const openTriage = useCallback(() => setTriageOpen(true), []);
+  const quoteLine = useCallback((line: { file?: string; lineNo?: number; text: string }) => {
+    setQuote({
+      lang: 'diff',
+      label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
+      code: line.text,
+    });
+  }, []);
+  const quoteCode = useCallback((lang: string, code: string) => {
+    setQuote({ lang, code, label: lang });
+  }, []);
+  const longPressMessage = useCallback((message: ChatMessage) => setActionMessage(message), []);
 
   // 帧回调里要按索引回滚到「最后一条用户消息」，只能读渲染后的 rows。
   useEffect(() => {
@@ -2553,14 +2590,8 @@ export function SessionScreen({
                         steps={item.steps}
                         animateIn={running && item.id === lastActivityId}
                         pendingCallId={approval?.callId}
-                        onOpenGate={() => setTriageOpen(true)}
-                        onQuoteLine={(line) =>
-                          setQuote({
-                            lang: 'diff',
-                            label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
-                            code: line.text,
-                          })
-                        }
+                        onOpenGate={openTriage}
+                        onQuoteLine={quoteLine}
                       />
                     </View>
                   ) : item.kind === 'tools' ? (
@@ -2568,15 +2599,9 @@ export function SessionScreen({
                       <ToolGroup
                         tools={item.tools}
                         pendingCallId={approval?.callId}
-                        onOpenGate={() => setTriageOpen(true)}
-                        onQuoteLine={(line) =>
-                          setQuote({
-                            lang: 'diff',
-                            label: [line.file, line.lineNo].filter(Boolean).join(':') || undefined,
-                            code: line.text,
-                          })
-                        }
-                      />
+                        onOpenGate={openTriage}
+                        onQuoteLine={quoteLine}
+                        />
                     </View>
                   ) : (
                     // 流式草稿行刚被这条正式行换掉时（landingRowIdRef 命中）：
@@ -2598,8 +2623,8 @@ export function SessionScreen({
                         canDownloadFiles={canDownloadFiles}
                         onDiscardOffline={discardOffline}
                         onRetryOffline={retryOffline}
-                        onLongPress={setActionMessage}
-                        onQuoteCode={(lang, code) => setQuote({ lang, code, label: lang })}
+                        onLongPress={longPressMessage}
+                        onQuoteCode={quoteCode}
                       />
                     </RowFadeIn>
                   )}
@@ -3143,7 +3168,7 @@ function RowFadeIn({
   return <Animated.View style={{ opacity }}>{children}</Animated.View>;
 }
 
-function MessageRow({
+function MessageRowImpl({
   message,
   attachmentCache,
   onNeedAttachment,
@@ -3157,7 +3182,42 @@ function MessageRow({
   onRetryOffline,
   onLongPress,
   onQuoteCode,
-}: {
+}: MessageRowProps) {
+  const styles = useThemedStyles(makeStyles);
+  const [preview, setPreview] = useState<string | null>(null);
+  const quoteLineFromMarkdown = useCallback((line: { file?: string; lineNo?: number; text: string }) => {
+    onQuoteCode([line.file, line.lineNo].filter(Boolean).join(':') || 'code', line.text);
+  }, [onQuoteCode]);
+  if (message.kind === 'files') return canDownloadFiles ? <View style={styles.filesRow}><FileCards files={message.files} states={fileStates} onOpen={onOpenFile} /></View> : null;
+  if (message.kind === 'queued') {
+    const steering = message.placement === 'steering';
+    return (
+      <View style={[styles.bubbleRow, styles.rowRight]}><View style={[styles.bubble, styles.bubbleUser, styles.bubbleQueued]}>
+        {message.localUris?.length ? <><View style={styles.localImages}>{message.localUris.map((uri) => <Pressable key={uri} onPress={() => setPreview(uri)} accessibilityRole="button" accessibilityLabel={tr("查看图片")}><Image source={{ uri }} style={styles.localImage} resizeMode="cover" /></Pressable>)}</View><ImageViewer uri={preview} onClose={() => setPreview(null)} /></> : null}
+        {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
+        <View style={styles.queuedFooter}><Text style={[styles.queuedTag, message.failed || message.offlineStatus === 'failed' ? styles.queuedTagFailed : message.offlineStatus === 'unconfirmed' ? styles.queuedTagWarn : null]}>{message.offline ? offlineStatusText(message.offlineStatus, message.offlineError) : steering ? tr("插话中 · 下一步生效") : tr("排队中")}</Text>
+          {message.offline ? message.offlineStatus === 'sending' ? null : message.offlineStatus === 'pending' ? <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}><Text style={styles.queuedAction}>{tr("删除")}</Text></Pressable> : <View style={styles.queuedActions}><Pressable hitSlop={8} onPress={() => onRetryOffline(message.queueId)}><Text style={styles.queuedAction}>{tr("重试")}</Text></Pressable><Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}><Text style={styles.queuedAction}>{tr("移除")}</Text></Pressable></View> : <View style={styles.queuedActions}><Pressable hitSlop={8} onPress={() => onEditQueued(message.queueId, message.text)}><Text style={styles.queuedAction}>{tr("编辑")}</Text></Pressable>{steering ? null : <Pressable hitSlop={8} onPress={() => onSteerQueued(message.queueId)}><Text style={styles.queuedAction}>{tr("插话发送")}</Text></Pressable>}<Pressable hitSlop={8} onPress={() => onRemoveQueued(message.queueId)}><Text style={styles.queuedAction}>{tr("撤回")}</Text></Pressable></View>}
+        </View>
+      </View></View>
+    );
+  }
+  if (message.kind === 'notice') return <View style={styles.noticeRow}><Text style={[styles.noticeText, message.tone === 'warn' ? styles.noticeWarn : null]}>{message.text}</Text></View>;
+  if (message.kind === 'context' || message.kind === 'approval' || message.kind === 'tool') return null;
+  if (message.kind === 'outcome') return message.failed ? <View style={styles.noticeRow}><Text style={styles.noticeWarn}>{message.text}</Text></View> : null;
+  if (message.kind === 'assistant') return <View style={styles.assistantWrap}>
+    {message.reasoning ? <ThinkPill text={message.reasoning} streaming={message.streaming} answerStarted={Boolean(message.text.trim())} startedAt={message.time} /> : null}
+    {message.text || (!message.reasoning && message.streaming) || message.failure ? <AnswerCard failed={Boolean(message.failure)}><Pressable onLongPress={() => onLongPress(message)} delayLongPress={320} accessibilityHint={tr("长按打开消息操作")}>
+      {message.text ? <MarkdownView text={message.text} onFileLink={canDownloadFiles ? onOpenFile : undefined} onQuoteCode={onQuoteCode} onQuoteLine={quoteLineFromMarkdown} /> : <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>}
+      {message.failure ? <Text style={styles.failure}>{message.failure}</Text> : null}
+    </Pressable></AnswerCard> : null}
+  </View>;
+  return <View style={[styles.bubbleRow, styles.rowRight]}><Pressable onLongPress={() => onLongPress(message)} delayLongPress={320} style={[styles.bubble, styles.bubbleUser]} accessibilityHint={tr("长按打开消息操作")}>
+    {'images' in message && message.images?.length ? <MessageImages refs={message.images} cache={attachmentCache} onNeed={onNeedAttachment} /> : null}
+    {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
+  </Pressable></View>;
+}
+
+interface MessageRowProps {
   message: ChatMessage;
   attachmentCache: Record<string, string>;
   onNeedAttachment: (attachmentId: string) => void;
@@ -3171,176 +3231,9 @@ function MessageRow({
   onRetryOffline: (id: string) => void;
   onLongPress: (message: ChatMessage) => void;
   onQuoteCode: (lang: string, code: string) => void;
-}) {
-  const styles = useThemedStyles(makeStyles);
-  /** 本地回显图片的全屏预览；历史图片走 MessageImages 自己的查看器。 */
-  const [preview, setPreview] = useState<string | null>(null);
-  if (message.kind === 'files') {
-    // 网关没开文件下载能力时，卡片只会是个点不动的按钮，直接不画。
-    if (!canDownloadFiles) return null;
-    return (
-      <View style={styles.filesRow}>
-        <FileCards files={message.files} states={fileStates} onOpen={onOpenFile} />
-      </View>
-    );
-  }
-  if (message.kind === 'queued') {
-    const steering = message.placement === 'steering';
-    return (
-      <View style={[styles.bubbleRow, styles.rowRight]}>
-        <View style={[styles.bubble, styles.bubbleUser, styles.bubbleQueued]}>
-          {message.localUris?.length ? (
-            <>
-              <View style={styles.localImages}>
-                {message.localUris.map((uri) => (
-                  <Pressable
-                    key={uri}
-                    onPress={() => setPreview(uri)}
-                    accessibilityRole="button"
-                    accessibilityLabel={tr("查看图片")}
-                  >
-                    <Image source={{ uri }} style={styles.localImage} resizeMode="cover" />
-                  </Pressable>
-                ))}
-              </View>
-              <ImageViewer uri={preview} onClose={() => setPreview(null)} />
-            </>
-          ) : null}
-          {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
-          <View style={styles.queuedFooter}>
-            <Text
-              style={[
-                styles.queuedTag,
-                message.failed || message.offlineStatus === 'failed'
-                  ? styles.queuedTagFailed
-                  : message.offlineStatus === 'unconfirmed'
-                    ? styles.queuedTagWarn
-                    : null,
-              ]}
-            >
-              {message.offline
-                ? offlineStatusText(message.offlineStatus, message.offlineError)
-                : steering
-                  ? tr("插话中 · 下一步生效")
-                  : tr("排队中")}
-            </Text>
-            {message.offline ? (
-              message.offlineStatus === 'sending' ? null : message.offlineStatus === 'pending' ? (
-                <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
-                  <Text style={styles.queuedAction}>{tr("删除")}</Text>
-                </Pressable>
-              ) : (
-                <View style={styles.queuedActions}>
-                  <Pressable hitSlop={8} onPress={() => onRetryOffline(message.queueId)}>
-                    <Text style={styles.queuedAction}>{tr("重试")}</Text>
-                  </Pressable>
-                  <Pressable hitSlop={8} onPress={() => onDiscardOffline(message.queueId)}>
-                    <Text style={styles.queuedAction}>{tr("移除")}</Text>
-                  </Pressable>
-                </View>
-              )
-            ) : (
-              <View style={styles.queuedActions}>
-                <Pressable hitSlop={8} onPress={() => onEditQueued(message.queueId, message.text)}>
-                  <Text style={styles.queuedAction}>{tr("编辑")}</Text>
-                </Pressable>
-                {steering ? null : (
-                  <Pressable hitSlop={8} onPress={() => onSteerQueued(message.queueId)}>
-                    <Text style={styles.queuedAction}>{tr("插话发送")}</Text>
-                  </Pressable>
-                )}
-                <Pressable hitSlop={8} onPress={() => onRemoveQueued(message.queueId)}>
-                  <Text style={styles.queuedAction}>{tr("撤回")}</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-    );
-  }
-  if (message.kind === 'notice') {
-    return (
-      <View style={styles.noticeRow}>
-        <Text
-          style={[styles.noticeText, message.tone === 'warn' ? styles.noticeWarn : null]}
-        >
-          {message.text}
-        </Text>
-      </View>
-    );
-  }
-  // 轨迹页专属的行。对话流里这些落到最后一个 return 就会画成用户气泡，必须显式挡掉：
-  // 上下文注入和审批记录在对话流里没有可操作性（审批有专门的决策坞），
-  // 每轮结论只在「这轮不是正常结束」时留一行——正常结束是噪音。
-  if (message.kind === 'context' || message.kind === 'approval') return null;
-  if (message.kind === 'outcome') {
-    if (!message.failed) return null;
-    return (
-      <View style={styles.noticeRow}>
-        <Text style={styles.noticeWarn}>{message.text}</Text>
-      </View>
-    );
-  }
-  // 工具调用已经在列表层合并成 ToolGroup，这里只兜底。
-  if (message.kind === 'tool') return null;
-  if (message.kind === 'assistant') {
-    // Stage 1/2 展开推理，Stage 3 自动折叠成胶囊，正式回答单独一张提亮卡片。
-    return (
-      <View style={styles.assistantWrap}>
-        {message.reasoning ? (
-          <ThinkPill
-            text={message.reasoning}
-            streaming={message.streaming}
-            answerStarted={Boolean(message.text && message.text.trim().length > 0)}
-            startedAt={message.time}
-          />
-        ) : null}
-        {message.text || (!message.reasoning && message.streaming) || message.failure ? (
-          <AnswerCard failed={Boolean(message.failure)}>
-            <Pressable
-              onLongPress={() => onLongPress(message)}
-              delayLongPress={320}
-              accessibilityHint={tr("长按打开消息操作")}
-            >
-              {message.text ? (
-                <MarkdownView
-                  text={message.text}
-                  onFileLink={canDownloadFiles ? onOpenFile : undefined}
-                  onQuoteCode={onQuoteCode}
-                  onQuoteLine={(line) =>
-                    onQuoteCode(
-                      [line.file, line.lineNo].filter(Boolean).join(':') || 'code',
-                      line.text,
-                    )
-                  }
-                />
-              ) : (
-                <Text style={styles.bubbleText}>{message.streaming ? '…' : ''}</Text>
-              )}
-              {message.failure ? <Text style={styles.failure}>{message.failure}</Text> : null}
-            </Pressable>
-          </AnswerCard>
-        ) : null}
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.bubbleRow, styles.rowRight]}>
-      <Pressable
-        onLongPress={() => onLongPress(message)}
-        delayLongPress={320}
-        style={[styles.bubble, styles.bubbleUser]}
-        accessibilityHint={tr("长按打开消息操作")}
-      >
-        {'images' in message && message.images?.length ? (
-          <MessageImages refs={message.images} cache={attachmentCache} onNeed={onNeedAttachment} />
-        ) : null}
-        {message.text ? <Text style={styles.bubbleText}>{message.text}</Text> : null}
-      </Pressable>
-    </View>
-  );
 }
+const MessageRow = memo(MessageRowImpl);
+
 
 /** 会话页样式：颜色全部走色板，浅色/深色各建一份并缓存。 */
 function makeStyles(t: Palette) {
