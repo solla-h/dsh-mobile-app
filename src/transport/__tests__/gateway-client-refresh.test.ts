@@ -1,4 +1,11 @@
+import { AppState } from 'react-native';
 import { GatewayClient } from '../gateway-client';
+
+const networkMock = jest.requireMock('expo-network') as {
+  addNetworkStateListener: jest.Mock;
+};
+let networkListener: ((state: { isConnected?: boolean; isInternetReachable?: boolean }) => void) | null;
+let appStateListener: ((state: string) => void) | null;
 
 jest.mock('expo-network', () => ({
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
@@ -50,12 +57,33 @@ async function fail(socket: FakeSocket, code = 1006) {
 beforeEach(() => {
   jest.useFakeTimers();
   FakeSocket.instances = [];
+  networkListener = null;
+  appStateListener = null;
+  networkMock.addNetworkStateListener.mockImplementation((listener) => {
+    networkListener = listener;
+    return { remove: jest.fn() };
+  });
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((event, listener) => {
+    if (event === 'change') appStateListener = listener as (state: string) => void;
+    return { remove: jest.fn() };
+  });
   globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
 });
 
 afterEach(() => {
   jest.useRealTimers();
   globalThis.WebSocket = originalWebSocket;
+});
+
+it('reconnects on foreground over a local network without public internet', async () => {
+  const client = new GatewayClient();
+  client.connect(options());
+  await fail(FakeSocket.instances[0]);
+  networkListener?.({ isConnected: true, isInternetReachable: false });
+  const attemptCount = FakeSocket.instances.length;
+  appStateListener?.('active');
+  expect(FakeSocket.instances).toHaveLength(attemptCount + 1);
+  client.disconnect();
 });
 
 it('可写连接的临时 error 与真正断线可区分', async () => {

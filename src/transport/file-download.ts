@@ -23,8 +23,8 @@ interface Transfer {
   size: number;
   received: number;
   busy: boolean;
+  timer?: ReturnType<typeof setTimeout>;
 }
-
 interface ReadyFile {
   file: FsFile;
   mediaType?: string;
@@ -32,6 +32,7 @@ interface ReadyFile {
 }
 
 const RESOLVE_TIMEOUT_MS = 15000;
+const TRANSFER_TIMEOUT_MS = 15000;
 const DOWNLOAD_DIR = 'dsh-files';
 
 /** 同名的不同文件要分开存：一个路径一个目录，文件名保持干净。 */
@@ -51,13 +52,17 @@ export class FileDownloader {
   private sessionId: string;
   private onState: (path: string, state: FileUiState) => void;
   private resolving = new Map<string, { path: string; timer: ReturnType<typeof setTimeout> }>();
-  private opening = new Map<string, { path: string; name: string; mediaType?: string }>();
+  private opening = new Map<
+    string,
+    { path: string; name: string; mediaType?: string; timer: ReturnType<typeof setTimeout> }
+  >();
   private transfers = new Map<string, Transfer>();
   private ready = new Map<string, ReadyFile>();
-  /** 已经取消掉的 transferId：服务端回的 cancel 结果不该再弹到顶部错误条。 */
+  /** Cancel replies should not surface as user-facing transfer errors. */
   private cancelled = new Set<string>();
+  private reading: string | null = null;
+  private readQueue: string[] = [];
   private disposed = false;
-
   constructor(
     sessionId: string,
     send: (frame: ClientFrame) => boolean,
@@ -96,6 +101,7 @@ export class FileDownloader {
       };
       const entry = this.opening.get(opened.requestId);
       if (!entry) return false;
+      clearTimeout(entry.timer);
       this.opening.delete(opened.requestId);
       this.beginTransfer(opened.transferId, entry.path, entry.name, entry.mediaType, opened.size ?? 0);
       return true;
@@ -123,6 +129,7 @@ export class FileDownloader {
         message?: string;
         requestType?: string;
         requestId?: string;
+        transferId?: string;
       };
       const type = failure.requestType;
       if (type === 'file-download-cancel') {
@@ -131,22 +138,27 @@ export class FileDownloader {
       }
       if (type === 'file-download-read') {
         // Read errors have no transferId, so every outstanding read is ambiguous.
+        const message = describeFailure(failure.code, failure.message);
         for (const transfer of this.transfers.values()) {
+          clearTimeout(transfer.timer);
+          this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
           this.removeFile(transfer.file);
-          this.fail(transfer.path, describeFailure(failure.code, failure.message));
+          this.fail(transfer.path, message);
         }
         this.transfers.clear();
+        this.readQueue = [];
+        this.reading = null;
         return true;
       }
       if (type !== 'file-resolve' && type !== 'file-download-open') return false;
       const requestId = failure.requestId;
-      const path =
-        (requestId ? this.resolving.get(requestId)?.path : undefined) ??
-        (requestId ? this.opening.get(requestId)?.path : undefined);
+      const resolve = requestId ? this.resolving.get(requestId) : undefined;
+      const open = requestId ? this.opening.get(requestId) : undefined;
+      const path = resolve?.path ?? open?.path;
       if (!path) return false;
+      clearTimeout(resolve?.timer);
+      clearTimeout(open?.timer);
       if (requestId) {
-        const timer = this.resolving.get(requestId)?.timer;
-        if (timer) clearTimeout(timer);
         this.resolving.delete(requestId);
         this.opening.delete(requestId);
       }
@@ -181,20 +193,21 @@ export class FileDownloader {
     }
   }
 
-  /** 离开会话时把还在跑的传输全部收掉，避免回调打到已经卸载的组件上。 */
+  /** 离开会话时清理正在进行的请求和传输。 */
   dispose(): void {
     this.disposed = true;
     for (const entry of this.resolving.values()) clearTimeout(entry.timer);
     this.resolving.clear();
+    for (const entry of this.opening.values()) clearTimeout(entry.timer);
     this.opening.clear();
     for (const transfer of this.transfers.values()) {
+      clearTimeout(transfer.timer);
       this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
       this.removeFile(transfer.file);
     }
-    this.transfers.clear();
+    this.readQueue = [];
     this.ready.clear();
   }
-
   private requestOpen(
     path: string,
     canonicalPath: string,
@@ -202,20 +215,22 @@ export class FileDownloader {
     mediaType?: string,
   ): void {
     const requestId = randomUUID();
-    this.opening.set(requestId, { path, name: name ?? baseName(path), mediaType });
+    const timer = setTimeout(() => {
+      if (!this.opening.has(requestId)) return;
+      this.opening.delete(requestId);
+      this.fail(path, tr("下载失败，请检查网络后重试"));
+    }, TRANSFER_TIMEOUT_MS);
+    this.opening.set(requestId, { path, name: name ?? baseName(path), mediaType, timer });
     this.onState(path, { status: 'downloading', progress: 0 });
     const sent = this.send({
-      type: 'file-download-open',
-      requestId,
-      sessionId: this.sessionId,
-      path: canonicalPath,
+      type: 'file-download-open', requestId, sessionId: this.sessionId, path: canonicalPath,
     });
     if (!sent) {
+      clearTimeout(timer);
       this.opening.delete(requestId);
       this.fail(path, tr("连接已断开，无法下载"));
     }
   }
-
   private beginTransfer(
     transferId: string,
     path: string,
@@ -224,27 +239,48 @@ export class FileDownloader {
     size: number,
   ): void {
     try {
-      // 每个路径一个子目录：同名文件互不覆盖，文件名还能保持原样显示。
       const directory = new Directory(Paths.cache, DOWNLOAD_DIR, String(shortHash(path)));
       if (!directory.exists) directory.create({ intermediates: true });
       const file = new FsFile(directory, safeFileName(path, name));
       if (file.exists) file.delete();
-      this.transfers.set(transferId, {
-        transferId,
-        path,
-        file,
-        name,
-        mediaType,
-        size,
-        received: 0,
-        busy: false,
-      });
-      this.send({ type: 'file-download-read', transferId, offset: 0 });
+      const transfer: Transfer = {
+        transferId, path, file, name, mediaType, size, received: 0, busy: false,
+      };
+      this.transfers.set(transferId, transfer);
+      this.readQueue.push(transferId);
+      this.readNext();
     } catch (failure) {
-      // 服务端的并发名额是网关级的，本地起不来也要把 transfer 退掉。
       this.send({ type: 'file-download-cancel', transferId });
       this.fail(path, failure instanceof Error ? failure.message : tr("无法创建临时文件"));
     }
+  }
+
+  private readNext(offset?: number): void {
+    if (this.reading || this.disposed) return;
+    const transferId = this.readQueue.shift();
+    const next = transferId ? this.transfers.get(transferId) : undefined;
+    if (!next) return;
+    this.reading = next.transferId;
+    next.timer = setTimeout(() => {
+      this.reading = null;
+      this.failTransfer(next, tr("下载失败，请检查网络后重试"));
+      this.readNext();
+    }, TRANSFER_TIMEOUT_MS);
+    if (!this.send({ type: 'file-download-read', transferId: next.transferId, offset: offset ?? next.received })) {
+      clearTimeout(next.timer);
+      this.reading = null;
+      this.failTransfer(next, tr("连接已断开，无法下载"));
+      this.readNext();
+    }
+  }
+
+  private failTransfer(transfer: Transfer, message: string): void {
+    clearTimeout(transfer.timer);
+    this.transfers.delete(transfer.transferId);
+    this.readQueue = this.readQueue.filter((id) => id !== transfer.transferId);
+    this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
+    this.removeFile(transfer.file);
+    this.fail(transfer.path, message);
   }
 
   private async consume(
@@ -253,35 +289,34 @@ export class FileDownloader {
   ): Promise<void> {
     if (transfer.busy) return;
     transfer.busy = true;
+    clearTimeout(transfer.timer);
     try {
       const bytes = base64DecodedBytes(chunk.data);
       if (bytes > 0) {
-        // 服务端给的就是标准 Base64，直接按 base64 追加，避免在 JS 里解一遍再拼大数组。
         await transfer.file.write(chunk.data, { encoding: 'base64', append: transfer.received > 0 });
         transfer.received += bytes;
       }
       if (this.disposed) return;
       if (!chunk.eof) {
+        this.reading = null;
         transfer.busy = false;
-        this.send({
-          type: 'file-download-read',
-          transferId: transfer.transferId,
-          offset: chunk.offset + bytes,
-        });
-        const total = transfer.size > 0 ? transfer.size : transfer.received;
         this.onState(transfer.path, {
           status: 'downloading',
-          progress: total > 0 ? Math.min(0.99, transfer.received / total) : 0,
+          progress: transfer.size > 0 ? Math.min(0.99, transfer.received / transfer.size) : 0,
         });
+        this.readQueue.unshift(transfer.transferId);
+        this.readNext(chunk.offset + bytes);
         return;
       }
+      this.transfers.delete(transfer.transferId);
+      this.reading = null;
       await this.finish(transfer, chunk.sha256);
+      this.readNext();
     } catch (failure) {
       transfer.busy = false;
-      this.transfers.delete(transfer.transferId);
-      this.removeFile(transfer.file);
-      this.send({ type: 'file-download-cancel', transferId: transfer.transferId });
-      this.fail(transfer.path, failure instanceof Error ? failure.message : tr("写入文件失败"));
+      this.failTransfer(transfer, failure instanceof Error ? failure.message : tr("写入文件失败"));
+      this.reading = null;
+      this.readNext();
     }
   }
 
@@ -291,7 +326,6 @@ export class FileDownloader {
     try {
       if (expected) {
         const digest = await transfer.file.digest('SHA-256');
-        // 校验是异步的，期间用户可能已经离开这个会话。
         if (this.disposed) return;
         if (String(digest).toLowerCase() !== expected.toLowerCase()) {
           this.removeFile(transfer.file);
